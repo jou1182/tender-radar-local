@@ -133,6 +133,9 @@ const availabilityLabels: Record<AttachmentAvailability, string> = {
   "restricted": "مقيدة بصلاحيات المنصة",
   "unknown": "غير معروفة بعد",
 };
+// نصا الموافقة الصريحان لبوابة P3-B0 — يطابقان تحقق الخدمة حرفيًا.
+const downloadConsentPhrase = "أوافق على تنزيل الملفات المحددة الآن من هذه المنافسة فقط";
+const purchaseConsentPhrase = "أؤكد أنني أتممت شراء الكراسة بنفسي داخل منصة اعتماد";
 
 const tenderTypeOptions = ["الكل", "منافسة عامة", "شراء مباشر", "اتفاقية إطارية", "منافسة محدودة", "منافسة من مرحلتين"];
 const publishPeriodOptions = ["في أي وقت", "منذ يومين", "منذ أسبوع", "منذ شهر", "منذ 3 شهور"];
@@ -237,6 +240,12 @@ export default function Home() {
   const [searchProfiles, setSearchProfiles] = useState<SearchProfile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState("");
   const [profileMessage, setProfileMessage] = useState("");
+  const [downloadDialogOpen, setDownloadDialogOpen] = useState(false);
+  const [downloadConsentChecked, setDownloadConsentChecked] = useState(false);
+  const [downloadPurchaseChecked, setDownloadPurchaseChecked] = useState(false);
+  const [selectedDownloadNames, setSelectedDownloadNames] = useState<string[]>([]);
+  const [downloadRequestBusy, setDownloadRequestBusy] = useState(false);
+  const [downloadGateMessage, setDownloadGateMessage] = useState("");
   const [tenderType, setTenderType] = useState("الكل");
   const [publishPeriod, setPublishPeriod] = useState("منذ 3 شهور");
   const [feeMode, setFeeMode] = useState<FeeMode>("exact");
@@ -354,6 +363,10 @@ export default function Home() {
   const availableSubActivities = catalog.find((item) => item.name === activity)?.subActivities.map((sub) => sub.name) ?? [];
   const selectedSearchProfile = searchProfiles.find((item) => item.id === selectedProfileId) ?? null;
   const selected = tenders.find((tender) => tender.id === selectedId) ?? tenders[0];
+  // لا يظهر خيار الموافقة إلا لملفات free-available وpurchased-available الظاهرة؛ البقية مستبعدة كليًا.
+  const downloadableMeta = (selected?.attachmentsMeta ?? []).filter((meta) => meta.remoteVisible && (meta.availability === "free-available" || meta.availability === "purchased-available"));
+  const selectedDownloadMeta = downloadableMeta.filter((meta) => selectedDownloadNames.includes(meta.displayName));
+  const blockedMetaCount = (selected?.attachmentsMeta ?? []).filter((meta) => meta.remoteVisible && meta.availability !== "free-available" && meta.availability !== "purchased-available").length;
   const assessment = selected ? getAssessment(selected) : null;
   const crowdingSignal = selected ? getCrowdingSignal(selected) : null;
   const suitable = filtered.filter((tender) => tender.status === "مناسبة").length;
@@ -451,6 +464,47 @@ export default function Home() {
       setProfileMessage(`فُعّل ملف «${profile.name}» — ستستخدمه المزامنة القادمة.`);
     } catch (error) {
       setProfileMessage(error instanceof Error ? error.message : "تعذر تفعيل ملف البحث");
+    }
+  }
+  function openDownloadDialog() {
+    setDownloadConsentChecked(false); setDownloadPurchaseChecked(false); setDownloadGateMessage("");
+    setSelectedDownloadNames(downloadableMeta.slice(0, 5).map((meta) => meta.displayName));
+    setDownloadDialogOpen(true);
+  }
+  function closeDownloadDialog() {
+    setDownloadDialogOpen(false); setDownloadConsentChecked(false); setDownloadPurchaseChecked(false);
+  }
+  async function submitDownloadApproval() {
+    if (!selected || !downloadConsentChecked || !selectedDownloadMeta.length || selectedDownloadMeta.length > 5 || downloadRequestBusy) return;
+    if (selected.fee > 0 && !downloadPurchaseChecked) return;
+    setDownloadRequestBusy(true); setDownloadGateMessage("");
+    try {
+      const files = selectedDownloadMeta.map((meta) => ({ displayName: meta.displayName }));
+      const intentResponse = await fetch(`${syncServiceUrl}/approval-intents`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tenderReference: selected.reference,
+          files,
+        }),
+      });
+      const intentResult = await intentResponse.json() as { intent?: { id: string }; message?: string };
+      if (!intentResponse.ok || !intentResult.intent?.id) throw new Error(intentResult.message || "تعذر إنشاء طلب الموافقة");
+      const approvalResponse = await fetch(`${syncServiceUrl}/approval-intents/${encodeURIComponent(intentResult.intent.id)}/confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          consentText: downloadConsentPhrase,
+          purchaseConfirmed: selected.fee > 0 ? downloadPurchaseChecked : false,
+        }),
+      });
+      const approvalResult = await approvalResponse.json() as { approval?: { id: string; expiresAt?: string; status?: string }; message?: string };
+      if (!approvalResponse.ok) throw new Error(approvalResult.message || "تعذر تسجيل الموافقة");
+      setDownloadGateMessage(approvalResult.message || "سُجلت الموافقة ولم تُستهلك. التنفيذ الحي غير مفعّل في P3-B0.");
+    } catch (error) {
+      setDownloadGateMessage(error instanceof Error ? error.message : "تعذر تنفيذ طلب التنزيل");
+    } finally {
+      setDownloadRequestBusy(false);
     }
   }
   async function openEtimadSession() {
@@ -690,7 +744,7 @@ export default function Home() {
           <article><span>هل يلزم شراء سابق في اعتماد</span><b>{selected.fee > 0 ? "نعم — الكراسة مدفوعة ويشتريها المستخدم بنفسه داخل اعتماد عند الحاجة" : "لا — الكراسة مجانية"}</b></article>
         </div>
         <div className="remote-files"><div><p className="eyebrow">أسماء المرفقات الظاهرة — رصد فقط</p>{selected.remoteAttachments?.length ? <div>{selected.remoteAttachments.map((name) => <span key={name}>📄 {name}</span>)}</div> : <small>لم تُرصد أسماء مرفقات ظاهرة بعد؛ اقرأ التفاصيل دون تنزيل أولًا.</small>}</div></div>
-        <div className="detail-safety"><b>لا تنزيل قبل موافقة المستخدم</b><button type="button" disabled title="التنزيل بعد الموافقة الصريحة يصل في المرحلة التالية">سيُفعّل في P3-B بعد الموافقة</button></div>
+        <div className="detail-safety"><b>لا تنزيل قبل موافقة المستخدم</b><button type="button" disabled={!downloadableMeta.length} onClick={() => openDownloadDialog()}>طلب تنزيل الملفات</button><small>{downloadableMeta.length ? `${downloadableMeta.length} ملفات قابلة للاختيار${blockedMetaCount ? ` · ${blockedMetaCount} مستبعدة لحالة إتاحتها` : ""} — اختر حتى 5 ملفات.` : `لا توجد ملفات قابلة للطلب بعد — التنزيل الحي غير مفعّل.`}</small></div>
       </section>
       <div className="market-intelligence">
         <div className="market-title"><p className="eyebrow">ذكاء المنافسة</p><h3>{crowdingSignal.label}</h3><span>ثقة التقدير: {crowdingSignal.confidence}</span></div>
@@ -716,5 +770,27 @@ export default function Home() {
         <div className={`decision-card ${assessment.tone}`}><p>قرار الرادار المبدئي</p><h3>{assessment.decision}</h3><div><b>الوثائق الناقصة</b><span>{assessment.missing.length ? assessment.missing.join("، ") : "لا يوجد"}</span></div><div><b>المخاطر</b><span>{assessment.risks.length ? assessment.risks.join(" ") : "لا توجد ملاحظة حرجة مسجلة"}</span></div><div><b>الخطوة التالية</b><span>{assessment.next}</span></div><button onClick={copyReport}>{copied ? "تم نسخ التقرير" : "نسخ تقرير القرار"}</button></div></div></section>
     </> : <section className="empty-database"><p className="eyebrow">قاعدة المنافسات</p><h2>لا توجد منافسات حقيقية محفوظة بعد</h2><p>شغّل الخدمة المحلية وابدأ أول مزامنة، أو افتح وضع العرض لتجربة شكل الرادار دون خلط الأمثلة ببيانات اعتماد.</p><div><button type="button" onClick={showDemoData}>عرض بيانات تجريبية</button><button type="button" className="outline-button" onClick={() => void openEtimadSession()}>فتح جلسة اعتماد</button></div></section>}
     <section className="flow"><div><p className="eyebrow">طريقة التشغيل اليومية</p><h2>جلسة واضحة، بلا تخمين</h2></div><ol><li><b>1</b><span>تسجّل دخولك أنت إلى اعتماد في Chrome، ثم تبدأ مؤقت الجلسة.</span></li><li><b>2</b><span>نبحث بالفلاتر ونضيف فقط الفرص التي تستحق المتابعة.</span></li><li><b>3</b><span>بعد موافقتك: نحمّل الكراسة والكميات، ثم ترفع الملفات هنا وفي المحادثة للتحليل.</span></li><li><b>4</b><span>نراجع تقرير القرار، ثم نصدر Excel قبل أي إجراء مالي أو تقديم عرض.</span></li></ol></section>
+    {downloadDialogOpen && selected && <div className="download-gate-overlay" role="dialog" aria-modal="true" aria-label="تأكيد طلب تنزيل الملفات">
+      <div className="download-gate-dialog">
+        <h3>تأكيد طلب تنزيل الملفات</h3>
+        <dl className="download-gate-facts">
+          <div><dt>المرجع</dt><dd>{selected.reference}</dd></div>
+          <div><dt>اسم المنافسة</dt><dd>{selected.title}</dd></div>
+          <div><dt>قيمة الكراسة</dt><dd>{selected.fee === 0 ? "مجانية" : `${selected.fee.toLocaleString('ar-SA')} ر.س`}</dd></div>
+          <div><dt>حالة الإتاحة</dt><dd>{[...new Set(downloadableMeta.map((meta) => availabilityLabels[meta.availability]))].join(" · ") || "غير معروفة"}</dd></div>
+        </dl>
+        <div className="download-gate-files"><b>الملفات المحددة: {selectedDownloadMeta.length} (الحد الأقصى 5)</b>
+          <ul>{downloadableMeta.map((meta) => <li key={meta.displayName}><label><input type="checkbox" checked={selectedDownloadNames.includes(meta.displayName)} disabled={!selectedDownloadNames.includes(meta.displayName) && selectedDownloadNames.length >= 5} onChange={(event) => setSelectedDownloadNames((current) => event.target.checked ? [...current, meta.displayName] : current.filter((name) => name !== meta.displayName))} /> 📄 {meta.displayName}</label> <small>الحجم غير ظاهر في المنصة</small></li>)}</ul>
+          {blockedMetaCount > 0 && <small>{blockedMetaCount} ملفات أخرى لا يظهر لها خيار الموافقة لحالة إتاحتها (أسماء فقط / غير معروفة / مقيدة).</small>}
+        </div>
+        <label className="download-gate-consent"><input type="checkbox" checked={downloadConsentChecked} onChange={(event) => setDownloadConsentChecked(event.target.checked)} /> {downloadConsentPhrase}</label>
+        {selected.fee > 0 && <label className="download-gate-consent"><input type="checkbox" checked={downloadPurchaseChecked} onChange={(event) => setDownloadPurchaseChecked(event.target.checked)} /> {purchaseConsentPhrase}</label>}
+        {downloadGateMessage && <p className="download-gate-message">{downloadGateMessage}</p>}
+        <div className="download-gate-actions">
+          <button type="button" disabled={!selectedDownloadMeta.length || selectedDownloadMeta.length > 5 || !downloadConsentChecked || (selected.fee > 0 && !downloadPurchaseChecked) || downloadRequestBusy} onClick={() => void submitDownloadApproval()}>{downloadRequestBusy ? "جارٍ تسجيل الموافقة..." : "تأكيد الموافقة"}</button>
+          <button type="button" className="outline-button" onClick={closeDownloadDialog}>إلغاء</button>
+        </div>
+      </div>
+    </div>}
   </main>;
 }

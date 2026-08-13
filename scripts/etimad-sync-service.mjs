@@ -19,18 +19,21 @@ import {
   pageSize,
   planFromSearchProfile,
 } from "./lib/sync-plan.mjs";
+import { createDisabledProductionDownloadAdapter } from "./lib/attachment-adapters.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const privateDir = path.join(projectRoot, ".radar-data");
 const baselineFile = path.join(projectRoot, "scripts", "sync-baseline.json");
 const listUrl = "https://tenders.etimad.sa/Tender/AllSuppliersTenders?PageNumber=1";
 const port = Number(process.env.RADAR_SYNC_PORT || 4318);
-const serviceVersion = "p3-multiactivity-1";
+const serviceVersion = "p3b-approval-gate-1";
 const n8nWebhookUrl = process.env.N8N_RADAR_WEBHOOK_URL || "http://127.0.0.1:5678/webhook/radar-sync-5d354757-90d1-4dc3-b7f7-c93e4c50ecb1";
 const repository = await createRadarRepository({ projectRoot });
 const baselineIds = JSON.parse(await readFile(baselineFile, "utf8"));
 repository.seedBaseline(baselineIds);
 const chromeSession = createRadarChromeSession({ privateDir, startUrl: listUrl });
+// المحوّل الوحيد في P3-B0: أي محاولة تنفيذ حي تعيد DOWNLOAD_ADAPTER_DISABLED.
+const downloadAdapter = createDisabledProductionDownloadAdapter();
 
 let syncPromise;
 let state = { phase: "idle", region: null, checked: 0, message: "جاهز", progress: repository.getSyncProgress() };
@@ -562,6 +565,73 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "GET" && request.url === "/details/status") {
       return send(response, 200, repository.getDetailsStats());
     }
+    if (request.method === "POST" && pathname === "/approval-intents") {
+      // الطلب المعلق يثبت النطاق فقط ولا يمنح صلاحية تنزيل.
+      const body = await readJsonBody(request);
+      const intent = repository.requestDownloadApprovalIntent({
+        tenderReference: String(body.tenderReference || ""),
+        files: Array.isArray(body.files) ? body.files : [],
+      });
+      return send(response, 201, {
+        intent,
+        liveExecutionEnabled: false,
+        message: "أُنشئ طلب معلق مرتبط بقائمة الملفات؛ لا توجد موافقة بعد.",
+      });
+    }
+    if (request.method === "POST" && pathname.startsWith("/approval-intents/") && pathname.endsWith("/confirm")) {
+      const allowedOrigins = new Set(["http://localhost:3000", "http://127.0.0.1:3000"]);
+      if (!allowedOrigins.has(String(request.headers.origin || ""))) {
+        return send(response, 403, { error: "HUMAN_CONFIRMATION_ORIGIN_REQUIRED", message: "تأكيد الموافقة متاح من واجهة الرادار المحلية فقط." });
+      }
+      const id = decodeURIComponent(pathname.slice("/approval-intents/".length, -"/confirm".length));
+      if (!id || id.includes("/")) return send(response, 400, { error: "INVALID_APPROVAL_INTENT", message: "معرف طلب الموافقة غير صالح." });
+      const body = await readJsonBody(request);
+      const approval = repository.confirmDownloadApprovalIntent(id, {
+        consentText: String(body.consentText || ""),
+        purchaseConfirmed: body.purchaseConfirmed === true,
+      });
+      return send(response, 201, {
+        approval,
+        liveExecutionEnabled: false,
+        message: "سُجلت الموافقة لمدة 10 دقائق ولاستخدام واحد. لم تُستهلك لأن التنفيذ الحي غير مفعّل في P3-B0.",
+      });
+    }
+    if (request.method === "POST" && pathname === "/approval-jobs") {
+      // في B0 يفشل المحوّل قبل استهلاك الموافقة؛ لا تُهدر الموافقة بسبب محوّل معطّل.
+      const body = await readJsonBody(request);
+      const approval = repository.getDownloadApproval(String(body.approvalId || ""));
+      if (!approval) {
+        const error = new Error("الموافقة غير موجودة.");
+        error.code = "APPROVAL_NOT_FOUND";
+        throw error;
+      }
+      const job = repository.recordDownloadJob({
+        approvalId: approval.id,
+        tenderReference: approval.tenderReference,
+        manifest: approval.scope,
+        status: "running",
+      });
+      try {
+        await downloadAdapter.execute({ id: job.id, manifest: approval.scope });
+        const finished = repository.updateDownloadJob(job.id, { status: "complete", finished: true });
+        return send(response, 200, { job: finished });
+      } catch (adapterError) {
+        const blocked = repository.updateDownloadJob(job.id, {
+          status: "blocked",
+          errorMessage: adapterError?.code || "DOWNLOAD_ADAPTER_DISABLED",
+          finished: true,
+        });
+        return send(response, 409, {
+          job: blocked,
+          adapter: downloadAdapter.kind,
+          error: adapterError?.code || "DOWNLOAD_ADAPTER_DISABLED",
+          message: "بوابة الموافقة تعمل وسُجلت الوظيفة؛ التنفيذ الحي غير مفعّل في P3-B0.",
+        });
+      }
+    }
+    if (request.method === "GET" && pathname === "/approval-jobs") {
+      return send(response, 200, { jobs: repository.listDownloadJobs() });
+    }
     if (request.method === "POST" && request.url === "/sync") {
       if (!syncPromise) syncPromise = performSync().finally(() => { syncPromise = undefined; });
       const result = await syncPromise;
@@ -569,12 +639,26 @@ const server = http.createServer(async (request, response) => {
     }
     return send(response, 404, { error: "NOT_FOUND" });
   } catch (error) {
-    const status = error?.code === "TENDER_NOT_FOUND" ? 404
-      : ["INVALID_PROFILE", "INVALID_AVAILABILITY"].includes(error?.code) ? 400
+    const status = ["TENDER_NOT_FOUND", "APPROVAL_NOT_FOUND", "APPROVAL_INTENT_NOT_FOUND"].includes(error?.code) ? 404
+      : ["INVALID_PROFILE", "INVALID_AVAILABILITY", "INVALID_DOWNLOAD_REQUEST", "BATCH_LIMIT_EXCEEDED",
+        "EXTENSION_NOT_ALLOWED", "FILE_NOT_LISTED", "AVAILABILITY_NOT_ALLOWED", "CONSENT_REQUIRED",
+        "PURCHASE_CONFIRMATION_REQUIRED", "FILE_TOO_LARGE", "BATCH_TOO_LARGE",
+        "INVALID_TENDER_REFERENCE", "INVALID_STORAGE_PATH"].includes(error?.code) ? 400
+      : ["APPROVAL_EXPIRED", "APPROVAL_CONSUMED", "APPROVAL_REVOKED", "APPROVAL_SCOPE_MISMATCH",
+        "APPROVAL_INTENT_EXPIRED", "APPROVAL_INTENT_USED"].includes(error?.code) ? 409
       : ["LOGIN_REQUIRED", "CAPTCHA_REQUIRED", "SESSION_NOT_OPEN"].includes(error?.code) ? 409 : 500;
-    const phase = error?.code === "CAPTCHA_REQUIRED" ? "captcha-required" : status === 409 ? "login-required" : "error";
-    state = { ...state, phase, message: error?.message || "تعذر تنفيذ المزامنة", progress: repository.getSyncProgress() };
-    return send(response, status, { error: error?.code || "SYNC_FAILED", message: state.message, state });
+    const phase = error?.code === "CAPTCHA_REQUIRED" ? "captcha-required"
+      : ["LOGIN_REQUIRED", "SESSION_NOT_OPEN"].includes(error?.code) ? "login-required"
+      : "error";
+    const affectsRadarOperation = pathname === "/sync" || pathname === "/session" || pathname.startsWith("/details");
+    if (affectsRadarOperation) {
+      state = { ...state, phase, message: error?.message || "تعذر تنفيذ المزامنة", progress: repository.getSyncProgress() };
+    }
+    return send(response, status, {
+      error: error?.code || "REQUEST_FAILED",
+      message: error?.message || "تعذر تنفيذ الطلب",
+      ...(affectsRadarOperation ? { state } : {}),
+    });
   }
 });
 

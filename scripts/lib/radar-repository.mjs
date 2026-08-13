@@ -4,8 +4,17 @@ import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { attachmentAvailabilityStates, defaultSearchProfile, knownEtimadActivityValues, seedActivities, seedSubActivities } from "./activity-catalog-seed.mjs";
 import { defaultPlan, regions } from "./sync-plan.mjs";
+import {
+  approvalTtlMs,
+  approvalIntentTtlMs,
+  assessApprovalUsability,
+  downloadApprovalAction,
+  hashDownloadManifest,
+  validateDownloadRequest,
+  verifyDownloadConsent,
+} from "./download-gate.mjs";
 
-const migrationVersion = 4;
+const migrationVersion = 5;
 const trackedTenderFields = ["title", "agency", "fee", "region", "deadline", "publishedAt", "platformStatus", "activity", "etimadUrl"];
 
 function safeJson(value, fallback) {
@@ -274,10 +283,40 @@ export async function createRadarRepository({ projectRoot }) {
     CREATE TABLE IF NOT EXISTS approvals (
       id TEXT PRIMARY KEY,
       tender_reference TEXT REFERENCES tenders(reference) ON DELETE CASCADE,
-      action TEXT NOT NULL,
-      target TEXT NOT NULL,
+      action TEXT NOT NULL CHECK (action = 'download-attachments'),
+      target TEXT NOT NULL DEFAULT '',
+      scope_json TEXT NOT NULL DEFAULT '{}',
+      scope_hash TEXT NOT NULL DEFAULT '',
+      requested_at TEXT,
       approved_at TEXT NOT NULL,
-      consumed_at TEXT
+      expires_at TEXT,
+      consumed_at TEXT,
+      revoked_at TEXT,
+      status TEXT NOT NULL DEFAULT 'approved' CHECK (status IN ('approved', 'consumed', 'expired', 'revoked'))
+    );
+
+    CREATE TABLE IF NOT EXISTS download_jobs (
+      id TEXT PRIMARY KEY,
+      approval_id TEXT REFERENCES approvals(id) ON DELETE SET NULL,
+      tender_reference TEXT NOT NULL,
+      manifest_json TEXT NOT NULL DEFAULT '{}',
+      status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'blocked', 'complete', 'failed')),
+      created_at TEXT NOT NULL,
+      started_at TEXT,
+      finished_at TEXT,
+      error_message TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS approval_intents (
+      id TEXT PRIMARY KEY,
+      tender_reference TEXT NOT NULL REFERENCES tenders(reference) ON DELETE CASCADE,
+      action TEXT NOT NULL CHECK (action = 'download-attachments'),
+      scope_json TEXT NOT NULL,
+      scope_hash TEXT NOT NULL,
+      requested_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      confirmed_at TEXT,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'expired', 'cancelled'))
     );
 
     CREATE TABLE IF NOT EXISTS sync_baseline (
@@ -316,6 +355,20 @@ export async function createRadarRepository({ projectRoot }) {
   ensureColumn("attachments", "availability", "availability TEXT NOT NULL DEFAULT 'unknown' CHECK (availability IN ('metadata-only', 'free-available', 'purchased-available', 'restricted', 'unknown'))");
   ensureColumn("attachments", "requires_approval", "requires_approval INTEGER NOT NULL DEFAULT 1 CHECK (requires_approval IN (0, 1))");
   ensureColumn("attachments", "availability_updated_at", "availability_updated_at TEXT");
+  // ترقية آمنة من v4: توسعة approvals لبوابة تنزيل المرفقات دون فقدان الموافقات السابقة.
+  ensureColumn("approvals", "target", "target TEXT NOT NULL DEFAULT ''");
+  ensureColumn("approvals", "scope_json", "scope_json TEXT NOT NULL DEFAULT '{}'");
+  ensureColumn("approvals", "scope_hash", "scope_hash TEXT NOT NULL DEFAULT ''");
+  ensureColumn("approvals", "requested_at", "requested_at TEXT");
+  ensureColumn("approvals", "expires_at", "expires_at TEXT");
+  ensureColumn("approvals", "revoked_at", "revoked_at TEXT");
+  ensureColumn("approvals", "status", "status TEXT NOT NULL DEFAULT 'approved' CHECK (status IN ('approved', 'consumed', 'expired', 'revoked'))");
+
+  // موافقات v4 لم تكن مرتبطة بنطاق أو مدة؛ تُبطل صراحة ولا يمكن توريثها إلى مسار تنزيل حي.
+  database.prepare(`
+    UPDATE approvals SET status = 'revoked', revoked_at = COALESCE(revoked_at, ?)
+    WHERE COALESCE(scope_hash, '') = '' OR expires_at IS NULL OR requested_at IS NULL
+  `).run(new Date().toISOString());
 
   database.prepare("INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)").run(migrationVersion, new Date().toISOString());
 
@@ -508,6 +561,50 @@ export async function createRadarRepository({ projectRoot }) {
     insertAutomationHistory: database.prepare(`
       INSERT INTO automation_history (recorded_at, sync_id, state, counts_json, message)
       VALUES (?, ?, ?, ?, ?)
+    `),
+    insertApproval: database.prepare(`
+      INSERT INTO approvals (
+        id, tender_reference, action, target, scope_json, scope_hash,
+        requested_at, approved_at, expires_at, consumed_at, revoked_at, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 'approved')
+    `),
+    getApproval: database.prepare("SELECT * FROM approvals WHERE id = ?"),
+    consumeApproval: database.prepare(`
+      UPDATE approvals SET consumed_at = ?, status = 'consumed'
+      WHERE id = ? AND status = 'approved' AND consumed_at IS NULL AND revoked_at IS NULL
+        AND (expires_at IS NULL OR expires_at > ?)
+    `),
+    revokeApproval: database.prepare(`
+      UPDATE approvals SET revoked_at = ?, status = 'revoked'
+      WHERE id = ? AND status = 'approved' AND consumed_at IS NULL
+    `),
+    markApprovalExpired: database.prepare(`
+      UPDATE approvals SET status = 'expired'
+      WHERE id = ? AND status = 'approved' AND expires_at IS NOT NULL AND expires_at <= ?
+    `),
+    insertDownloadJob: database.prepare(`
+      INSERT INTO download_jobs (id, approval_id, tender_reference, manifest_json, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `),
+    updateDownloadJob: database.prepare(`
+      UPDATE download_jobs SET status = ?, started_at = COALESCE(?, started_at), finished_at = COALESCE(?, finished_at), error_message = ?
+      WHERE id = ?
+    `),
+    getDownloadJob: database.prepare("SELECT * FROM download_jobs WHERE id = ?"),
+    listDownloadJobs: database.prepare("SELECT * FROM download_jobs ORDER BY created_at DESC, rowid DESC"),
+    listDownloadJobsForTender: database.prepare("SELECT * FROM download_jobs WHERE tender_reference = ? ORDER BY created_at DESC, rowid DESC"),
+    insertApprovalIntent: database.prepare(`
+      INSERT INTO approval_intents (id, tender_reference, action, scope_json, scope_hash, requested_at, expires_at, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
+    `),
+    getApprovalIntent: database.prepare("SELECT * FROM approval_intents WHERE id = ?"),
+    expireApprovalIntent: database.prepare(`
+      UPDATE approval_intents SET status = 'expired'
+      WHERE id = ? AND status = 'pending' AND expires_at <= ?
+    `),
+    confirmApprovalIntent: database.prepare(`
+      UPDATE approval_intents SET status = 'confirmed', confirmed_at = ?
+      WHERE id = ? AND status = 'pending' AND expires_at > ?
     `),
   };
 
@@ -752,6 +849,176 @@ export async function createRadarRepository({ projectRoot }) {
     }
     statements.setAttachmentAvailability.run(availability, requiresApproval ? 1 : 0, new Date().toISOString(), String(reference), String(displayName));
     return listAttachmentMeta(reference);
+  }
+
+  function rowToApproval(row) {
+    if (!row) return null;
+    return {
+      id: row.id,
+      tenderReference: row.tender_reference,
+      action: row.action,
+      target: row.target || "",
+      scope: safeJson(row.scope_json, {}),
+      scopeHash: row.scope_hash || "",
+      requestedAt: row.requested_at,
+      approvedAt: row.approved_at,
+      expiresAt: row.expires_at,
+      consumedAt: row.consumed_at,
+      revokedAt: row.revoked_at,
+      status: row.status || "approved",
+    };
+  }
+
+  function getDownloadApproval(id, { now = new Date() } = {}) {
+    const approval = rowToApproval(statements.getApproval.get(String(id)));
+    const nowDate = now instanceof Date ? now : new Date(now);
+    if (approval?.status === "approved" && approval.expiresAt && Date.parse(approval.expiresAt) <= nowDate.getTime()) {
+      statements.markApprovalExpired.run(approval.id, nowDate.toISOString());
+      approval.status = "expired";
+    }
+    if (approval?.status === "approved" && (!approval.scopeHash || !approval.expiresAt || !approval.requestedAt)) {
+      statements.revokeApproval.run(nowDate.toISOString(), approval.id);
+      approval.status = "revoked";
+      approval.revokedAt = nowDate.toISOString();
+    }
+    return approval;
+  }
+
+  function rowToApprovalIntent(row) {
+    if (!row) return null;
+    return {
+      id: row.id,
+      tenderReference: row.tender_reference,
+      action: row.action,
+      scope: safeJson(row.scope_json, {}),
+      scopeHash: row.scope_hash,
+      requestedAt: row.requested_at,
+      expiresAt: row.expires_at,
+      confirmedAt: row.confirmed_at,
+      status: row.status,
+    };
+  }
+
+  function getDownloadApprovalIntent(id, { now = new Date() } = {}) {
+    const nowDate = now instanceof Date ? now : new Date(now);
+    const intent = rowToApprovalIntent(statements.getApprovalIntent.get(String(id)));
+    if (intent?.status === "pending" && Date.parse(intent.expiresAt) <= nowDate.getTime()) {
+      statements.expireApprovalIntent.run(intent.id, nowDate.toISOString());
+      intent.status = "expired";
+    }
+    return intent;
+  }
+
+  // إنشاء الطلب لا يمنح أي صلاحية؛ يثبت فقط المنافسة والملفات في manifest غير قابل للتبديل.
+  function requestDownloadApprovalIntent({ tenderReference, files, now = new Date() }) {
+    const tender = getTender(tenderReference);
+    if (!tender) {
+      const error = new Error("المنافسة غير موجودة في قاعدة SQLite.");
+      error.code = "TENDER_NOT_FOUND";
+      throw error;
+    }
+    const manifest = validateDownloadRequest({ tenderReference: tender.reference, files, attachmentsMeta: tender.attachmentsMeta });
+    const scopeHash = hashDownloadManifest(manifest);
+    const nowDate = now instanceof Date ? now : new Date(now);
+    const nowIso = nowDate.toISOString();
+    const id = `approval-intent-${nowIso}-${crypto.randomUUID()}`;
+    statements.insertApprovalIntent.run(
+      id, tender.reference, downloadApprovalAction, JSON.stringify(manifest), scopeHash,
+      nowIso, new Date(nowDate.getTime() + approvalIntentTtlMs).toISOString(),
+    );
+    return getDownloadApprovalIntent(id, { now: nowDate });
+  }
+
+  // التأكيد البشري هو وحده الذي ينشئ approval؛ الطلب المعلق وحده غير قابل للاستهلاك.
+  function confirmDownloadApprovalIntent(id, { consentText, purchaseConfirmed, now = new Date() } = {}) {
+    const nowDate = now instanceof Date ? now : new Date(now);
+    const intent = getDownloadApprovalIntent(id, { now: nowDate });
+    if (!intent) throw approvalError({ code: "APPROVAL_INTENT_NOT_FOUND", message: "طلب الموافقة غير موجود." });
+    if (intent.status === "expired") throw approvalError({ code: "APPROVAL_INTENT_EXPIRED", message: "انتهت مهلة تأكيد الطلب؛ أنشئ طلبًا جديدًا." });
+    if (intent.status !== "pending") throw approvalError({ code: "APPROVAL_INTENT_USED", message: "تم تأكيد هذا الطلب أو إغلاقه بالفعل." });
+    const tender = getTender(intent.tenderReference);
+    if (!tender) throw approvalError({ code: "TENDER_NOT_FOUND", message: "المنافسة غير موجودة في قاعدة SQLite." });
+    validateDownloadRequest({ tenderReference: tender.reference, files: intent.scope.files, attachmentsMeta: tender.attachmentsMeta });
+    verifyDownloadConsent({ consentText, purchaseConfirmed, bookletFee: tender.fee });
+    if (hashDownloadManifest(intent.scope) !== intent.scopeHash) {
+      throw approvalError({ code: "APPROVAL_SCOPE_MISMATCH", message: "تغيّر نطاق طلب الموافقة." });
+    }
+    const nowIso = nowDate.toISOString();
+    const approvalId = `approval-${nowIso}-${crypto.randomUUID()}`;
+    transaction(() => {
+      const update = statements.confirmApprovalIntent.run(nowIso, intent.id, nowIso);
+      if (Number(update.changes) !== 1) throw approvalError({ code: "APPROVAL_INTENT_USED", message: "تم تأكيد هذا الطلب أو انتهت صلاحيته." });
+      statements.insertApproval.run(
+        approvalId, tender.reference, downloadApprovalAction, "attachments", JSON.stringify(intent.scope), intent.scopeHash,
+        nowIso, nowIso, new Date(nowDate.getTime() + approvalTtlMs).toISOString(),
+      );
+    });
+    return getDownloadApproval(approvalId, { now: nowDate });
+  }
+
+  function approvalError(usability) {
+    const error = new Error(usability.message || "الموافقة غير صالحة.");
+    error.code = usability.code;
+    return error;
+  }
+
+  // استهلاك الموافقة: استخدام واحد، انتهاء 10 دقائق، ومطابقة بصمة manifest إلزامية.
+  function consumeDownloadApproval(id, { manifest, now = new Date() } = {}) {
+    const approval = getDownloadApproval(id, { now });
+    if (!manifest) throw approvalError({ code: "APPROVAL_SCOPE_MISMATCH", message: "يلزم إرسال manifest المطابق عند استهلاك الموافقة." });
+    const scopeHash = hashDownloadManifest(manifest);
+    const usability = assessApprovalUsability(approval, { scopeHash, now });
+    if (!usability.usable) throw approvalError(usability);
+    const nowIso = (now instanceof Date ? now : new Date(now)).toISOString();
+    const result = statements.consumeApproval.run(nowIso, approval.id, nowIso);
+    if (Number(result.changes) === 0) {
+      throw approvalError({ code: "APPROVAL_CONSUMED", message: "استُخدمت هذه الموافقة بالفعل؛ الموافقة تُستخدم مرة واحدة." });
+    }
+    return getDownloadApproval(approval.id);
+  }
+
+  function revokeDownloadApproval(id) {
+    const approval = getDownloadApproval(id);
+    if (!approval) {
+      const error = new Error("الموافقة غير موجودة.");
+      error.code = "APPROVAL_NOT_FOUND";
+      throw error;
+    }
+    statements.revokeApproval.run(new Date().toISOString(), approval.id);
+    return getDownloadApproval(approval.id);
+  }
+
+  function rowToDownloadJob(row) {
+    if (!row) return null;
+    return {
+      id: row.id,
+      approvalId: row.approval_id,
+      tenderReference: row.tender_reference,
+      manifest: safeJson(row.manifest_json, {}),
+      status: row.status,
+      createdAt: row.created_at,
+      startedAt: row.started_at,
+      finishedAt: row.finished_at,
+      errorMessage: row.error_message,
+    };
+  }
+
+  function recordDownloadJob({ approvalId, tenderReference, manifest, status = "pending", now = new Date() }) {
+    const nowIso = (now instanceof Date ? now : new Date(now)).toISOString();
+    const id = `dljob-${nowIso}-${crypto.randomUUID()}`;
+    statements.insertDownloadJob.run(id, approvalId || null, String(tenderReference), JSON.stringify(manifest), status, nowIso);
+    return rowToDownloadJob(statements.getDownloadJob.get(id));
+  }
+
+  function updateDownloadJob(id, { status, errorMessage = null, started = false, finished = false }) {
+    const nowIso = new Date().toISOString();
+    statements.updateDownloadJob.run(status, started ? nowIso : null, finished ? nowIso : null, errorMessage, String(id));
+    return rowToDownloadJob(statements.getDownloadJob.get(id));
+  }
+
+  function listDownloadJobs(tenderReference) {
+    const rows = tenderReference ? statements.listDownloadJobsForTender.all(String(tenderReference)) : statements.listDownloadJobs.all();
+    return rows.map(rowToDownloadJob);
   }
 
   function seedBaseline(references) {
@@ -1020,6 +1287,15 @@ export async function createRadarRepository({ projectRoot }) {
     updateSearchProfile,
     listAttachmentMeta,
     setAttachmentAvailability,
+    getDownloadApproval,
+    requestDownloadApprovalIntent,
+    getDownloadApprovalIntent,
+    confirmDownloadApprovalIntent,
+    consumeDownloadApproval,
+    revokeDownloadApproval,
+    recordDownloadJob,
+    updateDownloadJob,
+    listDownloadJobs,
     loadState,
     saveState,
     recordAutomationStatus,

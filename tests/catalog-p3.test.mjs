@@ -30,7 +30,7 @@ async function freshRepository(prefix) {
   return { projectRoot, repository };
 }
 
-test("Schema v4 migration preserves live tenders, details, and attachments from a v3 database", async () => {
+test("Schema v5 migration preserves live tenders, details, and attachments from a v3 database", async () => {
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), "radar-v3-"));
   let repository;
   try {
@@ -98,7 +98,7 @@ test("Schema v4 migration preserves live tenders, details, and attachments from 
     legacy.close();
 
     repository = await createRadarRepository({ projectRoot });
-    assert.equal(repository.schemaVersion, 4);
+    assert.equal(repository.schemaVersion, 5);
     const stored = repository.getTender("260000000030");
     assert.equal(stored.title, "منافسة من v3");
     assert.equal(stored.details.status, "complete");
@@ -318,7 +318,7 @@ test("service and UI contain no real purchase, payment, or download path", async
   }
   assert.doesNotMatch(service, /\/purchase\b|\/pay\b/i);
   assert.match(page, /لا تنزيل قبل موافقة المستخدم/);
-  assert.match(page, /سيُفعّل في P3-B بعد الموافقة/);
+  assert.match(page, /التنفيذ الحي غير مفعّل في P3-B0/);
   assert.match(page, /مركز المرفقات/);
 });
 
