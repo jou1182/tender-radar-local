@@ -1,5 +1,5 @@
 {
-  "name": "site-creator-vinext-starter",
+  "name": "tender-radar-local",
   "version": "0.1.0",
   "private": true,
   "engines": {
@@ -11,8 +11,9 @@
     "start": "vinext start",
     "radar": "node scripts/start-radar.mjs",
     "sync-service": "node scripts/etimad-sync-service.mjs",
-    "test": "npm run build && node --test tests/rendered-html.test.mjs tests/n8n-integration.test.mjs",
+    "test": "npm run build && node --test tests/rendered-html.test.mjs tests/n8n-integration.test.mjs tests/repository.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "db:init": "node scripts/initialize-database.mjs",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {

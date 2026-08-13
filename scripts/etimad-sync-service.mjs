@@ -1,15 +1,13 @@
 import http from "node:http";
 import path from "node:path";
-import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
+import { createRadarRepository } from "./lib/radar-repository.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const privateDir = path.join(projectRoot, ".radar-data");
 const profileDir = path.join(privateDir, "etimad-chrome-profile");
-const dataFile = path.join(privateDir, "etimad-sync.json");
-const automationFile = path.join(privateDir, "n8n-automation.json");
-const automationHistoryFile = path.join(privateDir, "n8n-automation-history.ndjson");
 const baselineFile = path.join(projectRoot, "scripts", "sync-baseline.json");
 const chromePath = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 const listUrl = "https://tenders.etimad.sa/Tender/AllSuppliersTenders?PageNumber=1";
@@ -20,6 +18,9 @@ const regionNames = {
   "5": "المنطقة الشرقية", "6": "منطقة عسير", "7": "منطقة تبوك", "8": "منطقة حائل",
   "9": "منطقة الحدود الشمالية", "10": "منطقة جازان", "11": "منطقة نجران", "12": "منطقة الباحة", "13": "منطقة الجوف",
 };
+const repository = await createRadarRepository({ projectRoot });
+const baselineIds = JSON.parse(await readFile(baselineFile, "utf8"));
+repository.seedBaseline(baselineIds);
 
 let browserContext;
 let syncPromise;
@@ -149,22 +150,7 @@ function suitability(item) {
   return Math.max(25, Math.min(90, score));
 }
 
-async function loadPrevious() {
-  try { return JSON.parse(await readFile(dataFile, "utf8")); }
-  catch {
-    const ids = JSON.parse(await readFile(baselineFile, "utf8"));
-    return { lastSyncAt: null, items: ids.map((id) => ({ id })) };
-  }
-}
-
 function comparable(item) { return JSON.stringify([item.title, item.agency, item.fee, item.region, item.deadline, item.publishedAt]); }
-
-async function saveResult(result) {
-  await ensurePrivateDir();
-  const temporary = `${dataFile}.tmp`;
-  await writeFile(temporary, JSON.stringify(result, null, 2), "utf8");
-  await rename(temporary, dataFile);
-}
 
 function toAutomationTender(item) {
   return {
@@ -182,33 +168,17 @@ function toAutomationTender(item) {
 }
 
 async function loadAutomationStatus() {
-  try { return JSON.parse(await readFile(automationFile, "utf8")); }
-  catch {
-    return {
-      online: false,
-      configured: true,
-      state: "waiting",
-      message: "لم يتم اختبار ربط n8n بعد",
-      webhookTarget: "n8n محلي",
-    };
-  }
+  return repository.loadState("automation-status", {
+    online: false,
+    configured: true,
+    state: "waiting",
+    message: "لم يتم اختبار ربط n8n بعد",
+    webhookTarget: "n8n محلي",
+  });
 }
 
 async function saveAutomationStatus(status) {
-  await ensurePrivateDir();
-  const temporary = `${automationFile}.tmp`;
-  await writeFile(temporary, JSON.stringify(status, null, 2), "utf8");
-  await rename(temporary, automationFile);
-  if (status.lastSuccessAt && !status.dryRun) {
-    const historyLine = JSON.stringify({
-      recordedAt: status.lastSuccessAt,
-      syncId: status.syncId,
-      state: status.state,
-      counts: status.counts,
-      message: status.message,
-    });
-    await appendFile(automationHistoryFile, `${historyLine}\n`, "utf8");
-  }
+  repository.recordAutomationStatus(status);
 }
 
 async function notifyN8n(result, { dryRun = false } = {}) {
@@ -272,49 +242,54 @@ async function performSync() {
   state = { phase: "starting", region: null, checked: 0, message: "فتح جلسة اعتماد" };
   const page = await getEtimadPage();
   await assertSignedIn(page);
-  const appearances = [];
-  let checked = 0;
-  for (const regionId of Object.keys(regionNames)) {
-    state = { phase: "scanning", region: regionNames[regionId], checked, message: `فحص ${regionNames[regionId]}` };
-    const free = await scanBucket(page, regionId, "0", 100);
-    const paidRaw = await scanBucket(page, regionId, "1", Math.max(0, 100 - free.length));
-    checked += free.length + paidRaw.length;
-    const eligible = [...free, ...paidRaw.filter((item) => item.fee !== null && item.fee <= 600)];
-    for (const item of eligible) appearances.push({ ...item, regionName: regionNames[regionId] });
-  }
+  const syncRunId = repository.startSyncRun({ regions: 13, targetPerRegion: 100 });
+  try {
+    const appearances = [];
+    let checked = 0;
+    for (const regionId of Object.keys(regionNames)) {
+      state = { phase: "scanning", region: regionNames[regionId], checked, message: `فحص ${regionNames[regionId]}` };
+      const free = await scanBucket(page, regionId, "0", 100);
+      const paidRaw = await scanBucket(page, regionId, "1", Math.max(0, 100 - free.length));
+      checked += free.length + paidRaw.length;
+      const eligible = [...free, ...paidRaw.filter((item) => item.fee !== null && item.fee <= 600)];
+      for (const item of eligible) appearances.push({ ...item, regionName: regionNames[regionId] });
+    }
 
-  const unique = new Map();
-  for (const item of appearances) {
-    if (!unique.has(item.reference)) unique.set(item.reference, { ...item, regions: [] });
-    unique.get(item.reference).regions.push(item.regionName);
-  }
-  const items = [...unique.values()].map((item) => ({
-    id: item.reference,
-    reference: item.reference,
-    title: item.title,
-    agency: item.agency,
-    fee: item.fee ?? 0,
-    region: item.regions.length > 1 ? `متعدد المناطق: ${item.regions.join("، ")}` : item.regions[0],
-    deadline: item.deadline,
-    publishedAt: item.publishedAt,
-    status: "جديدة",
-    documents: "لم تُفتح",
-    score: suitability(item),
-    platformStatus: "المنافسات النشطة (تقديم العروض)",
-    activity: "المقاولات",
-    etimadUrl: new URL(item.href, "https://tenders.etimad.sa").toString(),
-  }));
+    const unique = new Map();
+    for (const item of appearances) {
+      if (!unique.has(item.reference)) unique.set(item.reference, { ...item, regions: [] });
+      unique.get(item.reference).regions.push(item.regionName);
+    }
+    const items = [...unique.values()].map((item) => ({
+      id: item.reference,
+      reference: item.reference,
+      title: item.title,
+      agency: item.agency,
+      fee: item.fee ?? 0,
+      region: item.regions.length > 1 ? `متعدد المناطق: ${item.regions.join("، ")}` : item.regions[0],
+      deadline: item.deadline,
+      publishedAt: item.publishedAt,
+      status: "جديدة",
+      documents: "لم تُفتح",
+      score: suitability(item),
+      platformStatus: "المنافسات النشطة (تقديم العروض)",
+      activity: "المقاولات",
+      etimadUrl: new URL(item.href, "https://tenders.etimad.sa").toString(),
+    }));
 
-  const previous = await loadPrevious();
-  const previousMap = new Map(previous.items.map((item) => [item.id, item]));
-  const added = items.filter((item) => !previousMap.has(item.id));
-  const changed = items.filter((item) => previousMap.get(item.id)?.title && comparable(item) !== comparable(previousMap.get(item.id)));
-  const result = { lastSyncAt: new Date().toISOString(), checked, regions: 13, targetPerRegion: 100, added, changed, items };
-  await saveResult(result);
-  result.automation = await notifyN8n(result);
-  await saveResult(result);
-  state = { phase: "complete", region: null, checked, message: `اكتملت المزامنة: ${added.length} جديدة و${changed.length} متغيرة` };
-  return result;
+    const previousItems = repository.loadComparisonItems();
+    const previousMap = new Map(previousItems.map((item) => [item.id, item]));
+    const added = items.filter((item) => !previousMap.has(item.id));
+    const changed = items.filter((item) => previousMap.get(item.id)?.title && comparable(item) !== comparable(previousMap.get(item.id)));
+    const result = { lastSyncAt: new Date().toISOString(), checked, regions: 13, targetPerRegion: 100, added, changed, items };
+    repository.saveCompletedSync(result, syncRunId);
+    result.automation = await notifyN8n(result);
+    state = { phase: "complete", region: null, checked, message: `اكتملت المزامنة: ${added.length} جديدة و${changed.length} متغيرة` };
+    return result;
+  } catch (error) {
+    repository.failSyncRun(syncRunId, error);
+    throw error;
+  }
 }
 
 function send(response, status, payload) {
@@ -331,11 +306,12 @@ function send(response, status, payload) {
 const server = http.createServer(async (request, response) => {
   if (request.method === "OPTIONS") return send(response, 204, {});
   try {
-    if (request.method === "GET" && request.url === "/health") return send(response, 200, { online: true, browserOpen: Boolean(browserContext), state });
+    if (request.method === "GET" && request.url === "/health") return send(response, 200, { online: true, browserOpen: Boolean(browserContext), state, database: { online: true, schemaVersion: repository.schemaVersion } });
     if (request.method === "GET" && request.url === "/status") return send(response, 200, state);
+    if (request.method === "GET" && request.url === "/tenders") return send(response, 200, repository.getDashboardSnapshot());
     if (request.method === "GET" && request.url === "/automation/status") return send(response, 200, await loadAutomationStatus());
     if (request.method === "POST" && request.url === "/automation/test") {
-      const previous = await loadPrevious();
+      const previous = repository.getDashboardSnapshot();
       const result = {
         lastSyncAt: previous.lastSyncAt || new Date().toISOString(),
         checked: previous.checked || previous.items.length,
@@ -369,6 +345,7 @@ server.listen(port, "127.0.0.1", () => console.log(`Etimad sync service: http://
 
 async function shutdown() {
   await browserContext?.close().catch(() => {});
+  repository.close();
   server.close(() => process.exit(0));
 }
 process.on("SIGINT", shutdown);

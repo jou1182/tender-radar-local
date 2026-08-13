@@ -1,7 +1,7 @@
 "use client";
 
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
-import { syncedTenders } from "./synced-tenders";
+import { demoTenders } from "./demo-tenders";
 
 type TenderStatus = "جديدة" | "قيد المراجعة" | "مناسبة" | "مستبعدة";
 type DocumentStatus = "لم تُفتح" | "الكراسة" | "الكراسة + الكميات" | "مكتملة";
@@ -47,35 +47,14 @@ type FeeMode = "all" | "free" | "exact" | "range" | "etimad";
 type SortMode = "crowding" | "score" | "deadline" | "fee-asc" | "fee-desc";
 
 const initialReview: Review = { scopeFit: "غير مقيم", classification: "غير مقيم", guarantee: "غير معروف", specialTerms: "لم تُراجع", notes: "" };
-const seedTenders: Tender[] = [
-  ...syncedTenders,
-  { id: "260839003218", title: "توريد وتركيب ساتر لحجب الرؤية لموقع المطار", agency: "قوات الدفاع الجوي", reference: "260839003218", fee: 200, region: "منطقة الرياض", deadline: "2026-08-17 09:59", status: "جديدة", documents: "لم تُفتح", score: 72, platformStatus: "المنافسات النشطة (تقديم العروض)", activity: "المقاولات", tenderType: "شراء مباشر", publishedAt: "2026-08-11", contractDuration: "1 شهر", guarantee: "لا يوجد ضمان", etimadUrl: "https://tenders.etimad.sa/Tender/Details?STenderId=3iw9HAT7ijwH0cHWeT61DQ==" },
-  { id: "260839002291", title: "إعادة تأهيل مخارج الطوارئ لمبنى فرع الوزارة بالمنطقة الشرقية", agency: "وزارة الشؤون الإسلامية والدعوة والإرشاد", reference: "260839002291", fee: 500, region: "المنطقة الشرقية", deadline: "2026-08-26 09:59", status: "جديدة", documents: "لم تُفتح", score: 86, platformStatus: "المنافسات النشطة (تقديم العروض)", activity: "المقاولات", subActivity: "مقاولات الإنشاءات العامة (التشييد وبناء المرافق العامة) - إنشاءات عامة", tenderType: "منافسة عامة", publishedAt: "2026-08-10", contractDuration: "90 يوم", guarantee: "ضمان ابتدائي", quantitySummary: "المواد - إنشاءات عامة", remoteAttachments: ["طريقة تنفيذ الأعمال.PDF", "معايير تقييم العروض.PDF", "المشاريع السابقة.PDF", "خطاب تقديم العروض.PDF", "المواصفات الفنية.PDF", "زيارة الموقع.PDF", "ملحق الغرامات.PDF", "معايير التأهيل.PDF", "إقرار المنتج الوطني.PDF", "الأسئلة والاستفسارات.PDF", "الأمن السيبراني.PDF", "شروط الحد الأدنى للمحتوى المحلي.PDF"], etimadUrl: "https://tenders.etimad.sa/Tender/Details?STenderId=bv0PEAdXLymw%20rl6ICuTzg==" },
-  { id: "260839001543", title: "فك ونقل وتركيب مظلات مواقف السيارات داخل المدينة الجامعية", agency: "جامعة تبوك", reference: "260839001543", fee: 200, region: "منطقة تبوك", deadline: "2026-08-14 09:59", status: "جديدة", documents: "لم تُفتح", score: 79, platformStatus: "المنافسات النشطة (تقديم العروض)", activity: "المقاولات", tenderType: "شراء مباشر", publishedAt: "2026-08-10", contractDuration: "2 شهر", guarantee: "لا يوجد ضمان", etimadUrl: "https://tenders.etimad.sa/Tender/Details?STenderId=WAo5eMw6AAp7JDZ*@@**1AzEJg==" },
-  { id: "260839002917", title: "توريد وتركيب متطلبات واحتياجات بمنطقة المدينة المنورة", agency: "المديرية العامة لحرس الحدود", reference: "260839002917", fee: 200, region: "منطقة المدينة المنورة", deadline: "2026-08-14 09:59", status: "جديدة", documents: "لم تُفتح", score: 67, platformStatus: "المنافسات النشطة (تقديم العروض)", activity: "المقاولات", tenderType: "شراء مباشر", publishedAt: "2026-08-10", contractDuration: "60 يوم", guarantee: "لا يوجد ضمان", etimadUrl: "https://tenders.etimad.sa/Tender/Details?STenderId=lscdap0jLwN1nMR*@@**VPoMgw==" },
-  { id: "260739002979", title: "أعمال تأسيس منافذ لشواحن السيارات الكهربائية تعمل بنظام الطاقة الشمسية", agency: "القوات الخاصة للأمن والحماية", reference: "260739002979", fee: 200, region: "منطقة الرياض", deadline: "2026-08-26 09:59", status: "جديدة", documents: "لم تُفتح", score: 82, platformStatus: "المنافسات النشطة (تقديم العروض)", activity: "المقاولات", tenderType: "شراء مباشر", publishedAt: "2026-08-10", contractDuration: "2 شهر", guarantee: "لا يوجد ضمان", remoteAttachments: ["ملحق الغرامات.PDF", "نموذج الأسئلة والاستفسارات.PDF", "معايير التقييم.PDF", "القائمة الإلزامية للجهات الحكومية.PDF", "خطاب تقديم العروض.PDF", "نموذج عدم إفشاء السرية.ZIP", "الشروط الخاصة.PDF"], etimadUrl: "https://tenders.etimad.sa/Tender/Details?STenderId=XcGa6Qyiw5T2*@@**OvCFQkLdg==" },
-  { id: "260739008032", title: "ترميم وتهيئة أحد المواقع بمنطقة المدينة المنورة", agency: "المباحث العامة", reference: "260739008032", fee: 500, region: "منطقة المدينة المنورة", deadline: "2026-08-26 09:59", status: "جديدة", documents: "لم تُفتح", score: 84, platformStatus: "المنافسات النشطة (تقديم العروض)", activity: "المقاولات", tenderType: "منافسة عامة", publishedAt: "2026-08-10", contractDuration: "180 يوم", guarantee: "ضمان ابتدائي", quantitySummary: "المواد - إنشاءات عامة", remoteAttachments: ["تقييم العروض الفنية.PDF", "مرفقات المنصة.ZIP"], etimadUrl: "https://tenders.etimad.sa/Tender/Details?STenderId=KODZlohgAIsBOK3fm*@@**BGog==" },
-  { id: "260839003516", title: "أعمال تأمين وتوريد مواد سباكة وكهرباء لمباني الدفاع المدني ببريدة", agency: "إدارة الشؤون الفنية المركزية بمنطقة القصيم", reference: "260839003516", fee: 200, region: "القصيم", deadline: "2026-08-14 09:59", status: "جديدة", documents: "لم تُفتح", score: 88 },
-  { id: "260839003167", title: "توريد وتركيب إطارات لسيارة قاضي الاستئناف بمنطقة القصيم", agency: "وزارة العدل - الديوان العام", reference: "260839003167", fee: 200, region: "القصيم", deadline: "2026-08-15 09:59", status: "جديدة", documents: "لم تُفتح", score: 48 },
-  { id: "260839002524", title: "توريد وتركيب قطع غيار سيارات للمحكمة العمالية بالقصيم", agency: "وزارة العدل - الديوان العام", reference: "260839002524", fee: 200, region: "القصيم", deadline: "2026-08-14 09:59", status: "جديدة", documents: "لم تُفتح", score: 52 },
-  { id: "260839002527", title: "إحلال خمسة خزانات مياه في مجمع المحاكم ببريدة", agency: "وزارة العدل - الديوان العام", reference: "260839002527", fee: 200, region: "بريدة - القصيم", deadline: "2026-08-14 09:59", status: "قيد المراجعة", documents: "الكراسة", score: 91 },
-  { id: "260839001327", title: "توريد عاجل لاختبار الحمل لمستشفى القصيم", agency: "الشؤون الصحية بوزارة الحرس الوطني", reference: "260839001327", fee: 200, region: "القصيم", deadline: "2026-08-12 09:59", status: "مستبعدة", documents: "لم تُفتح", score: 15 },
-  { id: "260839002065", title: "تأمين فلاتر ومساحات لغرفة الإمداد", agency: "إدارة الشؤون الفنية المركزية بمنطقة القصيم", reference: "260839002065", fee: 200, region: "القصيم", deadline: "2026-08-12 09:59", status: "جديدة", documents: "لم تُفتح", score: 58 },
-  { id: "260739009633", title: "إصلاح واجهات مباني هيئة الرقابة ومكافحة الفساد ويشمل القصيم", agency: "هيئة الرقابة ومكافحة الفساد", reference: "260739009633", fee: 200, region: "متعدد المناطق - يشمل القصيم", deadline: "2026-08-16 14:00", status: "قيد المراجعة", documents: "الكراسة", score: 78 },
-  { id: "260739010377", title: "إقامة نشاط رياضي وثقافي وألعاب إلكترونية نسائية", agency: "مستشفى القوات المسلحة بالقصيم", reference: "260739010377", fee: 200, region: "القصيم", deadline: "2026-08-14 09:59", status: "مستبعدة", documents: "لم تُفتح", score: 22 },
-  { id: "260739009008", title: "توريد أحذية سلامة وخوذة وجاكيت", agency: "مستشفى القوات المسلحة بالقصيم", reference: "260739009008", fee: 200, region: "القصيم", deadline: "2026-08-14 09:59", status: "جديدة", documents: "لم تُفتح", score: 67 },
-  { id: "260739010040", title: "تجديد رخصة النظام المالي والإداري", agency: "مستشفى القوات المسلحة بالقصيم", reference: "260739010040", fee: 200, region: "القصيم", deadline: "2026-08-14 09:59", status: "مستبعدة", documents: "لم تُفتح", score: 18 },
-  { id: "260739010034", title: "رخصة سويتش سيسكو مع التركيب", agency: "مستشفى القوات المسلحة بالقصيم", reference: "260739010034", fee: 200, region: "القصيم", deadline: "2026-08-14 09:59", status: "مستبعدة", documents: "لم تُفتح", score: 24 },
-  { id: "260839010028", title: "تجديد رخصة البوابة الداخلية", agency: "مستشفى القوات المسلحة بالقصيم", reference: "260839010028", fee: 200, region: "القصيم", deadline: "2026-08-14 09:59", status: "مستبعدة", documents: "لم تُفتح", score: 20 },
-  { id: "260839009003", title: "استئجار احتياجات إقامة فعاليات", agency: "مستشفى القوات المسلحة بالقصيم", reference: "260839009003", fee: 200, region: "القصيم", deadline: "2026-08-12 09:59", status: "مستبعدة", documents: "لم تُفتح", score: 28 },
-];
+const demoData = demoTenders.map((tender) => ({ ...tender })) as Tender[];
 const statusTone: Record<TenderStatus, string> = { "جديدة": "new", "قيد المراجعة": "review", "مناسبة": "fit", "مستبعدة": "out" };
 const fileLabels: Record<FileKind, string> = { booklet: "كراسة الشروط والمواصفات", boq: "جدول الكميات", conditions: "الشروط الخاصة والملاحق", penalties: "الغرامات والجزاءات", localContent: "التفضيل السعري والمحتوى المحلي", evaluation: "معايير التقييم والتأهيل", supporting: "ملفات داعمة أخرى" };
 const fileDescriptions: Record<FileKind, string> = { booklet: "الكراسة الرئيسية وملاحق المنافسة", boq: "ملف Excel أو PDF لبنود وكميات المشروع", conditions: "الشروط الخاصة وأي نماذج ملحقة", penalties: "ملف الغرامات والجزاءات المطبق", localContent: "المنتج الوطني ونسب المحتوى المحلي", evaluation: "معايير العروض والتأهيل الفني والمالي", supporting: "أي ملف PDF إضافي ظاهر في اعتماد" };
 const fileKinds: FileKind[] = ["booklet", "boq", "penalties", "localContent", "evaluation", "conditions", "supporting"];
 const detailTabs = ["المعلومات الأساسية", "العناوين والمواعيد", "التصنيف والتنفيذ", "جدول الكميات", "المرفقات", "معايير التقييم", "المحتوى المحلي"] as const;
 type DetailTab = typeof detailTabs[number];
-type SyncMeta = { lastSyncAt: string; checked: number; newItems: number; regions: number; targetPerRegion: number; requestedAt?: string };
+type SyncMeta = { lastSyncAt: string | null; checked: number; newItems: number; regions: number; targetPerRegion: number; requestedAt?: string };
 type AutomationStatus = {
   online: boolean;
   configured: boolean;
@@ -90,7 +69,7 @@ type AutomationStatus = {
 };
 type LocalSyncResult = { lastSyncAt: string; checked: number; regions: number; targetPerRegion: number; added: Tender[]; changed: Tender[]; items: Tender[]; automation?: AutomationStatus };
 const syncServiceUrl = "http://127.0.0.1:4318";
-const defaultSyncMeta: SyncMeta = { lastSyncAt: "2026-08-12T00:59:33+03:00", checked: 182, newItems: 27, regions: 13, targetPerRegion: 100 };
+const defaultSyncMeta: SyncMeta = { lastSyncAt: null, checked: 0, newItems: 0, regions: 0, targetPerRegion: 100 };
 const defaultAutomation: AutomationStatus = { online: false, configured: true, state: "waiting", message: "بانتظار اختبار ربط n8n المحلي" };
 const finalRanking = [
   { id: "260739002979", reason: "أفضل توازن بين الوقت المتاح، عدم وجود ضمان، ووضوح الملفات الداعمة.", scope: "أعمال كهربائية وطاقة شمسية لشواحن المركبات", files: "7 مرفقات ظاهرة" },
@@ -196,7 +175,8 @@ function RadarLoader({ overlay = false }: { overlay?: boolean }) {
 }
 
 export default function Home() {
-  const [tenders, setTenders] = useState<Tender[]>(seedTenders);
+  const [tenders, setTenders] = useState<Tender[]>([]);
+  const [dataMode, setDataMode] = useState<"live" | "demo">("live");
   const [regions, setRegions] = useState<string[]>([]);
   const [tenderStatus, setTenderStatus] = useState("المنافسات النشطة (تقديم العروض)");
   const [activity, setActivity] = useState("المقاولات");
@@ -215,7 +195,7 @@ export default function Home() {
   const [deadlineTo, setDeadlineTo] = useState("");
   const [sortMode, setSortMode] = useState<SortMode>("crowding");
   const [searchSaved, setSearchSaved] = useState(false);
-  const [selectedId, setSelectedId] = useState(seedTenders[0].id);
+  const [selectedId, setSelectedId] = useState("");
   const [activeDetailTab, setActiveDetailTab] = useState<DetailTab>("المعلومات الأساسية");
   const [openingFile, setOpeningFile] = useState<FileKind | null>(null);
   const [sessionStartedAt, setSessionStartedAt] = useState<number | null>(null);
@@ -223,53 +203,36 @@ export default function Home() {
   const [copied, setCopied] = useState(false);
   const [isBooting, setIsBooting] = useState(true);
   const [syncMeta, setSyncMeta] = useState<SyncMeta>(defaultSyncMeta);
-  const [syncState, setSyncState] = useState<"fresh" | "stale" | "pending">("fresh");
+  const [syncState, setSyncState] = useState<"fresh" | "stale" | "pending">("stale");
   const [helperOnline, setHelperOnline] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState("الخدمة المحلية جاهزة للتحقق");
-  const [autoSyncTried, setAutoSyncTried] = useState(false);
   const [automation, setAutomation] = useState<AutomationStatus>(defaultAutomation);
   const [isTestingAutomation, setIsTestingAutomation] = useState(false);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem("tender-radar-v3");
-    if (saved) try {
-      const local = JSON.parse(saved) as Tender[];
-      const localById = new Map(local.map((tender) => [tender.id, tender]));
-      const correctedRegions: Record<string, string> = { "260839003218": "منطقة الرياض", "260739002979": "منطقة الرياض" };
-      const merged = seedTenders.map((seed) => {
-        const localTender = localById.get(seed.id);
-        return { ...seed, ...(localTender ?? {}), region: correctedRegions[seed.id] ?? localTender?.region ?? seed.region };
-      });
-      const seedIds = new Set(seedTenders.map((tender) => tender.id));
-      setTenders([...merged, ...local.filter((tender) => !seedIds.has(tender.id))]);
-    } catch { window.localStorage.removeItem("tender-radar-v3"); }
-  }, []);
-  useEffect(() => {
-    const saved = window.localStorage.getItem("tender-radar-sync-v1");
-    let meta = defaultSyncMeta;
-    if (saved) try {
-      const stored = JSON.parse(saved) as SyncMeta;
-      meta = new Date(stored.lastSyncAt).getTime() > new Date(defaultSyncMeta.lastSyncAt).getTime() ? { ...defaultSyncMeta, ...stored } : defaultSyncMeta;
-    } catch { window.localStorage.removeItem("tender-radar-sync-v1"); }
-    window.localStorage.setItem("tender-radar-sync-v1", JSON.stringify(meta));
-    setSyncMeta(meta);
-    const ageHours = (Date.now() - new Date(meta.lastSyncAt).getTime()) / 3_600_000;
-    setSyncState(ageHours > 4 ? "stale" : "fresh");
+    window.localStorage.removeItem("tender-radar-v3");
+    window.localStorage.removeItem("tender-radar-sync-v1");
     window.localStorage.setItem("tender-radar-last-open", new Date().toISOString());
     const bootTimer = window.setTimeout(() => setIsBooting(false), 1200);
     return () => window.clearTimeout(bootTimer);
   }, []);
-  useEffect(() => { window.localStorage.setItem("tender-radar-v3", JSON.stringify(tenders)); }, [tenders]);
   useEffect(() => {
-    fetch(`${syncServiceUrl}/health`).then((response) => response.ok ? response.json() : Promise.reject()).then(() => {
-      setHelperOnline(true); setSyncMessage("خدمة المزامنة المحلية متصلة");
-    }).catch(() => { setHelperOnline(false); setSyncMessage("شغّل الرادار من ملف تشغيل-الرادار.cmd لتفعيل المزامنة المستقلة"); });
+    fetch(`${syncServiceUrl}/health`).then((response) => response.ok ? response.json() : Promise.reject()).then(async () => {
+      setHelperOnline(true); setSyncMessage("خدمة المزامنة المحلية وقاعدة SQLite متصلتان");
+      const response = await fetch(`${syncServiceUrl}/tenders`);
+      if (!response.ok) throw new Error("تعذر قراءة قاعدة المنافسات المحلية");
+      const snapshot = await response.json() as SyncMeta & { items: Tender[] };
+      setDataMode("live");
+      setTenders(snapshot.items);
+      setSelectedId(snapshot.items[0]?.id ?? "");
+      const databaseMeta: SyncMeta = { lastSyncAt: snapshot.lastSyncAt, checked: snapshot.checked, newItems: snapshot.newItems, regions: snapshot.regions, targetPerRegion: snapshot.targetPerRegion };
+      setSyncMeta(databaseMeta);
+      const ageHours = snapshot.lastSyncAt ? (Date.now() - new Date(snapshot.lastSyncAt).getTime()) / 3_600_000 : Number.POSITIVE_INFINITY;
+      setSyncState(ageHours > 4 ? "stale" : "fresh");
+    }).catch(() => { setHelperOnline(false); setSyncMessage("شغّل الرادار من ملف تشغيل-الرادار.cmd لتفعيل SQLite والمزامنة المستقلة"); });
     fetch(`${syncServiceUrl}/automation/status`).then((response) => response.ok ? response.json() : Promise.reject()).then((status: AutomationStatus) => setAutomation(status)).catch(() => setAutomation(defaultAutomation));
   }, []);
-  useEffect(() => {
-    if (helperOnline && syncState === "stale" && !autoSyncTried) { setAutoSyncTried(true); void requestSync(true); }
-  }, [helperOnline, syncState, autoSyncTried]);
   useEffect(() => {
     if (!sessionStartedAt) return;
     const update = () => setRemainingMinutes(Math.max(0, Math.ceil((4 * 60_000 - (Date.now() - sessionStartedAt)) / 60_000)));
@@ -306,8 +269,8 @@ export default function Home() {
     return rows.sort((a, b) => sortMode === "crowding" ? getCrowdingSignal(a).score - getCrowdingSignal(b).score || b.score - a.score : sortMode === "fee-asc" ? a.fee - b.fee : sortMode === "fee-desc" ? b.fee - a.fee : sortMode === "deadline" ? a.deadline.localeCompare(b.deadline) : b.score - a.score);
   }, [activity, agencyQuery, deadlineFrom, deadlineTo, etimadBand, exactFee, feeMode, maxFee, minFee, publishPeriod, query, referenceQuery, regions, sortMode, subActivity, tenderStatus, tenderType, tenders]);
   const selected = tenders.find((tender) => tender.id === selectedId) ?? tenders[0];
-  const assessment = getAssessment(selected);
-  const crowdingSignal = getCrowdingSignal(selected);
+  const assessment = selected ? getAssessment(selected) : null;
+  const crowdingSignal = selected ? getCrowdingSignal(selected) : null;
   const suitable = filtered.filter((tender) => tender.status === "مناسبة").length;
   const completed = filtered.filter((tender) => tender.files?.booklet && tender.files?.boq && tender.files?.conditions).length;
   const freeTenders = filtered.filter((tender) => tender.fee === 0).length;
@@ -316,6 +279,20 @@ export default function Home() {
   const finalists = finalRanking.map((rank) => ({ ...rank, tender: tenders.find((tender) => tender.id === rank.id) })).filter((item): item is typeof item & { tender: Tender } => Boolean(item.tender));
   const activeFilterCount = [query, referenceQuery, agencyQuery, regions.length ? "regions" : "", activity, subActivity, tenderType !== "الكل" ? tenderType : "", deadlineFrom, deadlineTo, feeMode !== "all" ? feeMode : ""].filter(Boolean).length;
   const updateTender = (id: string, patch: Partial<Tender>) => setTenders((current) => current.map((tender) => tender.id === id ? { ...tender, ...patch } : tender));
+
+  function showDemoData() {
+    const rows = demoData.map((tender) => ({ ...tender, remoteAttachments: tender.remoteAttachments ? [...tender.remoteAttachments] : undefined }));
+    setDataMode("demo"); setTenders(rows); setSelectedId(rows[0]?.id ?? "");
+  }
+
+  async function returnToLiveData() {
+    try {
+      const response = await fetch(`${syncServiceUrl}/tenders`);
+      if (!response.ok) throw new Error();
+      const snapshot = await response.json() as { items: Tender[] };
+      setDataMode("live"); setTenders(snapshot.items); setSelectedId(snapshot.items[0]?.id ?? "");
+    } catch { setSyncMessage("تعذر قراءة SQLite؛ تأكد أن خدمة الرادار تعمل"); }
+  }
 
   function addTender() {
     const id = Date.now().toString();
@@ -359,17 +336,11 @@ export default function Home() {
       const result = await response.json() as LocalSyncResult & { message?: string };
       if (!response.ok) throw new Error(result.message || "تعذر تنفيذ المزامنة");
       setHelperOnline(true);
-      setTenders((current) => {
-        const merged = new Map(current.map((tender) => [tender.id, tender]));
-        for (const incoming of result.items) {
-          const existing = merged.get(incoming.id);
-          merged.set(incoming.id, existing ? { ...existing, ...incoming, status: existing.status, documents: existing.documents, files: existing.files, review: existing.review } : incoming);
-        }
-        return [...merged.values()];
-      });
+      const storedResponse = await fetch(`${syncServiceUrl}/tenders`);
+      const stored = storedResponse.ok ? await storedResponse.json() as { items: Tender[] } : { items: result.items };
+      setDataMode("live"); setTenders(stored.items); setSelectedId((current) => stored.items.some((item) => item.id === current) ? current : stored.items[0]?.id ?? "");
       const completed: SyncMeta = { lastSyncAt: result.lastSyncAt, checked: result.checked, newItems: result.added.length, regions: result.regions, targetPerRegion: result.targetPerRegion };
       setSyncMeta(completed); setSyncState("fresh");
-      window.localStorage.setItem("tender-radar-sync-v1", JSON.stringify(completed));
       if (result.automation) setAutomation(result.automation);
       setSyncMessage(`اكتملت: ${result.added.length} جديدة و${result.changed.length} متغيرة، دون تنزيل ملفات${result.automation?.online ? " · تم تسجيلها في n8n" : ""}`);
     } catch (error) {
@@ -390,6 +361,7 @@ export default function Home() {
     } finally { setIsTestingAutomation(false); }
   }
   async function onFileChange(kind: FileKind, event: ChangeEvent<HTMLInputElement>) {
+    if (!selected) return;
     const file = event.target.files?.[0]; if (!file) return;
     await storeLocalFile(`${selected.id}:${kind}`, file);
     const files = { ...selected.files, [kind]: { name: file.name, size: file.size } };
@@ -397,6 +369,7 @@ export default function Home() {
     updateTender(selected.id, { files, documents: coreCount === 3 ? "مكتملة" : coreCount >= 2 ? "الكراسة + الكميات" : coreCount === 1 ? "الكراسة" : "لم تُفتح" });
   }
   async function openStoredFile(kind: FileKind) {
+    if (!selected) return;
     setOpeningFile(kind);
     try {
       const blob = await readLocalFile(`${selected.id}:${kind}`);
@@ -408,7 +381,7 @@ export default function Home() {
     setSelectedId(id); setActiveDetailTab("المعلومات الأساسية");
     window.requestAnimationFrame(() => document.getElementById("tender-detail")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
-  function updateReview<K extends keyof Review>(key: K, value: Review[K]) { updateTender(selected.id, { review: { ...(selected.review ?? initialReview), [key]: value } }); }
+  function updateReview<K extends keyof Review>(key: K, value: Review[K]) { if (selected) updateTender(selected.id, { review: { ...(selected.review ?? initialReview), [key]: value } }); }
   function exportExcelReady() {
     const headers = ["العنوان", "الجهة", "المرجع", "المنطقة", "قيمة الكراسة", "آخر موعد", "الحالة", "الكراسة", "الكميات", "الشروط الخاصة", "قرار مبدئي", "الملاحظات"];
     const rows = filtered.map((tender) => [tender.title, tender.agency, tender.reference, tender.region, tender.fee, tender.deadline, tender.status, tender.files?.booklet?.name ?? "غير مرفوعة", tender.files?.boq?.name ?? "غير مرفوع", tender.files?.conditions?.name ?? "غير مرفوعة", getAssessment(tender).decision, tender.review?.notes ?? ""]);
@@ -416,6 +389,7 @@ export default function Home() {
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" })); const link = document.createElement("a"); link.href = url; link.download = `رادار-المنافسات-${new Date().toISOString().slice(0, 10)}.csv`; link.click(); URL.revokeObjectURL(url);
   }
   function copyReport() {
+    if (!selected || !assessment) return;
     const report = `تقرير قرار مبدئي\nالمنافسة: ${selected.title}\nالمرجع: ${selected.reference}\nالقرار: ${assessment.decision}\nالوثائق الناقصة: ${assessment.missing.length ? assessment.missing.join("، ") : "لا يوجد"}\nالمخاطر: ${assessment.risks.length ? assessment.risks.join(" ") : "لا توجد ملاحظة حرجة مسجلة"}\nالخطوة التالية: ${assessment.next}\nملاحظات: ${selected.review?.notes || "—"}`;
     navigator.clipboard.writeText(report).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1600); });
   }
@@ -425,7 +399,7 @@ export default function Home() {
     <section className="hero"><div><p className="eyebrow">منصة قرار محلية · نطاق اعتماد الكامل</p><h1>رادار المنافسات</h1><p className="intro">ابحث بدقة، فرّق بين المجاني والمدفوع بأي قيمة، ثم حوّل كل فرصة إلى قرار واضح قبل الشراء أو التسعير أو التقديم.</p></div><div className="session-card"><span>جلسة عمل اعتماد</span>{sessionStartedAt ? <><strong>{remainingMinutes === 0 ? "سجّل الدخول مجددًا عند الحاجة" : `تنبيه بعد ${remainingMinutes} دقيقة`}</strong><button className="quiet" onClick={() => void openEtimadSession()}>إعادة فتح جلسة اعتماد</button></> : <><strong>{helperOnline ? "الخدمة المحلية متصلة" : "تحتاج تشغيل الرادار"}</strong><button onClick={() => void openEtimadSession()}>فتح جلسة اعتماد</button></>}<a className="etimad-link" href="https://tenders.etimad.sa/Tender/AllSuppliersTenders?PageNumber=1" target="_blank" rel="noreferrer">فتح اعتماد العادي</a><small>تسجيل الدخول يتم داخل اعتماد، ولا نخزّن اسم المستخدم أو كلمة المرور.</small></div></section>
     <section className="operation-center" aria-label="مركز تشغيل الرادار"><div><span className="ready-dot" /> <b>الرادار يعمل محليًا على هذا الجهاز</b><small>بياناتك تبقى محلية، ولا يتم حفظ كلمة مرور اعتماد.</small></div><ol><li><b>1</b> شغّل «تشغيل-الرادار.cmd».</li><li><b>2</b> افتح جلسة اعتماد وسجّل الدخول بنفسك.</li><li><b>3</b> اضغط «مزامنة الآن» دون الحاجة إلى كودكس.</li></ol><button type="button" onClick={() => void openEtimadSession()}>فتح جلسة اعتماد</button></section>
     <section className={`sync-center ${syncState}`} aria-label="مركز مزامنة اعتماد">
-      <div className="sync-heading"><div><p className="eyebrow">مركز المزامنة المستقلة</p><h2>زر واحد، بلا وسيط</h2><p>يتصل الرادار بخدمة محلية على جهازك، ويفحص آخر النتائج ويضيف الجديد ويحدّث المتغير منذ آخر مزامنة.</p></div><div className="sync-state"><span className="sync-pulse" /><b>{syncState === "fresh" ? "البيانات حديثة" : syncState === "pending" ? "المزامنة تعمل الآن" : "تحتاج مزامنة"}</b><small>آخر مزامنة: {new Date(syncMeta.lastSyncAt).toLocaleString("ar-SA", { dateStyle: "medium", timeStyle: "short" })}</small></div></div>
+      <div className="sync-heading"><div><p className="eyebrow">مركز المزامنة المستقلة</p><h2>زر واحد، بلا وسيط</h2><p>يتصل الرادار بخدمة محلية على جهازك، ويفحص آخر النتائج ويضيف الجديد ويحدّث المتغير منذ آخر مزامنة.</p></div><div className="sync-state"><span className="sync-pulse" /><b>{syncState === "fresh" ? "البيانات حديثة" : syncState === "pending" ? "المزامنة تعمل الآن" : "تحتاج مزامنة"}</b><small>{syncMeta.lastSyncAt ? `آخر مزامنة: ${new Date(syncMeta.lastSyncAt).toLocaleString("ar-SA", { dateStyle: "medium", timeStyle: "short" })}` : "لم تكتمل مزامنة حقيقية بعد"}</small></div></div>
       <div className="sync-stats"><article><strong>{syncMeta.regions}</strong><span>منطقة مستهدفة</span></article><article><strong>{syncMeta.targetPerRegion}</strong><span>منافسة كحد أقصى لكل منطقة</span></article><article><strong>{syncMeta.checked}</strong><span>نتيجة في آخر فحص متاح</span></article><article><strong>{syncMeta.newItems}</strong><span>فرص أُضيفت في آخر جلسة</span></article></div>
       <div className="sync-actions"><div><b><span className={`helper-dot ${helperOnline ? "online" : "offline"}`} /> {helperOnline ? "الخدمة المحلية متصلة" : "الخدمة المحلية غير متصلة"}</b><span>{syncMessage}</span></div><div className="sync-buttons"><button type="button" className="outline-button" onClick={() => void openEtimadSession()}>فتح جلسة اعتماد</button><button type="button" disabled={isSyncing} onClick={() => void requestSync()}>{isSyncing ? "جارٍ فحص المناطق..." : "مزامنة الآن"}</button></div></div>
     </section>
@@ -486,8 +460,10 @@ export default function Home() {
 
     <section className="workbench">
       <div className="section-head"><div><p className="eyebrow">قائمة العمل</p><h2>الفرص المطابقة للبحث</h2><p className="section-note">النتائج مرتبة وقابلة للتصدير حسب الفلاتر الحالية.</p></div><div className="actions"><select aria-label="ترتيب النتائج" value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)}><option value="crowding">الأقل تزاحمًا</option><option value="score">الأعلى ملاءمة</option><option value="deadline">الأقرب موعدًا</option><option value="fee-asc">الأقل سعرًا</option><option value="fee-desc">الأعلى سعرًا</option></select><button onClick={exportExcelReady}>تصدير النتائج لـ Excel</button></div></div>
-      <div className="table-wrap"><table><thead><tr><th>المنافسة</th><th>المنطقة</th><th>الكراسة</th><th>إتاحة الكراسة</th><th>الموعد</th><th>التزاحم المتوقع</th><th>الوثائق</th><th>الحالة</th><th>الملاءمة</th></tr></thead><tbody>{filtered.map((tender) => <tr className={tender.id === selected.id ? "selected-row" : ""} key={tender.id} onClick={() => openTender(tender.id)}><td>{priorityRanks.has(tender.id) && <span className="priority-rank">أفضل {priorityRanks.get(tender.id)}</span>}<strong>{tender.title}</strong><small>{tender.agency} · {tender.reference}</small></td><td>{tender.region}</td><td><b className="fee-value">{tender.fee === 0 ? "مجانية" : `${tender.fee.toLocaleString('ar-SA')} ر.س`}</b></td><td>{tender.fee === 0 ? <span className="free-badge">مجانية</span> : <span className="approval-badge">تحتاج موافقة</span>}</td><td>{tender.deadline}</td><td><span className={`crowding-badge ${getCrowdingSignal(tender).level === "منخفض" ? "low" : getCrowdingSignal(tender).level === "متوسط" ? "medium" : "high"}`}>{getCrowdingSignal(tender).level}</span><small>{getCrowdingSignal(tender).score}/100 تقديري</small></td><td><select aria-label={`وثائق ${tender.title}`} value={tender.documents} onClick={(event) => event.stopPropagation()} onChange={(event) => updateTender(tender.id, { documents: event.target.value as DocumentStatus })}><option>لم تُفتح</option><option>الكراسة</option><option>الكراسة + الكميات</option><option>مكتملة</option></select></td><td><select className={statusTone[tender.status]} aria-label={`حالة ${tender.title}`} value={tender.status} onClick={(event) => event.stopPropagation()} onChange={(event) => updateTender(tender.id, { status: event.target.value as TenderStatus })}><option>جديدة</option><option>قيد المراجعة</option><option>مناسبة</option><option>مستبعدة</option></select></td><td><span className="score">{tender.score}/100</span></td></tr>)}{filtered.length === 0 && <tr><td colSpan={9} className="empty"><b>لا توجد نتائج بهذه المعايير.</b><span>جرّب «كل الأسعار»، أو امسح تحديد المناطق، أو وسّع نطاق قيمة الكراسة.</span><button type="button" onClick={resetSearch}>مسح الفلاتر</button></td></tr>}</tbody></table></div>
+      <div className={`data-source-notice ${dataMode}`}><div><b>{dataMode === "live" ? "بيانات تشغيل حقيقية من SQLite" : "وضع عرض تجريبي — ليست بيانات اعتماد"}</b><span>{dataMode === "live" ? "لا تختلط أمثلة الواجهة بالمنافسات التي تحفظها المزامنة." : "هذه السجلات الثلاثة اصطناعية لاختبار شكل الواجهة فقط."}</span></div>{dataMode === "live" ? <button type="button" onClick={showDemoData}>عرض بيانات تجريبية</button> : <button type="button" onClick={() => void returnToLiveData()}>العودة إلى SQLite</button>}</div>
+      <div className="table-wrap"><table><thead><tr><th>المنافسة</th><th>المنطقة</th><th>الكراسة</th><th>إتاحة الكراسة</th><th>الموعد</th><th>التزاحم المتوقع</th><th>الوثائق</th><th>الحالة</th><th>الملاءمة</th></tr></thead><tbody>{filtered.map((tender) => <tr className={tender.id === selected?.id ? "selected-row" : ""} key={tender.id} onClick={() => openTender(tender.id)}><td>{priorityRanks.has(tender.id) && <span className="priority-rank">أفضل {priorityRanks.get(tender.id)}</span>}<strong>{tender.title}</strong><small>{tender.agency} · {tender.reference}</small></td><td>{tender.region}</td><td><b className="fee-value">{tender.fee === 0 ? "مجانية" : `${tender.fee.toLocaleString('ar-SA')} ر.س`}</b></td><td>{tender.fee === 0 ? <span className="free-badge">مجانية</span> : <span className="approval-badge">تحتاج موافقة</span>}</td><td>{tender.deadline}</td><td><span className={`crowding-badge ${getCrowdingSignal(tender).level === "منخفض" ? "low" : getCrowdingSignal(tender).level === "متوسط" ? "medium" : "high"}`}>{getCrowdingSignal(tender).level}</span><small>{getCrowdingSignal(tender).score}/100 تقديري</small></td><td><select aria-label={`وثائق ${tender.title}`} value={tender.documents} onClick={(event) => event.stopPropagation()} onChange={(event) => updateTender(tender.id, { documents: event.target.value as DocumentStatus })}><option>لم تُفتح</option><option>الكراسة</option><option>الكراسة + الكميات</option><option>مكتملة</option></select></td><td><select className={statusTone[tender.status]} aria-label={`حالة ${tender.title}`} value={tender.status} onClick={(event) => event.stopPropagation()} onChange={(event) => updateTender(tender.id, { status: event.target.value as TenderStatus })}><option>جديدة</option><option>قيد المراجعة</option><option>مناسبة</option><option>مستبعدة</option></select></td><td><span className="score">{tender.score}/100</span></td></tr>)}{filtered.length === 0 && <tr><td colSpan={9} className="empty"><b>لا توجد نتائج بهذه المعايير.</b><span>جرّب «كل الأسعار»، أو امسح تحديد المناطق، أو وسّع نطاق قيمة الكراسة.</span><button type="button" onClick={resetSearch}>مسح الفلاتر</button></td></tr>}</tbody></table></div>
     </section>
+    {selected && assessment && crowdingSignal ? <>
     <section id="tender-detail" className="tender-detail-hub">
       <div className="detail-hero">
         <div><p className="eyebrow">مركز المنافسة الموحد</p><span className="detail-reference">{selected.reference}</span><h2>{selected.title}</h2><p>{selected.agency}</p></div>
@@ -515,6 +491,7 @@ export default function Home() {
       <div className="analysis-grid"><div className="document-panel"><p className="tender-label">{selected.reference}</p><h3>{selected.title}</h3><p className="muted">ارفع نسخة الملف الذي نزلته من اعتماد. يحتفظ الرادار باسم الملف وحالته محليًا، ثم أرفق نفس الملف هنا في المحادثة لتحليل محتواه.</p>{(["booklet", "boq", "conditions"] as FileKind[]).map((kind) => <label className="file-slot" key={kind}><span><b>{fileLabels[kind]}</b>{selected.files?.[kind] ? <small>{selected.files[kind]?.name} · {formatSize(selected.files[kind]?.size ?? 0)}</small> : <small>لم يُرفَع بعد</small>}</span><input type="file" accept=".pdf,.xlsx,.xls,.doc,.docx" onChange={(event) => onFileChange(kind, event)} /></label>)}<div className="file-note">المرفق في الرادار لا يرسل الملف إلى الإنترنت. لإجراء قراءة فعلية للكراسة، أرفقه لي في هذه المحادثة أيضًا.</div></div>
         <div className="review-panel"><h3>مراجعة أولية</h3><div className="review-grid"><label>مطابقة نطاق العمل<select value={(selected.review ?? initialReview).scopeFit} onChange={(event) => updateReview("scopeFit", event.target.value as Review["scopeFit"])}><option>غير مقيم</option><option>مطابق</option><option>بحاجة مراجعة</option><option>غير مطابق</option></select></label><label>التصنيف والأهلية<select value={(selected.review ?? initialReview).classification} onChange={(event) => updateReview("classification", event.target.value as Review["classification"])}><option>غير مقيم</option><option>مطابق</option><option>بحاجة مراجعة</option><option>غير مطابق</option></select></label><label>الضمان الابتدائي<select value={(selected.review ?? initialReview).guarantee} onChange={(event) => updateReview("guarantee", event.target.value as Review["guarantee"])}><option>غير معروف</option><option>لا يوجد</option><option>متاح</option><option>غير متاح</option></select></label><label>الشروط الخاصة<select value={(selected.review ?? initialReview).specialTerms} onChange={(event) => updateReview("specialTerms", event.target.value as Review["specialTerms"])}><option>لم تُراجع</option><option>تمت المراجعة</option><option>توجد ملاحظة حرجة</option></select></label></div><label className="notes">ملاحظاتك أو خلاصة الفحص<textarea placeholder="مثلًا: زيارة موقع إلزامية، تصنيف مطلوب، أو بند تسعير غير واضح." value={(selected.review ?? initialReview).notes} onChange={(event) => updateReview("notes", event.target.value)} /></label></div>
         <div className={`decision-card ${assessment.tone}`}><p>قرار الرادار المبدئي</p><h3>{assessment.decision}</h3><div><b>الوثائق الناقصة</b><span>{assessment.missing.length ? assessment.missing.join("، ") : "لا يوجد"}</span></div><div><b>المخاطر</b><span>{assessment.risks.length ? assessment.risks.join(" ") : "لا توجد ملاحظة حرجة مسجلة"}</span></div><div><b>الخطوة التالية</b><span>{assessment.next}</span></div><button onClick={copyReport}>{copied ? "تم نسخ التقرير" : "نسخ تقرير القرار"}</button></div></div></section>
+    </> : <section className="empty-database"><p className="eyebrow">قاعدة المنافسات</p><h2>لا توجد منافسات حقيقية محفوظة بعد</h2><p>شغّل الخدمة المحلية وابدأ أول مزامنة، أو افتح وضع العرض لتجربة شكل الرادار دون خلط الأمثلة ببيانات اعتماد.</p><div><button type="button" onClick={showDemoData}>عرض بيانات تجريبية</button><button type="button" className="outline-button" onClick={() => void openEtimadSession()}>فتح جلسة اعتماد</button></div></section>}
     <section className="flow"><div><p className="eyebrow">طريقة التشغيل اليومية</p><h2>جلسة واضحة، بلا تخمين</h2></div><ol><li><b>1</b><span>تسجّل دخولك أنت إلى اعتماد في Chrome، ثم تبدأ مؤقت الجلسة.</span></li><li><b>2</b><span>نبحث بالفلاتر ونضيف فقط الفرص التي تستحق المتابعة.</span></li><li><b>3</b><span>بعد موافقتك: نحمّل الكراسة والكميات، ثم ترفع الملفات هنا وفي المحادثة للتحليل.</span></li><li><b>4</b><span>نراجع تقرير القرار، ثم نصدر Excel قبل أي إجراء مالي أو تقديم عرض.</span></li></ol></section>
   </main>;
 }
