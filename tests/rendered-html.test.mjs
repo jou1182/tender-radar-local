@@ -49,5 +49,7 @@ test("keeps independent sync local, human-authenticated, and credential-free", a
   assert.match(plan, /targetPerRegion = 100/);
   assert.doesNotMatch(service, /password|username|otp/i);
   assert.match(launcher, /etimad-sync-service\.mjs/);
+  assert.match(launcher, /expectedServiceVersion/);
+  assert.match(service, /serviceVersion/);
   assert.match(ignore, /\.radar-data/);
 });

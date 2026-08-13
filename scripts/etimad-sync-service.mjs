@@ -20,6 +20,7 @@ const privateDir = path.join(projectRoot, ".radar-data");
 const baselineFile = path.join(projectRoot, "scripts", "sync-baseline.json");
 const listUrl = "https://tenders.etimad.sa/Tender/AllSuppliersTenders?PageNumber=1";
 const port = Number(process.env.RADAR_SYNC_PORT || 4318);
+const serviceVersion = "p1-checkpoints-cdp-2";
 const n8nWebhookUrl = process.env.N8N_RADAR_WEBHOOK_URL || "http://127.0.0.1:5678/webhook/radar-sync-5d354757-90d1-4dc3-b7f7-c93e4c50ecb1";
 const repository = await createRadarRepository({ projectRoot });
 const baselineIds = JSON.parse(await readFile(baselineFile, "utf8"));
@@ -403,6 +404,7 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "GET" && request.url === "/health") {
       return send(response, 200, {
         online: true,
+        serviceVersion,
         browser: chromeSession.status(),
         state,
         database: { online: true, schemaVersion: repository.schemaVersion },
