@@ -1,66 +1,87 @@
 import http from "node:http";
 import path from "node:path";
-import { mkdir, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { chromium } from "playwright-core";
 import { createRadarRepository } from "./lib/radar-repository.mjs";
+import { createRadarChromeSession } from "./lib/radar-chrome-session.mjs";
+import {
+  advanceCursor,
+  feeBuckets,
+  initialCursor,
+  mergeTenderAppearances,
+  normalizeCursor,
+  pageSize,
+  regions,
+  targetPerRegion,
+} from "./lib/sync-plan.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const privateDir = path.join(projectRoot, ".radar-data");
-const profileDir = path.join(privateDir, "etimad-chrome-profile");
 const baselineFile = path.join(projectRoot, "scripts", "sync-baseline.json");
-const chromePath = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 const listUrl = "https://tenders.etimad.sa/Tender/AllSuppliersTenders?PageNumber=1";
-const port = 4318;
+const port = Number(process.env.RADAR_SYNC_PORT || 4318);
 const n8nWebhookUrl = process.env.N8N_RADAR_WEBHOOK_URL || "http://127.0.0.1:5678/webhook/radar-sync-5d354757-90d1-4dc3-b7f7-c93e4c50ecb1";
-const regionNames = {
-  "1": "منطقة الرياض", "2": "منطقة مكة المكرمة", "3": "منطقة المدينة المنورة", "4": "منطقة القصيم",
-  "5": "المنطقة الشرقية", "6": "منطقة عسير", "7": "منطقة تبوك", "8": "منطقة حائل",
-  "9": "منطقة الحدود الشمالية", "10": "منطقة جازان", "11": "منطقة نجران", "12": "منطقة الباحة", "13": "منطقة الجوف",
-};
 const repository = await createRadarRepository({ projectRoot });
 const baselineIds = JSON.parse(await readFile(baselineFile, "utf8"));
 repository.seedBaseline(baselineIds);
+const chromeSession = createRadarChromeSession({ privateDir, startUrl: listUrl });
 
-let browserContext;
 let syncPromise;
-let state = { phase: "idle", region: null, checked: 0, message: "جاهز" };
+let state = { phase: "idle", region: null, checked: 0, message: "جاهز", progress: repository.getSyncProgress() };
 
 class LoginRequiredError extends Error {
-  constructor() { super("سجّل الدخول إلى اعتماد في نافذة الرادار ثم أعد المزامنة."); this.code = "LOGIN_REQUIRED"; }
-}
-
-async function ensurePrivateDir() { await mkdir(privateDir, { recursive: true }); }
-
-async function getContext() {
-  if (browserContext) return browserContext;
-  await ensurePrivateDir();
-  browserContext = await chromium.launchPersistentContext(profileDir, {
-    executablePath: chromePath,
-    headless: false,
-    viewport: null,
-    args: ["--start-maximized", "--disable-features=Translate"],
-  });
-  browserContext.on("close", () => { browserContext = undefined; });
-  return browserContext;
-}
-
-async function getEtimadPage({ navigate = true } = {}) {
-  const context = await getContext();
-  let page = context.pages().find((candidate) => candidate.url().includes("etimad.sa"));
-  if (!page) page = context.pages()[0] ?? await context.newPage();
-  if (navigate && !page.url().includes("tenders.etimad.sa/Tender/AllSuppliersTenders")) {
-    await page.goto(listUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
+  constructor(message = "سجّل الدخول إلى اعتماد في نافذة Chrome الخاصة بالرادار، ثم اضغط استئناف المزامنة.") {
+    super(message);
+    this.code = "LOGIN_REQUIRED";
   }
-  await page.bringToFront();
-  return page;
+}
+
+class HumanVerificationRequiredError extends Error {
+  constructor() {
+    super("اعتماد يطلب تحققًا بشريًا. أكمل CAPTCHA بنفسك في نافذة Chrome، ثم اضغط استئناف المزامنة؛ تم حفظ موضع الجولة.");
+    this.code = "CAPTCHA_REQUIRED";
+  }
+}
+
+async function assertEtimadAuthorized(page) {
+  await page.waitForTimeout(400);
+  const url = page.url();
+  if (url.includes("login.etimad.sa") || !url.includes("tenders.etimad.sa")) throw new LoginRequiredError();
+  const challenge = page.locator('iframe[src*="challenges.cloudflare.com"], .cf-turnstile, input[name="cf-turnstile-response"]');
+  const bodyText = await page.locator("body").innerText({ timeout: 5_000 }).catch(() => "");
+  if (await challenge.count() || /verify you are human|تحقق من أنك إنسان|التحقق من أنك إنسان/i.test(bodyText)) {
+    throw new HumanVerificationRequiredError();
+  }
+  return bodyText;
 }
 
 async function assertSignedIn(page) {
-  await page.waitForTimeout(600);
-  if (page.url().includes("login.etimad.sa") || !page.url().includes("tenders.etimad.sa")) throw new LoginRequiredError();
-  try { await page.locator("#TenderCategory").waitFor({ state: "attached", timeout: 12_000 }); }
-  catch { throw new LoginRequiredError(); }
+  const bodyText = await assertEtimadAuthorized(page);
+  try {
+    await page.locator("#TenderCategory").waitFor({ state: "attached", timeout: 12_000 });
+  } catch {
+    const latestText = await page.locator("body").innerText({ timeout: 3_000 }).catch(() => bodyText);
+    if (page.url().includes("login.etimad.sa") || /sign in|تسجيل الدخول|نفاذ/i.test(latestText)) throw new LoginRequiredError();
+    throw new LoginRequiredError("لم تظهر صفحة المنافسات المصرح بها. افتح اعتماد وتأكد من بقاء الجلسة، ثم استأنف.");
+  }
+}
+
+async function inspectTenderDetails(reference) {
+  const tender = repository.getTender(reference);
+  if (!tender?.etimadUrl) {
+    const error = new Error("المنافسة غير موجودة في قاعدة SQLite أو لا تملك رابط تفاصيل صالحًا.");
+    error.code = "TENDER_NOT_FOUND";
+    throw error;
+  }
+  const page = await chromeSession.getEtimadPage({ navigate: false });
+  await page.goto(tender.etimadUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
+  await assertEtimadAuthorized(page);
+  const names = await page.locator('a, button, [role="button"]').evaluateAll((elements) => elements
+    .filter((element) => element instanceof HTMLElement && element.offsetParent !== null)
+    .map((element) => (element.textContent || "").replace(/\s+/g, " ").trim())
+    .filter((text) => text && text.length <= 180 && (/\.pdf|\.xlsx?|\.docx?|كراسة|الغرامات|معايير العروض|المحتوى المحلي|نموذج/i.test(text))));
+  const attachmentNames = repository.saveVisibleAttachmentNames(reference, names);
+  return { reference, etimadUrl: tender.etimadUrl, attachmentNames, inspectedAt: new Date().toISOString(), downloaded: false };
 }
 
 async function revealSearch(page) {
@@ -77,10 +98,16 @@ async function revealSearch(page) {
 }
 
 async function waitForUrlParts(page, parts, timeout = 20_000) {
-  await page.waitForURL((url) => parts.every((part) => url.toString().includes(part)), { timeout });
+  try {
+    await page.waitForURL((url) => parts.every((part) => url.toString().includes(part)), { timeout });
+  } catch (error) {
+    await assertSignedIn(page);
+    throw error;
+  }
 }
 
 async function applyFilters(page, regionId, feeValue) {
+  await assertSignedIn(page);
   await revealSearch(page);
   await page.locator("#TenderCategory").selectOption("2", { force: true });
   await page.locator("#areaList").selectOption([regionId], { force: true });
@@ -89,13 +116,24 @@ async function applyFilters(page, regionId, feeValue) {
   const searchButton = page.locator("button:visible").filter({ hasText: "بحث" }).last();
   await searchButton.click();
   await waitForUrlParts(page, [`TenderAreasIdString=${regionId}`, `ConditionaBookletRange=${feeValue}`, "PageNumber=1"]);
-  await page.waitForTimeout(650);
-  const pageSize = page.locator("#itemsPerPage");
-  if (await pageSize.count() && await pageSize.inputValue() !== "24") {
-    await pageSize.selectOption("24");
-    await waitForUrlParts(page, ["PageSize=24", "PageNumber=1"]);
-    await page.waitForTimeout(650);
+  await page.waitForTimeout(500);
+  const pageSizeSelector = page.locator("#itemsPerPage");
+  if (await pageSizeSelector.count() && await pageSizeSelector.inputValue() !== String(pageSize)) {
+    await pageSizeSelector.selectOption(String(pageSize));
+    await waitForUrlParts(page, [`PageSize=${pageSize}`, "PageNumber=1"]);
+    await page.waitForTimeout(500);
   }
+  await assertSignedIn(page);
+}
+
+async function gotoPageNumber(page, pageNumber) {
+  if (pageNumber <= 1) return;
+  const url = new URL(page.url());
+  url.searchParams.set("PageNumber", String(pageNumber));
+  await page.goto(url.toString(), { waitUntil: "domcontentloaded", timeout: 30_000 });
+  await waitForUrlParts(page, [`PageNumber=${pageNumber}`]);
+  await page.waitForTimeout(500);
+  await assertSignedIn(page);
 }
 
 async function extractCards(page, regionId, feeBucket) {
@@ -117,28 +155,16 @@ async function extractCards(page, regionId, feeBucket) {
       href: link.getAttribute("href") || "",
       regionId: args.regionId,
     };
-  }).filter(Boolean), { regionId, feeBucket });
+  }).filter((item) => item?.reference), { regionId, feeBucket });
 }
 
-async function scanPages(page, regionId, feeBucket, limit) {
-  const collected = [];
-  for (let pageNumber = 1; pageNumber <= Math.ceil(limit / 24) && collected.length < limit; pageNumber += 1) {
-    const batch = await extractCards(page, regionId, feeBucket);
-    for (const item of batch) if (!collected.some((candidate) => candidate.reference === item.reference)) collected.push(item);
-    const navigation = page.locator('nav[aria-label="Page navigation"]');
-    const next = navigation.getByRole("button", { name: "Next", exact: true });
-    if (collected.length >= limit || !(await next.count()) || !(await next.isEnabled())) break;
-    await next.click();
-    await waitForUrlParts(page, [`PageNumber=${pageNumber + 1}`]);
-    await page.waitForTimeout(650);
-  }
-  return collected.slice(0, limit);
-}
-
-async function scanBucket(page, regionId, feeValue, limit) {
-  await applyFilters(page, regionId, feeValue);
-  if (await page.getByText("لا توجد بيانات", { exact: true }).count()) return [];
-  return scanPages(page, regionId, feeValue === "0" ? "free" : "paid", limit);
+async function hasNextPage(page, currentPage) {
+  const expected = currentPage + 1;
+  const directLink = page.locator(`a[href*="PageNumber=${expected}"]`);
+  if (await directLink.count()) return true;
+  const navigation = page.locator('nav[aria-label="Page navigation"]');
+  const next = navigation.getByRole("button", { name: /Next|التالي/i });
+  return Boolean(await next.count() && await next.isEnabled().catch(() => false));
 }
 
 function suitability(item) {
@@ -150,7 +176,9 @@ function suitability(item) {
   return Math.max(25, Math.min(90, score));
 }
 
-function comparable(item) { return JSON.stringify([item.title, item.agency, item.fee, item.region, item.deadline, item.publishedAt]); }
+function comparable(item) {
+  return JSON.stringify([item.title, item.agency, item.fee, item.region, item.deadline, item.publishedAt]);
+}
 
 function toAutomationTender(item) {
   return {
@@ -238,57 +266,116 @@ async function notifyN8n(result, { dryRun = false } = {}) {
   }
 }
 
+function buildTenderItems(appearances) {
+  return mergeTenderAppearances(appearances).map((item) => ({
+    id: item.reference,
+    reference: item.reference,
+    title: item.title,
+    agency: item.agency,
+    fee: item.fee ?? 0,
+    region: item.regions.length > 1 ? `متعدد المناطق: ${item.regions.join("، ")}` : item.regions[0],
+    deadline: item.deadline,
+    publishedAt: item.publishedAt,
+    status: "جديدة",
+    documents: "لم تُفتح",
+    score: suitability(item),
+    platformStatus: "المنافسات النشطة (تقديم العروض)",
+    activity: "المقاولات",
+    remoteAttachments: item.remoteAttachments || [],
+    etimadUrl: new URL(item.href, "https://tenders.etimad.sa").toString(),
+  }));
+}
+
 async function performSync() {
-  state = { phase: "starting", region: null, checked: 0, message: "فتح جلسة اعتماد" };
-  const page = await getEtimadPage();
+  state = { phase: "starting", region: null, checked: 0, message: "الاتصال بجلسة اعتماد البشرية", progress: repository.getSyncProgress() };
+  const page = await chromeSession.getEtimadPage();
   await assertSignedIn(page);
-  const syncRunId = repository.startSyncRun({ regions: 13, targetPerRegion: 100 });
+  const run = repository.startOrResumeSyncRun({ regions: regions.length, targetPerRegion, initialCursor: initialCursor() });
+  const resumedFromCheckpoint = run.resumed;
+  let resuming = run.resumed;
+  let cursor = normalizeCursor(run.cursor);
+
   try {
-    const appearances = [];
-    let checked = 0;
-    for (const regionId of Object.keys(regionNames)) {
-      state = { phase: "scanning", region: regionNames[regionId], checked, message: `فحص ${regionNames[regionId]}` };
-      const free = await scanBucket(page, regionId, "0", 100);
-      const paidRaw = await scanBucket(page, regionId, "1", Math.max(0, 100 - free.length));
-      checked += free.length + paidRaw.length;
-      const eligible = [...free, ...paidRaw.filter((item) => item.fee !== null && item.fee <= 600)];
-      for (const item of eligible) appearances.push({ ...item, regionName: regionNames[regionId] });
+    while (!cursor.complete) {
+      const region = regions[cursor.regionIndex];
+      const feeBucket = feeBuckets[cursor.feeIndex];
+      state = {
+        phase: resuming ? "resuming" : "scanning",
+        runId: run.id,
+        region: region.name,
+        regionId: region.id,
+        feeBucket: feeBucket.id,
+        pageNumber: cursor.pageNumber,
+        checked: cursor.checked,
+        message: `${resuming ? "استئناف" : "فحص"} ${region.name} — الصفحة ${cursor.pageNumber}`,
+        progress: repository.getSyncProgress(),
+      };
+
+      await applyFilters(page, region.id, feeBucket.value);
+      await gotoPageNumber(page, cursor.pageNumber);
+      await assertSignedIn(page);
+
+      const rawBatch = await extractCards(page, region.id, feeBucket.id);
+      const remaining = Math.max(0, targetPerRegion - cursor.regionChecked);
+      const visibleBatch = rawBatch.slice(0, remaining);
+      const eligibleBatch = visibleBatch
+        .filter((item) => feeBucket.id === "free" || (item.fee !== null && item.fee <= 600))
+        .map((item) => ({ ...item, regionName: region.name, remoteAttachments: [] }));
+      const nextAvailable = visibleBatch.length > 0 && await hasNextPage(page, cursor.pageNumber);
+      const completedRegionCount = cursor.regionChecked + visibleBatch.length;
+      const nextCursor = advanceCursor(cursor, { batchSize: visibleBatch.length, hasNextPage: nextAvailable });
+
+      repository.saveSyncCheckpoint(run.id, {
+        regionId: region.id,
+        regionName: region.name,
+        feeBucket: feeBucket.id,
+        pageNumber: cursor.pageNumber,
+        checked: nextCursor.checked,
+        regionChecked: completedRegionCount,
+        items: eligibleBatch,
+        nextCursor,
+      });
+      cursor = nextCursor;
+      resuming = false;
     }
 
-    const unique = new Map();
-    for (const item of appearances) {
-      if (!unique.has(item.reference)) unique.set(item.reference, { ...item, regions: [] });
-      unique.get(item.reference).regions.push(item.regionName);
-    }
-    const items = [...unique.values()].map((item) => ({
-      id: item.reference,
-      reference: item.reference,
-      title: item.title,
-      agency: item.agency,
-      fee: item.fee ?? 0,
-      region: item.regions.length > 1 ? `متعدد المناطق: ${item.regions.join("، ")}` : item.regions[0],
-      deadline: item.deadline,
-      publishedAt: item.publishedAt,
-      status: "جديدة",
-      documents: "لم تُفتح",
-      score: suitability(item),
-      platformStatus: "المنافسات النشطة (تقديم العروض)",
-      activity: "المقاولات",
-      etimadUrl: new URL(item.href, "https://tenders.etimad.sa").toString(),
-    }));
-
+    const items = buildTenderItems(repository.loadDraftObservations(run.id));
     const previousItems = repository.loadComparisonItems();
     const previousMap = new Map(previousItems.map((item) => [item.id, item]));
     const added = items.filter((item) => !previousMap.has(item.id));
     const changed = items.filter((item) => previousMap.get(item.id)?.title && comparable(item) !== comparable(previousMap.get(item.id)));
-    const result = { lastSyncAt: new Date().toISOString(), checked, regions: 13, targetPerRegion: 100, added, changed, items };
-    repository.saveCompletedSync(result, syncRunId);
+    const result = {
+      runId: run.id,
+      resumed: resumedFromCheckpoint,
+      status: "complete",
+      lastSyncAt: new Date().toISOString(),
+      checked: cursor.checked,
+      regions: regions.length,
+      targetPerRegion,
+      added,
+      changed,
+      items,
+    };
+    repository.saveCompletedSync(result, run.id);
     result.automation = await notifyN8n(result);
-    state = { phase: "complete", region: null, checked, message: `اكتملت المزامنة: ${added.length} جديدة و${changed.length} متغيرة` };
+    state = {
+      phase: "complete",
+      runId: run.id,
+      region: null,
+      checked: result.checked,
+      message: `اكتملت المزامنة: ${added.length} جديدة و${changed.length} متغيرة`,
+      progress: repository.getSyncProgress(),
+    };
     return result;
   } catch (error) {
-    repository.failSyncRun(syncRunId, error);
-    throw error;
+    const browserClosed = /browser has been closed|target page.*closed|econnrefused|connection closed/i.test(String(error?.message || error));
+    const failure = browserClosed ? Object.assign(new Error("أُغلقت نافذة Chrome الخاصة بالرادار. افتح الجلسة مجددًا ثم استأنف المزامنة."), { code: "SESSION_NOT_OPEN" }) : error;
+    if (["LOGIN_REQUIRED", "CAPTCHA_REQUIRED", "SESSION_NOT_OPEN"].includes(failure?.code) || repository.hasDraftObservations(run.id)) {
+      repository.markSyncPartial(run.id, { cursor, error: failure });
+    } else {
+      repository.failSyncRun(run.id, failure);
+    }
+    throw failure;
   }
 }
 
@@ -303,11 +390,25 @@ function send(response, status, payload) {
   response.end(JSON.stringify(payload));
 }
 
+async function readJsonBody(request) {
+  const chunks = [];
+  for await (const chunk of request) chunks.push(chunk);
+  if (!chunks.length) return {};
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
 const server = http.createServer(async (request, response) => {
   if (request.method === "OPTIONS") return send(response, 204, {});
   try {
-    if (request.method === "GET" && request.url === "/health") return send(response, 200, { online: true, browserOpen: Boolean(browserContext), state, database: { online: true, schemaVersion: repository.schemaVersion } });
-    if (request.method === "GET" && request.url === "/status") return send(response, 200, state);
+    if (request.method === "GET" && request.url === "/health") {
+      return send(response, 200, {
+        online: true,
+        browser: chromeSession.status(),
+        state,
+        database: { online: true, schemaVersion: repository.schemaVersion },
+      });
+    }
+    if (request.method === "GET" && request.url === "/status") return send(response, 200, { ...state, progress: repository.getSyncProgress() });
     if (request.method === "GET" && request.url === "/tenders") return send(response, 200, repository.getDashboardSnapshot());
     if (request.method === "GET" && request.url === "/automation/status") return send(response, 200, await loadAutomationStatus());
     if (request.method === "POST" && request.url === "/automation/test") {
@@ -315,8 +416,8 @@ const server = http.createServer(async (request, response) => {
       const result = {
         lastSyncAt: previous.lastSyncAt || new Date().toISOString(),
         checked: previous.checked || previous.items.length,
-        regions: previous.regions || 13,
-        targetPerRegion: previous.targetPerRegion || 100,
+        regions: previous.regions || regions.length,
+        targetPerRegion: previous.targetPerRegion || targetPerRegion,
         added: [],
         changed: [],
         items: previous.items.filter((item) => item.reference).map((item) => ({ ...item, reference: item.reference || item.id })),
@@ -325,8 +426,18 @@ const server = http.createServer(async (request, response) => {
       return send(response, automation.online ? 200 : 503, automation);
     }
     if (request.method === "POST" && request.url === "/session") {
-      const page = await getEtimadPage();
-      return send(response, 200, { opened: true, signedIn: page.url().includes("tenders.etimad.sa") && !page.url().includes("login.etimad.sa") });
+      const session = await chromeSession.openForHumanLogin();
+      return send(response, 200, {
+        ...session,
+        signedIn: false,
+        requiresHumanLogin: true,
+        message: "سجّل الدخول بنفسك في Chrome. لن يتصل الرادار بالصفحة حتى تبدأ المزامنة.",
+      });
+    }
+    if (request.method === "POST" && request.url === "/details") {
+      const body = await readJsonBody(request);
+      const details = await inspectTenderDetails(String(body.reference || ""));
+      return send(response, 200, details);
     }
     if (request.method === "POST" && request.url === "/sync") {
       if (!syncPromise) syncPromise = performSync().finally(() => { syncPromise = undefined; });
@@ -335,16 +446,16 @@ const server = http.createServer(async (request, response) => {
     }
     return send(response, 404, { error: "NOT_FOUND" });
   } catch (error) {
-    const status = error?.code === "LOGIN_REQUIRED" ? 409 : 500;
-    state = { ...state, phase: status === 409 ? "login-required" : "error", message: error?.message || "تعذر تنفيذ المزامنة" };
+    const status = error?.code === "TENDER_NOT_FOUND" ? 404 : ["LOGIN_REQUIRED", "CAPTCHA_REQUIRED", "SESSION_NOT_OPEN"].includes(error?.code) ? 409 : 500;
+    const phase = error?.code === "CAPTCHA_REQUIRED" ? "captcha-required" : status === 409 ? "login-required" : "error";
+    state = { ...state, phase, message: error?.message || "تعذر تنفيذ المزامنة", progress: repository.getSyncProgress() };
     return send(response, status, { error: error?.code || "SYNC_FAILED", message: state.message, state });
   }
 });
 
 server.listen(port, "127.0.0.1", () => console.log(`Etimad sync service: http://127.0.0.1:${port}`));
 
-async function shutdown() {
-  await browserContext?.close().catch(() => {});
+function shutdown() {
   repository.close();
   server.close(() => process.exit(0));
 }

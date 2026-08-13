@@ -2,7 +2,7 @@ import path from "node:path";
 import { mkdir } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 
-const migrationVersion = 1;
+const migrationVersion = 2;
 const trackedTenderFields = ["title", "agency", "fee", "region", "deadline", "publishedAt", "platformStatus", "activity", "etimadUrl"];
 
 function safeJson(value, fallback) {
@@ -121,6 +121,30 @@ export async function createRadarRepository({ projectRoot }) {
       PRIMARY KEY (sync_run_id, region_id)
     );
 
+    CREATE TABLE IF NOT EXISTS sync_checkpoints (
+      sync_run_id TEXT NOT NULL REFERENCES sync_runs(id) ON DELETE CASCADE,
+      region_id TEXT NOT NULL,
+      region_name TEXT NOT NULL,
+      fee_bucket TEXT NOT NULL,
+      page_number INTEGER NOT NULL,
+      checked_count INTEGER NOT NULL DEFAULT 0,
+      captured_count INTEGER NOT NULL DEFAULT 0,
+      next_cursor_json TEXT NOT NULL,
+      saved_at TEXT NOT NULL,
+      PRIMARY KEY (sync_run_id, region_id, fee_bucket, page_number)
+    );
+
+    CREATE TABLE IF NOT EXISTS sync_observations (
+      sync_run_id TEXT NOT NULL REFERENCES sync_runs(id) ON DELETE CASCADE,
+      tender_reference TEXT NOT NULL,
+      region_id TEXT NOT NULL,
+      fee_bucket TEXT NOT NULL,
+      page_number INTEGER NOT NULL,
+      payload_json TEXT NOT NULL,
+      observed_at TEXT NOT NULL,
+      PRIMARY KEY (sync_run_id, tender_reference, region_id)
+    );
+
     CREATE TABLE IF NOT EXISTS tender_changes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       tender_reference TEXT NOT NULL,
@@ -204,6 +228,7 @@ export async function createRadarRepository({ projectRoot }) {
     CREATE INDEX IF NOT EXISTS idx_tenders_active ON tenders(active, deadline);
     CREATE INDEX IF NOT EXISTS idx_changes_reference ON tender_changes(tender_reference, observed_at DESC);
     CREATE INDEX IF NOT EXISTS idx_sync_runs_started ON sync_runs(started_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_sync_observations_run ON sync_observations(sync_run_id, region_id);
   `);
 
   database.prepare("INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)").run(migrationVersion, new Date().toISOString());
@@ -227,13 +252,56 @@ export async function createRadarRepository({ projectRoot }) {
       INSERT INTO sync_runs (id, started_at, status, regions_targeted, target_per_region)
       VALUES (?, ?, 'running', ?, ?)
     `),
+    resumableRun: database.prepare(`
+      SELECT * FROM sync_runs
+      WHERE status IN ('partial', 'running') AND resume_cursor IS NOT NULL
+        AND started_at > COALESCE((SELECT MAX(started_at) FROM sync_runs WHERE status = 'complete'), '')
+      ORDER BY started_at DESC LIMIT 1
+    `),
+    latestRun: database.prepare("SELECT * FROM sync_runs ORDER BY started_at DESC LIMIT 1"),
+    updateRunCheckpoint: database.prepare(`
+      UPDATE sync_runs SET status = 'running', regions_completed = ?, checked_count = ?, resume_cursor = ?, error_message = NULL, finished_at = NULL
+      WHERE id = ?
+    `),
+    partialRun: database.prepare(`
+      UPDATE sync_runs SET status = 'partial', finished_at = ?, resume_cursor = ?, error_message = ?
+      WHERE id = ?
+    `),
     completeRun: database.prepare(`
-      UPDATE sync_runs SET finished_at = ?, status = 'complete', regions_completed = ?, checked_count = ?, new_count = ?, changed_count = ?, error_message = NULL
+      UPDATE sync_runs SET finished_at = ?, status = 'complete', regions_completed = ?, checked_count = ?, new_count = ?, changed_count = ?, error_message = NULL, resume_cursor = NULL
       WHERE id = ?
     `),
     failRun: database.prepare("UPDATE sync_runs SET finished_at = ?, status = 'failed', error_message = ? WHERE id = ?"),
     latestCompleteRun: database.prepare("SELECT * FROM sync_runs WHERE status = 'complete' ORDER BY finished_at DESC LIMIT 1"),
     markInactive: database.prepare("UPDATE tenders SET active = 0"),
+    upsertRegion: database.prepare(`
+      INSERT INTO sync_regions (sync_run_id, region_id, region_name, status, checked_count, finished_at, error_message)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(sync_run_id, region_id) DO UPDATE SET
+        status = excluded.status, checked_count = excluded.checked_count,
+        finished_at = excluded.finished_at, error_message = excluded.error_message
+    `),
+    listRegions: database.prepare("SELECT * FROM sync_regions WHERE sync_run_id = ? ORDER BY CAST(region_id AS INTEGER)"),
+    upsertCheckpoint: database.prepare(`
+      INSERT INTO sync_checkpoints (
+        sync_run_id, region_id, region_name, fee_bucket, page_number,
+        checked_count, captured_count, next_cursor_json, saved_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(sync_run_id, region_id, fee_bucket, page_number) DO UPDATE SET
+        checked_count = excluded.checked_count, captured_count = excluded.captured_count,
+        next_cursor_json = excluded.next_cursor_json, saved_at = excluded.saved_at
+    `),
+    upsertObservation: database.prepare(`
+      INSERT INTO sync_observations (
+        sync_run_id, tender_reference, region_id, fee_bucket, page_number, payload_json, observed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(sync_run_id, tender_reference, region_id) DO UPDATE SET
+        fee_bucket = excluded.fee_bucket, page_number = excluded.page_number,
+        payload_json = excluded.payload_json, observed_at = excluded.observed_at
+    `),
+    listObservations: database.prepare("SELECT payload_json FROM sync_observations WHERE sync_run_id = ? ORDER BY observed_at, tender_reference"),
+    countObservations: database.prepare("SELECT COUNT(*) AS count FROM sync_observations WHERE sync_run_id = ?"),
+    updateAttachmentNames: database.prepare("UPDATE tenders SET attachment_names_json = ? WHERE reference = ?"),
     upsertTender: database.prepare(`
       INSERT INTO tenders (
         reference, title, agency, fee, region, deadline, published_at, platform_status, activity,
@@ -294,6 +362,20 @@ export async function createRadarRepository({ projectRoot }) {
 
   function listTenders() { return statements.listTenders.all().map(rowToTender); }
 
+  function getTender(reference) {
+    const row = statements.getTender.get(reference);
+    return row ? rowToTender(row) : null;
+  }
+
+  function saveVisibleAttachmentNames(reference, names) {
+    const cleanNames = [...new Set((names || []).map((name) => String(name).trim()).filter(Boolean))];
+    transaction(() => {
+      statements.updateAttachmentNames.run(JSON.stringify(cleanNames), reference);
+      for (const name of cleanNames) statements.upsertAttachment.run(reference, name);
+    });
+    return cleanNames;
+  }
+
   function loadComparisonItems() {
     const tenders = listTenders();
     const byId = new Map(tenders.map((item) => [item.id, item]));
@@ -306,6 +388,79 @@ export async function createRadarRepository({ projectRoot }) {
     const id = `sync-${startedAt}-${crypto.randomUUID()}`;
     statements.insertRun.run(id, startedAt, regions, targetPerRegion);
     return id;
+  }
+
+  function startOrResumeSyncRun({ regions = 13, targetPerRegion = 100, initialCursor } = {}) {
+    const resumable = statements.resumableRun.get();
+    if (resumable) {
+      return { id: resumable.id, resumed: true, cursor: safeJson(resumable.resume_cursor, initialCursor) };
+    }
+    const id = startSyncRun({ regions, targetPerRegion });
+    statements.updateRunCheckpoint.run(0, 0, JSON.stringify(initialCursor), id);
+    return { id, resumed: false, cursor: initialCursor };
+  }
+
+  function saveSyncCheckpoint(runId, checkpoint) {
+    const savedAt = new Date().toISOString();
+    const cursor = checkpoint.nextCursor;
+    const regionsCompleted = cursor.complete ? 13 : Math.max(0, Number(cursor.regionIndex || 0));
+    transaction(() => {
+      for (const item of checkpoint.items || []) {
+        statements.upsertObservation.run(
+          runId, item.reference, checkpoint.regionId, checkpoint.feeBucket,
+          checkpoint.pageNumber, JSON.stringify(item), savedAt,
+        );
+      }
+      const regionComplete = cursor.complete || cursor.regionId !== checkpoint.regionId;
+      statements.upsertRegion.run(
+        runId, checkpoint.regionId, checkpoint.regionName, regionComplete ? "complete" : "running",
+        checkpoint.regionChecked, regionComplete ? savedAt : null, null,
+      );
+      statements.upsertCheckpoint.run(
+        runId, checkpoint.regionId, checkpoint.regionName, checkpoint.feeBucket,
+        checkpoint.pageNumber, checkpoint.checked, checkpoint.items?.length || 0,
+        JSON.stringify(cursor), savedAt,
+      );
+      statements.updateRunCheckpoint.run(regionsCompleted, checkpoint.checked, JSON.stringify(cursor), runId);
+    });
+  }
+
+  function markSyncPartial(runId, { cursor, error }) {
+    const message = String(error?.message || error || "توقفت الجولة ويمكن استئنافها");
+    statements.partialRun.run(new Date().toISOString(), JSON.stringify(cursor), message, runId);
+  }
+
+  function loadDraftObservations(runId) {
+    return statements.listObservations.all(runId).map((row) => safeJson(row.payload_json, null)).filter(Boolean);
+  }
+
+  function hasDraftObservations(runId) {
+    return Number(statements.countObservations.get(runId)?.count || 0) > 0;
+  }
+
+  function getSyncProgress() {
+    const run = statements.latestRun.get();
+    if (!run) return null;
+    return {
+      id: run.id,
+      status: run.status,
+      startedAt: run.started_at,
+      finishedAt: run.finished_at,
+      regionsTargeted: Number(run.regions_targeted),
+      regionsCompleted: Number(run.regions_completed),
+      targetPerRegion: Number(run.target_per_region),
+      checked: Number(run.checked_count),
+      errorMessage: run.error_message,
+      cursor: safeJson(run.resume_cursor, null),
+      regions: statements.listRegions.all(run.id).map((row) => ({
+        id: row.region_id,
+        name: row.region_name,
+        status: row.status,
+        checked: Number(row.checked_count),
+        finishedAt: row.finished_at,
+        errorMessage: row.error_message,
+      })),
+    };
   }
 
   function failSyncRun(id, error) {
@@ -376,8 +531,16 @@ export async function createRadarRepository({ projectRoot }) {
     schemaVersion: migrationVersion,
     seedBaseline,
     listTenders,
+    getTender,
+    saveVisibleAttachmentNames,
     loadComparisonItems,
     startSyncRun,
+    startOrResumeSyncRun,
+    saveSyncCheckpoint,
+    markSyncPartial,
+    loadDraftObservations,
+    hasDraftObservations,
+    getSyncProgress,
     failSyncRun,
     saveCompletedSync,
     getDashboardSnapshot,

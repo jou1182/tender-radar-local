@@ -29,19 +29,24 @@ test("server-renders the Arabic tender radar", async () => {
   assert.doesNotMatch(html, /اطلب مني الفحص/);
 });
 
-test("keeps independent sync local and credential-free", async () => {
-  const [page, service, launcher, ignore] = await Promise.all([
+test("keeps independent sync local, human-authenticated, and credential-free", async () => {
+  const [page, service, browser, plan, launcher, ignore] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../scripts/etimad-sync-service.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/lib/radar-chrome-session.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/lib/sync-plan.mjs", import.meta.url), "utf8"),
     readFile(new URL("../scripts/start-radar.mjs", import.meta.url), "utf8"),
     readFile(new URL("../.gitignore", import.meta.url), "utf8"),
   ]);
   assert.match(page, /http:\/\/127\.0\.0\.1:4318/);
   assert.match(page, /\/session/);
   assert.match(page, /\/sync/);
-  assert.match(service, /launchPersistentContext/);
+  assert.match(page, /قراءة التفاصيل دون تنزيل/);
+  assert.match(browser, /connectOverCDP/);
+  assert.match(browser, /remote-debugging-port/);
+  assert.doesNotMatch(browser, /launchPersistentContext|enable-automation|navigator\.webdriver/);
   assert.match(service, /ConditionaBookletRange/);
-  assert.match(service, /targetPerRegion: 100/);
+  assert.match(plan, /targetPerRegion = 100/);
   assert.doesNotMatch(service, /password|username|otp/i);
   assert.match(launcher, /etimad-sync-service\.mjs/);
   assert.match(ignore, /\.radar-data/);

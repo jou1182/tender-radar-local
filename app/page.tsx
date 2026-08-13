@@ -68,6 +68,17 @@ type AutomationStatus = {
   dryRun?: boolean;
 };
 type LocalSyncResult = { lastSyncAt: string; checked: number; regions: number; targetPerRegion: number; added: Tender[]; changed: Tender[]; items: Tender[]; automation?: AutomationStatus };
+type SyncProgress = {
+  id: string;
+  status: "running" | "complete" | "partial" | "failed";
+  regionsTargeted: number;
+  regionsCompleted: number;
+  targetPerRegion: number;
+  checked: number;
+  errorMessage?: string | null;
+  cursor?: { pageNumber?: number; feeBucket?: string } | null;
+  regions?: Array<{ id: string; name: string; status: string; checked: number }>;
+};
 const syncServiceUrl = "http://127.0.0.1:4318";
 const defaultSyncMeta: SyncMeta = { lastSyncAt: null, checked: 0, newItems: 0, regions: 0, targetPerRegion: 100 };
 const defaultAutomation: AutomationStatus = { online: false, configured: true, state: "waiting", message: "بانتظار اختبار ربط n8n المحلي" };
@@ -198,6 +209,7 @@ export default function Home() {
   const [selectedId, setSelectedId] = useState("");
   const [activeDetailTab, setActiveDetailTab] = useState<DetailTab>("المعلومات الأساسية");
   const [openingFile, setOpeningFile] = useState<FileKind | null>(null);
+  const [isInspectingDetails, setIsInspectingDetails] = useState(false);
   const [sessionStartedAt, setSessionStartedAt] = useState<number | null>(null);
   const [remainingMinutes, setRemainingMinutes] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
@@ -207,6 +219,7 @@ export default function Home() {
   const [helperOnline, setHelperOnline] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState("الخدمة المحلية جاهزة للتحقق");
+  const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
   const [automation, setAutomation] = useState<AutomationStatus>(defaultAutomation);
   const [isTestingAutomation, setIsTestingAutomation] = useState(false);
 
@@ -218,8 +231,9 @@ export default function Home() {
     return () => window.clearTimeout(bootTimer);
   }, []);
   useEffect(() => {
-    fetch(`${syncServiceUrl}/health`).then((response) => response.ok ? response.json() : Promise.reject()).then(async () => {
+    fetch(`${syncServiceUrl}/health`).then((response) => response.ok ? response.json() : Promise.reject()).then(async (health: { state?: { progress?: SyncProgress | null } }) => {
       setHelperOnline(true); setSyncMessage("خدمة المزامنة المحلية وقاعدة SQLite متصلتان");
+      if (health.state?.progress && health.state.progress.status !== "complete") setSyncProgress(health.state.progress);
       const response = await fetch(`${syncServiceUrl}/tenders`);
       if (!response.ok) throw new Error("تعذر قراءة قاعدة المنافسات المحلية");
       const snapshot = await response.json() as SyncMeta & { items: Tender[] };
@@ -238,6 +252,21 @@ export default function Home() {
     const update = () => setRemainingMinutes(Math.max(0, Math.ceil((4 * 60_000 - (Date.now() - sessionStartedAt)) / 60_000)));
     update(); const handle = window.setInterval(update, 15_000); return () => window.clearInterval(handle);
   }, [sessionStartedAt]);
+  useEffect(() => {
+    if (!isSyncing) return;
+    const refreshProgress = async () => {
+      try {
+        const response = await fetch(`${syncServiceUrl}/status`);
+        if (!response.ok) return;
+        const current = await response.json() as { phase?: string; message?: string; progress?: SyncProgress | null };
+        if (current.progress) setSyncProgress(current.progress);
+        if (current.message) setSyncMessage(current.message);
+      } catch { /* The active sync request reports the final error. */ }
+    };
+    void refreshProgress();
+    const handle = window.setInterval(() => void refreshProgress(), 1200);
+    return () => window.clearInterval(handle);
+  }, [isSyncing]);
 
   const filtered = useMemo(() => {
     const textNeedle = normalizeArabic(query);
@@ -320,7 +349,7 @@ export default function Home() {
       const result = await response.json();
       if (!response.ok) throw new Error(result.message || "تعذر فتح الجلسة");
       setHelperOnline(true); setSessionStartedAt(Date.now());
-      setSyncMessage(result.signedIn ? "جلسة اعتماد جاهزة للمزامنة" : "سجّل دخولك في النافذة الجديدة ثم اضغط مزامنة الآن");
+      setSyncMessage(result.message || (result.signedIn ? "جلسة اعتماد جاهزة للمزامنة" : "سجّل دخولك بنفسك في Chrome ثم اضغط مزامنة الآن"));
     } catch (error) {
       setHelperOnline(false); setSyncMessage(error instanceof Error ? error.message : "خدمة المزامنة المحلية غير مشغلة");
     }
@@ -333,14 +362,18 @@ export default function Home() {
     if (!silent) setSyncMessage("بدأ فحص اعتماد: 13 منطقة وحتى 100 نتيجة لكل منطقة");
     try {
       const response = await fetch(`${syncServiceUrl}/sync`, { method: "POST" });
-      const result = await response.json() as LocalSyncResult & { message?: string };
-      if (!response.ok) throw new Error(result.message || "تعذر تنفيذ المزامنة");
+      const result = await response.json() as LocalSyncResult & { message?: string; state?: { progress?: SyncProgress | null } };
+      if (!response.ok) {
+        if (result.state?.progress) setSyncProgress(result.state.progress);
+        throw new Error(result.message || "تعذر تنفيذ المزامنة");
+      }
       setHelperOnline(true);
       const storedResponse = await fetch(`${syncServiceUrl}/tenders`);
       const stored = storedResponse.ok ? await storedResponse.json() as { items: Tender[] } : { items: result.items };
       setDataMode("live"); setTenders(stored.items); setSelectedId((current) => stored.items.some((item) => item.id === current) ? current : stored.items[0]?.id ?? "");
       const completed: SyncMeta = { lastSyncAt: result.lastSyncAt, checked: result.checked, newItems: result.added.length, regions: result.regions, targetPerRegion: result.targetPerRegion };
       setSyncMeta(completed); setSyncState("fresh");
+      setSyncProgress(null);
       if (result.automation) setAutomation(result.automation);
       setSyncMessage(`اكتملت: ${result.added.length} جديدة و${result.changed.length} متغيرة، دون تنزيل ملفات${result.automation?.online ? " · تم تسجيلها في n8n" : ""}`);
     } catch (error) {
@@ -359,6 +392,28 @@ export default function Home() {
     } catch {
       setAutomation({ online: false, configured: true, state: "error", message: "تعذر الوصول إلى خدمة الرادار أو n8n المحلي" });
     } finally { setIsTestingAutomation(false); }
+  }
+  async function inspectVisibleDetails() {
+    if (!selected || isInspectingDetails) return;
+    setIsInspectingDetails(true);
+    setSyncMessage("جارٍ فتح تفاصيل المنافسة وقراءة أسماء المرفقات الظاهرة فقط...");
+    try {
+      const response = await fetch(`${syncServiceUrl}/details`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reference: selected.reference }),
+      });
+      const result = await response.json() as { attachmentNames?: string[]; message?: string };
+      if (!response.ok) throw new Error(result.message || "تعذر فتح تفاصيل المنافسة");
+      const storedResponse = await fetch(`${syncServiceUrl}/tenders`);
+      if (storedResponse.ok) {
+        const stored = await storedResponse.json() as { items: Tender[] };
+        setTenders(stored.items);
+      }
+      setSyncMessage(`تمت قراءة التفاصيل دون تنزيل: ${result.attachmentNames?.length ?? 0} اسم مرفق ظاهر`);
+    } catch (error) {
+      setSyncMessage(error instanceof Error ? error.message : "تعذر قراءة تفاصيل المنافسة");
+    } finally { setIsInspectingDetails(false); }
   }
   async function onFileChange(kind: FileKind, event: ChangeEvent<HTMLInputElement>) {
     if (!selected) return;
@@ -401,7 +456,8 @@ export default function Home() {
     <section className={`sync-center ${syncState}`} aria-label="مركز مزامنة اعتماد">
       <div className="sync-heading"><div><p className="eyebrow">مركز المزامنة المستقلة</p><h2>زر واحد، بلا وسيط</h2><p>يتصل الرادار بخدمة محلية على جهازك، ويفحص آخر النتائج ويضيف الجديد ويحدّث المتغير منذ آخر مزامنة.</p></div><div className="sync-state"><span className="sync-pulse" /><b>{syncState === "fresh" ? "البيانات حديثة" : syncState === "pending" ? "المزامنة تعمل الآن" : "تحتاج مزامنة"}</b><small>{syncMeta.lastSyncAt ? `آخر مزامنة: ${new Date(syncMeta.lastSyncAt).toLocaleString("ar-SA", { dateStyle: "medium", timeStyle: "short" })}` : "لم تكتمل مزامنة حقيقية بعد"}</small></div></div>
       <div className="sync-stats"><article><strong>{syncMeta.regions}</strong><span>منطقة مستهدفة</span></article><article><strong>{syncMeta.targetPerRegion}</strong><span>منافسة كحد أقصى لكل منطقة</span></article><article><strong>{syncMeta.checked}</strong><span>نتيجة في آخر فحص متاح</span></article><article><strong>{syncMeta.newItems}</strong><span>فرص أُضيفت في آخر جلسة</span></article></div>
-      <div className="sync-actions"><div><b><span className={`helper-dot ${helperOnline ? "online" : "offline"}`} /> {helperOnline ? "الخدمة المحلية متصلة" : "الخدمة المحلية غير متصلة"}</b><span>{syncMessage}</span></div><div className="sync-buttons"><button type="button" className="outline-button" onClick={() => void openEtimadSession()}>فتح جلسة اعتماد</button><button type="button" disabled={isSyncing} onClick={() => void requestSync()}>{isSyncing ? "جارٍ فحص المناطق..." : "مزامنة الآن"}</button></div></div>
+      {syncProgress && syncProgress.status !== "complete" && <div className={`sync-progress ${syncProgress.status}`}><div><b>{syncProgress.status === "partial" ? "جولة محفوظة وقابلة للاستئناف" : "تقدم الجولة الحالية"}</b><span>{syncProgress.regionsCompleted} من {syncProgress.regionsTargeted} منطقة · {syncProgress.checked} ظهور مفحوص{syncProgress.cursor?.pageNumber ? ` · الصفحة ${syncProgress.cursor.pageNumber}` : ""}</span></div><progress max={syncProgress.regionsTargeted} value={syncProgress.regionsCompleted} /></div>}
+      <div className="sync-actions"><div><b><span className={`helper-dot ${helperOnline ? "online" : "offline"}`} /> {helperOnline ? "الخدمة المحلية متصلة" : "الخدمة المحلية غير متصلة"}</b><span>{syncMessage}</span></div><div className="sync-buttons"><button type="button" className="outline-button" onClick={() => void openEtimadSession()}>فتح جلسة اعتماد</button><button type="button" disabled={isSyncing} onClick={() => void requestSync()}>{isSyncing ? "جارٍ فحص المناطق..." : syncProgress?.status === "partial" ? "استئناف المزامنة" : "مزامنة الآن"}</button></div></div>
     </section>
     <section className={`automation-center ${automation.state}`} aria-label="أتمتة n8n المحلية">
       <div className="automation-head"><div><p className="eyebrow">المرحلة الأولى · أتمتة محلية</p><h2>n8n يستقبل ويسجّل التغييرات</h2><p>بيانات المنافسة الأساسية فقط؛ دون كلمات مرور أو ملفات أو ذكاء اصطناعي.</p></div><div className="automation-status"><span className={`helper-dot ${automation.online ? "online" : "offline"}`} /><b>{automation.online ? "n8n متصل" : automation.state === "error" ? "n8n يحتاج مراجعة" : "بانتظار الاختبار"}</b><small>{automation.workflow ?? "Radar Phase 1"}</small></div></div>
@@ -467,7 +523,7 @@ export default function Home() {
     <section id="tender-detail" className="tender-detail-hub">
       <div className="detail-hero">
         <div><p className="eyebrow">مركز المنافسة الموحد</p><span className="detail-reference">{selected.reference}</span><h2>{selected.title}</h2><p>{selected.agency}</p></div>
-        <div className="detail-hero-actions"><span className={selected.fee === 0 ? "free-badge" : "approval-badge"}>{selected.fee === 0 ? "كراسة مجانية" : `الكراسة ${selected.fee.toLocaleString('ar-SA')} ر.س`}</span><a href={selected.etimadUrl ?? "https://tenders.etimad.sa/Tender/AllSuppliersTenders?PageNumber=1"} target="_blank" rel="noreferrer">عرض المصدر في اعتماد</a></div>
+        <div className="detail-hero-actions"><span className={selected.fee === 0 ? "free-badge" : "approval-badge"}>{selected.fee === 0 ? "كراسة مجانية" : `الكراسة ${selected.fee.toLocaleString('ar-SA')} ر.س`}</span><button type="button" onClick={() => void inspectVisibleDetails()} disabled={isInspectingDetails}>{isInspectingDetails ? "جارٍ قراءة التفاصيل..." : "قراءة التفاصيل دون تنزيل"}</button><a href={selected.etimadUrl ?? "https://tenders.etimad.sa/Tender/AllSuppliersTenders?PageNumber=1"} target="_blank" rel="noreferrer">عرض المصدر في اعتماد</a></div>
       </div>
       <nav className="detail-tabs" aria-label="أقسام تفاصيل المنافسة">{detailTabs.map((tab) => <button type="button" key={tab} className={activeDetailTab === tab ? "active" : ""} aria-current={activeDetailTab === tab ? "page" : undefined} onClick={() => setActiveDetailTab(tab)}><span>{tab === "المرفقات" ? "📎" : tab === "جدول الكميات" ? "▦" : tab === "العناوين والمواعيد" ? "◷" : "▪"}</span>{tab}</button>)}</nav>
       <div className="market-intelligence">
