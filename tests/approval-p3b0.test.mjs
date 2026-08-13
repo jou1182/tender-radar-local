@@ -42,6 +42,14 @@ async function repositoryWithTender({ fee = 0, attachmentStates = {} } = {}) {
     lastSyncAt: "2026-08-13T21:00:00.000Z", checked: 1, regions: 13, targetPerRegion: 100,
     added: [live], changed: [], items: [live],
   }, runId);
+  if (fee === 0) {
+    repository.saveTenderDetails({
+      reference: tender.reference, status: "complete", inspectedAt: "2026-08-13T21:05:00.000Z",
+      sourceUrl: tender.etimadUrl, pageTitle: "", sections: [],
+      fields: { bookletFee: "0" },
+      attachments: names.map((displayName) => ({ displayName })),
+    });
+  }
   for (const [name, availability] of Object.entries(attachmentStates)) {
     repository.setAttachmentAvailability(tender.reference, name, availability);
   }
@@ -72,7 +80,7 @@ function consume(repository, approval, options = {}) {
   return repository.consumeDownloadApproval(approval.id, { manifest: approval.scope, ...options });
 }
 
-test("Schema v5 migration preserves v4 tenders, details, attachments, and legacy approvals", async () => {
+test("Schema v6 migration preserves v4 tenders, details, attachments, and legacy approvals", async () => {
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), "radar-v4-"));
   let repository;
   try {
@@ -120,11 +128,12 @@ test("Schema v5 migration preserves v4 tenders, details, attachments, and legacy
     legacy.close();
 
     repository = await createRadarRepository({ projectRoot });
-    assert.equal(repository.schemaVersion, 5);
+    assert.equal(repository.schemaVersion, 6);
     const stored = repository.getTender("260000000500");
     assert.equal(stored.title, "منافسة من v4");
+    assert.equal(stored.feeVerification, "unknown");
     const meta = repository.listAttachmentMeta("260000000500");
-    assert.equal(meta[0].availability, "free-available", "v4 availability data survives the v5 migration");
+    assert.equal(meta[0].availability, "free-available", "v4 availability data survives the v6 migration");
     const legacyApproval = repository.getDownloadApproval("legacy-approval-1");
     assert.equal(legacyApproval.tenderReference, "260000000500");
     assert.equal(legacyApproval.status, "revoked", "legacy approvals without scope and expiry are unusable");
@@ -133,6 +142,17 @@ test("Schema v5 migration preserves v4 tenders, details, attachments, and legacy
       (error) => error.code === "APPROVAL_REVOKED",
     );
     assert.deepEqual(repository.listDownloadJobs(), []);
+
+    assert.throws(
+      () => repository.requestDownloadApprovalIntent({ tenderReference: tender.reference, files: approvalInput.files }),
+      (error) => error.code === "FEE_NOT_DETAIL_VERIFIED",
+    );
+    repository.saveTenderDetails({
+      reference: tender.reference, status: "complete", inspectedAt: "2026-08-13T21:05:00.000Z",
+      sourceUrl: tender.etimadUrl, pageTitle: "", sections: [],
+      fields: { bookletFee: "0" },
+      attachments: [{ displayName: "كراسة الشروط.pdf", kind: "booklet" }],
+    });
 
     const approval = approve(repository);
     assert.equal(approval.action, "download-attachments");

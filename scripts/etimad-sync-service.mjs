@@ -20,6 +20,7 @@ import {
   planFromSearchProfile,
 } from "./lib/sync-plan.mjs";
 import { createDisabledProductionDownloadAdapter } from "./lib/attachment-adapters.mjs";
+import { cardFeeEvidence, mergeSyncFeeEvidence } from "./lib/fee-evidence.mjs";
 import { createLiveDownloadAdapter } from "./lib/live-attachment-acquisition.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -27,7 +28,7 @@ const privateDir = path.join(projectRoot, ".radar-data");
 const baselineFile = path.join(projectRoot, "scripts", "sync-baseline.json");
 const listUrl = "https://tenders.etimad.sa/Tender/AllSuppliersTenders?PageNumber=1";
 const port = Number(process.env.RADAR_SYNC_PORT || 4318);
-const serviceVersion = "p3b1-live-guarded-1";
+const serviceVersion = "p3b1b0-fee-integrity-1";
 const localUiOrigins = new Set(["http://localhost:3000", "http://127.0.0.1:3000"]);
 const n8nWebhookUrl = process.env.N8N_RADAR_WEBHOOK_URL || "http://127.0.0.1:5678/webhook/radar-sync-5d354757-90d1-4dc3-b7f7-c93e4c50ecb1";
 const repository = await createRadarRepository({ projectRoot });
@@ -211,26 +212,28 @@ async function gotoPageNumber(page, pageNumber) {
   await assertSignedIn(page);
 }
 
-async function extractCards(page, regionId, feeBucket) {
-  return page.locator("div.card").evaluateAll((cards, args) => cards.map((card) => {
+async function extractCards(page, regionId) {
+  const cards = await page.locator("div.card").evaluateAll((cardNodes, args) => cardNodes.map((card) => {
     const link = card.querySelector('h5 a[href*="/Tender/Details"]');
     if (!link) return null;
     const text = (card.innerText || "").replace(/\r/g, "");
     const reference = (text.match(/الرقم المرجعي\s*\n?\s*(\d{12})/) || [])[1] || "";
-    const feeMatch = text.match(/قيمة وثائق المنافسة\s*\n?\s*[^\d]*(\d[\d,]*)/);
+    const feeMatch = text.match(/قيمة (?:وثائق المنافسة|الكراسة)\s*[:：]?\s*([^\n]*)\n?([^\n]*)/);
+    const feeText = feeMatch ? ((feeMatch[1] || "").trim() || (feeMatch[2] || "").trim()) : "";
     const dates = [...text.matchAll(/\b(20\d{2}-\d{2}-\d{2})\b/g)].map((match) => match[1]);
     const headings = [...card.querySelectorAll("h5")].map((item) => (item.textContent || "").trim()).filter(Boolean);
     return {
       reference,
       title: (link.textContent || "").trim(),
       agency: headings[1] || "",
-      fee: args.feeBucket === "free" ? 0 : (feeMatch ? Number(feeMatch[1].replaceAll(",", "")) : null),
+      feeText,
       publishedAt: dates[0] || "",
       deadline: dates[1] ? `${dates[1]} 09:59` : "",
       href: link.getAttribute("href") || "",
       regionId: args.regionId,
     };
-  }).filter((item) => item?.reference), { regionId, feeBucket });
+  }).filter((item) => item?.reference), { regionId });
+  return cards.map((card) => ({ ...card, ...cardFeeEvidence(card.feeText) }));
 }
 
 async function hasNextPage(page, currentPage) {
@@ -261,6 +264,7 @@ function toAutomationTender(item) {
     title: item.title,
     agency: item.agency,
     fee: item.fee,
+    feeVerification: item.feeVerification || "unknown",
     region: item.region,
     deadline: item.deadline,
     publishedAt: item.publishedAt,
@@ -348,6 +352,8 @@ function buildTenderItems(appearances, plan = defaultPlan) {
     title: item.title,
     agency: item.agency,
     fee: item.fee ?? 0,
+    feeVerification: item.feeVerification || "unknown",
+    feeRawText: item.feeRawText || null,
     region: item.regions.length > 1 ? `متعدد المناطق: ${item.regions.join("، ")}` : item.regions[0],
     deadline: item.deadline,
     publishedAt: item.publishedAt,
@@ -393,7 +399,7 @@ async function performSync() {
       await gotoPageNumber(page, cursor.pageNumber);
       await assertSignedIn(page);
 
-      const rawBatch = await extractCards(page, region.id, feeBucket.id);
+      const rawBatch = await extractCards(page, region.id);
       const remaining = Math.max(0, plan.targetPerRegion - cursor.regionChecked);
       const visibleBatch = rawBatch.slice(0, remaining);
       const eligibleBatch = visibleBatch
@@ -417,9 +423,10 @@ async function performSync() {
       resuming = false;
     }
 
-    const items = buildTenderItems(repository.loadDraftObservations(run.id), plan);
+    const rawItems = buildTenderItems(repository.loadDraftObservations(run.id), plan);
     const previousItems = repository.loadComparisonItems();
     const previousMap = new Map(previousItems.map((item) => [item.id, item]));
+    const items = rawItems.map((item) => ({ ...item, ...mergeSyncFeeEvidence(previousMap.get(item.id), item) }));
     const added = items.filter((item) => !previousMap.has(item.id));
     const changed = items.filter((item) => previousMap.get(item.id)?.title && comparable(item) !== comparable(previousMap.get(item.id)));
     const result = {
@@ -692,7 +699,7 @@ const server = http.createServer(async (request, response) => {
         "PURCHASE_CONFIRMATION_REQUIRED", "FILE_TOO_LARGE", "BATCH_TOO_LARGE",
         "INVALID_TENDER_REFERENCE", "INVALID_STORAGE_PATH"].includes(error?.code) ? 400
       : ["APPROVAL_EXPIRED", "APPROVAL_CONSUMED", "APPROVAL_REVOKED", "APPROVAL_SCOPE_MISMATCH",
-        "APPROVAL_INTENT_EXPIRED", "APPROVAL_INTENT_USED"].includes(error?.code) ? 409
+        "APPROVAL_INTENT_EXPIRED", "APPROVAL_INTENT_USED", "FEE_NOT_DETAIL_VERIFIED"].includes(error?.code) ? 409
       : ["LOGIN_REQUIRED", "CAPTCHA_REQUIRED", "SESSION_NOT_OPEN"].includes(error?.code) ? 409 : 500;
     const phase = error?.code === "CAPTCHA_REQUIRED" ? "captcha-required"
       : ["LOGIN_REQUIRED", "SESSION_NOT_OPEN"].includes(error?.code) ? "login-required"

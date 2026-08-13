@@ -155,10 +155,18 @@ export function advanceCursor(cursor, { batchSize, hasNextPage }, plan = default
 
 export function mergeTenderAppearances(appearances) {
   const unique = new Map();
+  const evidenceRank = { unknown: 0, "card-observed": 1, "detail-verified": 2 };
   for (const item of appearances || []) {
     if (!item?.reference) continue;
     if (!unique.has(item.reference)) unique.set(item.reference, { ...item, regions: [] });
     const current = unique.get(item.reference);
+    const incomingRank = evidenceRank[item.feeVerification] ?? 0;
+    const currentRank = evidenceRank[current.feeVerification] ?? 0;
+    if (item.fee !== null && item.fee !== undefined && incomingRank >= currentRank) {
+      current.fee = item.fee;
+      current.feeVerification = item.feeVerification || "unknown";
+      current.feeRawText = item.feeRawText || null;
+    }
     const regionName = item.regionName || item.region;
     if (regionName && !current.regions.includes(regionName)) current.regions.push(regionName);
   }

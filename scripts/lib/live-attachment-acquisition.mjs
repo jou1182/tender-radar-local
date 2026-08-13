@@ -5,6 +5,7 @@ import { link, mkdir, open, readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { allowedDownloadExtensions, fileExtension, hashDownloadManifest, maxFileBytes } from "./download-gate.mjs";
+import { isTrustedEtimadDetailsUrl } from "./fee-evidence.mjs";
 import { resolveAttachmentStoragePath } from "./attachment-storage.mjs";
 
 export const liveEnabledEnvName = "RADAR_LIVE_DOWNLOAD_ENABLED";
@@ -97,6 +98,12 @@ export function assertLivePreconditions({ tender, displayName }) {
   if (!meta) throw fail(`الملف ليس ضمن المرفقات المرصودة: ${displayName}`);
   if (meta.remoteVisible !== true || meta.availability !== "free-available") {
     throw fail("الملف ليس ظاهرًا ومتاحًا مجانًا الآن.");
+  }
+  const detailVerifiedFree = tender.feeVerification === "detail-verified"
+    && Number.isFinite(Date.parse(tender.feeVerifiedAt || ""))
+    && isTrustedEtimadDetailsUrl(tender.details?.sourceUrl || "");
+  if (!detailVerifiedFree) {
+    throw liveAcquisitionError("FEE_NOT_DETAIL_VERIFIED", "قيمة الكراسة الصفرية غير مؤكدة من صفحة تفاصيل موثوقة.");
   }
   return meta;
 }

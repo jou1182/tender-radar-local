@@ -50,6 +50,14 @@ async function repositoryWithTender({ fee = 0, attachmentStates = { [freeFile]: 
     lastSyncAt: "2026-08-14T00:00:00.000Z", checked: 1, regions: 13, targetPerRegion: 100,
     added: [live], changed: [], items: [live],
   }, runId);
+  if (fee === 0) {
+    repository.saveTenderDetails({
+      reference: tender.reference, status: "complete", inspectedAt: "2026-08-14T00:05:00.000Z",
+      sourceUrl: tender.etimadUrl, pageTitle: "", sections: [],
+      fields: { bookletFee: "0" },
+      attachments: names.map((displayName) => ({ displayName })),
+    });
+  }
   for (const [name, availability] of Object.entries(attachmentStates)) {
     repository.setAttachmentAvailability(tender.reference, name, availability);
   }
@@ -557,7 +565,7 @@ test("live module and service wiring keep the safety invariants textually", asyn
   assert.match(service, /createLiveDownloadAdapter/);
   assert.match(service, /pathname === "\/approval-jobs\/live"/);
   assert.match(service, /HUMAN_CONFIRMATION_ORIGIN_REQUIRED/);
-  assert.match(service, /p3b1-live-guarded-1/);
+  assert.match(service, /p3b1b0-fee-integrity-1/);
   assert.doesNotMatch(service, /consumeDownloadApproval/, "consumption stays inside the guarded module, never in the service");
   const jobRoute = service.slice(service.indexOf('pathname === "/approval-jobs"'), service.indexOf('pathname === "/approval-jobs"') + 2200);
   assert.doesNotMatch(jobRoute, /liveAcquisitionAdapter/, "the B0 route stays untouched; the live route is separate");

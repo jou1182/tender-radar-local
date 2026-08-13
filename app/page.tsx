@@ -32,6 +32,9 @@ type Tender = {
   agency: string;
   reference: string;
   fee: number;
+  feeVerification?: "unknown" | "card-observed" | "detail-verified";
+  feeRawText?: string | null;
+  feeVerifiedAt?: string | null;
   region: string;
   deadline: string;
   status: TenderStatus;
@@ -158,12 +161,31 @@ function publishedAfter(period: string) {
   return days[period] ? Date.now() - days[period] * 86_400_000 : null;
 }
 
+function isVerifiedFreeTender(tender: Tender) {
+  return tender.fee === 0 && tender.feeVerification === "detail-verified";
+}
+
+function feeEvidenceLabel(tender: Tender): string {
+  if (tender.fee === 0) return isVerifiedFreeTender(tender) ? "مجانية مؤكدة" : "السعر غير متحقق";
+  const amount = `${tender.fee.toLocaleString("ar-SA")} ر.س`;
+  if (tender.feeVerification === "detail-verified") return `${amount} · مؤكد من التفاصيل`;
+  if (tender.feeVerification === "card-observed") return `${amount} · من القائمة`;
+  return `${amount} · غير مؤكد`;
+}
+
+function feeUnverifiedHint(tender: Tender): string | null {
+  return tender.fee === 0 && tender.feeVerification !== "detail-verified"
+    ? "تحقق من قيمة الكراسة في صفحة التفاصيل أولًا"
+    : null;
+}
+
 function getCrowdingSignal(tender: Tender) {
   let score = 52;
   const factors: string[] = [];
   if (tender.tenderType === "شراء مباشر") { score -= 12; factors.push("شراء مباشر بنطاق موردين أضيق عادةً"); }
   if (tender.tenderType === "منافسة عامة") { score += 8; factors.push("منافسة عامة تجذب شريحة أوسع"); }
-  if (tender.fee === 0) { score += 10; factors.push("الكراسة المجانية تخفض حاجز الدخول"); }
+  if (isVerifiedFreeTender(tender)) { score += 10; factors.push("الكراسة المجانية المؤكدة تخفض حاجز الدخول"); }
+  else if (tender.fee === 0) { factors.push("قيمة الكراسة غير متحققة بعد"); }
   else if (tender.fee >= 500) { score -= 7; factors.push("قيمة الكراسة تقلل الدخول العشوائي"); }
   else { score += 3; factors.push("قيمة الكراسة منخفضة نسبيًا"); }
   if (tender.guarantee?.includes("لا يوجد")) { score += 8; factors.push("عدم وجود ضمان يسهّل المشاركة"); }
@@ -351,7 +373,7 @@ export default function Home() {
       if (publishedThreshold && tender.publishedAt && new Date(tender.publishedAt).getTime() < publishedThreshold) return false;
       if (deadlineFrom && tender.deadline !== "أدخل الموعد" && tender.deadline.slice(0, 10) < deadlineFrom) return false;
       if (deadlineTo && tender.deadline !== "أدخل الموعد" && tender.deadline.slice(0, 10) > deadlineTo) return false;
-      if (feeMode === "free" && tender.fee !== 0) return false;
+      if (feeMode === "free" && !isVerifiedFreeTender(tender)) return false;
       if (feeMode === "exact" && tender.fee !== (Number(exactFee) || 0)) return false;
       if (feeMode === "range" && minFee && tender.fee < Number(minFee)) return false;
       if (feeMode === "range" && maxFee && tender.fee > Number(maxFee)) return false;
@@ -371,7 +393,7 @@ export default function Home() {
   const crowdingSignal = selected ? getCrowdingSignal(selected) : null;
   const suitable = filtered.filter((tender) => tender.status === "مناسبة").length;
   const completed = filtered.filter((tender) => tender.files?.booklet && tender.files?.boq && tender.files?.conditions).length;
-  const freeTenders = filtered.filter((tender) => tender.fee === 0).length;
+  const freeTenders = filtered.filter((tender) => isVerifiedFreeTender(tender)).length;
   const quietOpportunities = filtered.filter((tender) => getCrowdingSignal(tender).level === "منخفض").length;
   const priorityRanks = new Map([...filtered].sort((a, b) => getCrowdingSignal(a).score - getCrowdingSignal(b).score || b.score - a.score).slice(0, 3).map((tender, index) => [tender.id, index + 1]));
   const finalists = finalRanking.map((rank) => ({ ...rank, tender: tenders.find((tender) => tender.id === rank.id) })).filter((item): item is typeof item & { tender: Tender } => Boolean(item.tender));
@@ -727,24 +749,24 @@ export default function Home() {
     <section className="workbench">
       <div className="section-head"><div><p className="eyebrow">قائمة العمل</p><h2>الفرص المطابقة للبحث</h2><p className="section-note">النتائج مرتبة وقابلة للتصدير حسب الفلاتر الحالية.</p></div><div className="actions"><select aria-label="ترتيب النتائج" value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)}><option value="crowding">الأقل تزاحمًا</option><option value="score">الأعلى ملاءمة</option><option value="deadline">الأقرب موعدًا</option><option value="fee-asc">الأقل سعرًا</option><option value="fee-desc">الأعلى سعرًا</option></select><button onClick={exportExcelReady}>تصدير النتائج لـ Excel</button></div></div>
       <div className={`data-source-notice ${dataMode}`}><div><b>{dataMode === "live" ? "بيانات تشغيل حقيقية من SQLite" : "وضع عرض تجريبي — ليست بيانات اعتماد"}</b><span>{dataMode === "live" ? "لا تختلط أمثلة الواجهة بالمنافسات التي تحفظها المزامنة." : "هذه السجلات الثلاثة اصطناعية لاختبار شكل الواجهة فقط."}</span></div>{dataMode === "live" ? <button type="button" onClick={showDemoData}>عرض بيانات تجريبية</button> : <button type="button" onClick={() => void returnToLiveData()}>العودة إلى SQLite</button>}</div>
-      <div className="table-wrap"><table><thead><tr><th>المنافسة</th><th>المنطقة</th><th>الكراسة</th><th>إتاحة الكراسة</th><th>الموعد</th><th>التزاحم المتوقع</th><th>الوثائق</th><th>الحالة</th><th>الملاءمة</th></tr></thead><tbody>{filtered.map((tender) => <tr className={tender.id === selected?.id ? "selected-row" : ""} key={tender.id} onClick={() => openTender(tender.id)}><td>{priorityRanks.has(tender.id) && <span className="priority-rank">أفضل {priorityRanks.get(tender.id)}</span>}<strong>{tender.title}</strong><small>{tender.agency} · {tender.reference}</small></td><td>{tender.region}</td><td><b className="fee-value">{tender.fee === 0 ? "مجانية" : `${tender.fee.toLocaleString('ar-SA')} ر.س`}</b></td><td>{tender.fee === 0 ? <span className="free-badge">مجانية</span> : <span className="approval-badge">تحتاج موافقة</span>}</td><td>{tender.deadline}</td><td><span className={`crowding-badge ${getCrowdingSignal(tender).level === "منخفض" ? "low" : getCrowdingSignal(tender).level === "متوسط" ? "medium" : "high"}`}>{getCrowdingSignal(tender).level}</span><small>{getCrowdingSignal(tender).score}/100 تقديري</small></td><td><select aria-label={`وثائق ${tender.title}`} value={tender.documents} onClick={(event) => event.stopPropagation()} onChange={(event) => updateTender(tender.id, { documents: event.target.value as DocumentStatus })}><option>لم تُفتح</option><option>الكراسة</option><option>الكراسة + الكميات</option><option>مكتملة</option></select></td><td><select className={statusTone[tender.status]} aria-label={`حالة ${tender.title}`} value={tender.status} onClick={(event) => event.stopPropagation()} onChange={(event) => updateTender(tender.id, { status: event.target.value as TenderStatus })}><option>جديدة</option><option>قيد المراجعة</option><option>مناسبة</option><option>مستبعدة</option></select></td><td><span className="score">{tender.score}/100</span></td></tr>)}{filtered.length === 0 && <tr><td colSpan={9} className="empty"><b>لا توجد نتائج بهذه المعايير.</b><span>جرّب «كل الأسعار»، أو امسح تحديد المناطق، أو وسّع نطاق قيمة الكراسة.</span><button type="button" onClick={resetSearch}>مسح الفلاتر</button></td></tr>}</tbody></table></div>
+      <div className="table-wrap"><table><thead><tr><th>المنافسة</th><th>المنطقة</th><th>الكراسة</th><th>إتاحة الكراسة</th><th>الموعد</th><th>التزاحم المتوقع</th><th>الوثائق</th><th>الحالة</th><th>الملاءمة</th></tr></thead><tbody>{filtered.map((tender) => <tr className={tender.id === selected?.id ? "selected-row" : ""} key={tender.id} onClick={() => openTender(tender.id)}><td>{priorityRanks.has(tender.id) && <span className="priority-rank">أفضل {priorityRanks.get(tender.id)}</span>}<strong>{tender.title}</strong><small>{tender.agency} · {tender.reference}</small></td><td>{tender.region}</td><td><b className="fee-value">{feeEvidenceLabel(tender)}</b></td><td>{isVerifiedFreeTender(tender) ? <span className="free-badge">مجانية مؤكدة</span> : tender.fee === 0 ? <span className="approval-badge">السعر غير متحقق</span> : <span className="approval-badge">تحتاج موافقة</span>}</td><td>{tender.deadline}</td><td><span className={`crowding-badge ${getCrowdingSignal(tender).level === "منخفض" ? "low" : getCrowdingSignal(tender).level === "متوسط" ? "medium" : "high"}`}>{getCrowdingSignal(tender).level}</span><small>{getCrowdingSignal(tender).score}/100 تقديري</small></td><td><select aria-label={`وثائق ${tender.title}`} value={tender.documents} onClick={(event) => event.stopPropagation()} onChange={(event) => updateTender(tender.id, { documents: event.target.value as DocumentStatus })}><option>لم تُفتح</option><option>الكراسة</option><option>الكراسة + الكميات</option><option>مكتملة</option></select></td><td><select className={statusTone[tender.status]} aria-label={`حالة ${tender.title}`} value={tender.status} onClick={(event) => event.stopPropagation()} onChange={(event) => updateTender(tender.id, { status: event.target.value as TenderStatus })}><option>جديدة</option><option>قيد المراجعة</option><option>مناسبة</option><option>مستبعدة</option></select></td><td><span className="score">{tender.score}/100</span></td></tr>)}{filtered.length === 0 && <tr><td colSpan={9} className="empty"><b>لا توجد نتائج بهذه المعايير.</b><span>جرّب «كل الأسعار»، أو امسح تحديد المناطق، أو وسّع نطاق قيمة الكراسة.</span><button type="button" onClick={resetSearch}>مسح الفلاتر</button></td></tr>}</tbody></table></div>
     </section>
     {selected && assessment && crowdingSignal ? <>
     <section id="tender-detail" className="tender-detail-hub">
       <div className="detail-hero">
         <div><p className="eyebrow">مركز المنافسة الموحد</p><span className="detail-reference">{selected.reference}</span><h2>{selected.title}</h2><p>{selected.agency}</p></div>
-        <div className="detail-hero-actions"><span className={selected.fee === 0 ? "free-badge" : "approval-badge"}>{selected.fee === 0 ? "كراسة مجانية" : `الكراسة ${selected.fee.toLocaleString('ar-SA')} ر.س`}</span><button type="button" onClick={() => void inspectVisibleDetails()} disabled={isInspectingDetails}>{isInspectingDetails ? "جارٍ قراءة التفاصيل..." : "قراءة التفاصيل دون تنزيل"}</button><a href={selected.etimadUrl ?? "https://tenders.etimad.sa/Tender/AllSuppliersTenders?PageNumber=1"} target="_blank" rel="noreferrer">عرض المصدر في اعتماد</a></div>
+        <div className="detail-hero-actions"><span className={isVerifiedFreeTender(selected) ? "free-badge" : "approval-badge"}>{isVerifiedFreeTender(selected) ? "كراسة مجانية مؤكدة" : selected.fee === 0 ? "السعر غير متحقق" : `الكراسة ${feeEvidenceLabel(selected)}`}</span><button type="button" onClick={() => void inspectVisibleDetails()} disabled={isInspectingDetails}>{isInspectingDetails ? "جارٍ قراءة التفاصيل..." : "قراءة التفاصيل دون تنزيل"}</button><a href={selected.etimadUrl ?? "https://tenders.etimad.sa/Tender/AllSuppliersTenders?PageNumber=1"} target="_blank" rel="noreferrer">عرض المصدر في اعتماد</a></div>
       </div>
       <nav className="detail-tabs" aria-label="أقسام تفاصيل المنافسة">{detailTabs.map((tab) => <button type="button" key={tab} className={activeDetailTab === tab ? "active" : ""} aria-current={activeDetailTab === tab ? "page" : undefined} onClick={() => setActiveDetailTab(tab)}><span>{tab === "المرفقات" ? "📎" : tab === "جدول الكميات" ? "▦" : tab === "العناوين والمواعيد" ? "◷" : "▪"}</span>{tab}</button>)}</nav>
       <section className="attachment-center" aria-label="مركز المرفقات">
-        <div className="attachment-center-head"><div><p className="eyebrow">مركز المرفقات</p><h3>إتاحة ملفات المنافسة دون تنزيل</h3></div><span className={selected.fee === 0 ? "free-badge" : "approval-badge"}>{selected.fee === 0 ? "كراسة مجانية" : `قيمة الكراسة ${selected.fee.toLocaleString('ar-SA')} ر.س`}</span></div>
+        <div className="attachment-center-head"><div><p className="eyebrow">مركز المرفقات</p><h3>إتاحة ملفات المنافسة دون تنزيل</h3></div><span className={isVerifiedFreeTender(selected) ? "free-badge" : "approval-badge"}>{isVerifiedFreeTender(selected) ? "كراسة مجانية مؤكدة" : selected.fee === 0 ? "السعر غير متحقق" : `قيمة الكراسة ${feeEvidenceLabel(selected)}`}</span></div>
         <div className="detail-facts">
-          <article><span>قيمة الكراسة</span><b>{selected.fee === 0 ? "مجانية (صفر ريال)" : `${selected.fee.toLocaleString('ar-SA')} ر.س`}</b></article>
+          <article><span>قيمة الكراسة</span><b>{feeEvidenceLabel(selected)}</b>{selected.feeRawText && selected.feeVerification === "detail-verified" ? <small>النص المقروء: {selected.feeRawText}</small> : null}</article>
           <article><span>حالة الإتاحة</span><b>{selected.attachmentsMeta?.length ? [...new Set(selected.attachmentsMeta.map((meta) => availabilityLabels[meta.availability] ?? availabilityLabels.unknown))].join(" · ") : "غير معروفة بعد"}</b></article>
-          <article><span>هل يلزم شراء سابق في اعتماد</span><b>{selected.fee > 0 ? "نعم — الكراسة مدفوعة ويشتريها المستخدم بنفسه داخل اعتماد عند الحاجة" : "لا — الكراسة مجانية"}</b></article>
+          <article><span>هل يلزم شراء سابق في اعتماد</span><b>{selected.fee > 0 ? "نعم — الكراسة مدفوعة ويشتريها المستخدم بنفسه داخل اعتماد عند الحاجة" : isVerifiedFreeTender(selected) ? "لا — الكراسة مجانية مؤكدة من صفحة التفاصيل" : "غير معروف — تحقق من قيمة الكراسة في صفحة التفاصيل أولًا"}</b></article>
         </div>
         <div className="remote-files"><div><p className="eyebrow">أسماء المرفقات الظاهرة — رصد فقط</p>{selected.remoteAttachments?.length ? <div>{selected.remoteAttachments.map((name) => <span key={name}>📄 {name}</span>)}</div> : <small>لم تُرصد أسماء مرفقات ظاهرة بعد؛ اقرأ التفاصيل دون تنزيل أولًا.</small>}</div></div>
-        <div className="detail-safety"><b>لا تنزيل قبل موافقة المستخدم</b><button type="button" disabled={!downloadableMeta.length} onClick={() => openDownloadDialog()}>طلب تنزيل الملفات</button><small>{downloadableMeta.length ? `${downloadableMeta.length} ملفات قابلة للاختيار${blockedMetaCount ? ` · ${blockedMetaCount} مستبعدة لحالة إتاحتها` : ""} — اختر حتى 5 ملفات.` : `لا توجد ملفات قابلة للطلب بعد — التنزيل الحي غير مفعّل.`}</small></div>
+        <div className="detail-safety"><b>لا تنزيل قبل موافقة المستخدم</b><button type="button" disabled={!downloadableMeta.length || Boolean(feeUnverifiedHint(selected))} onClick={() => openDownloadDialog()}>طلب تنزيل الملفات</button><small>{feeUnverifiedHint(selected) ?? (downloadableMeta.length ? `${downloadableMeta.length} ملفات قابلة للاختيار${blockedMetaCount ? ` · ${blockedMetaCount} مستبعدة لحالة إتاحتها` : ""} — اختر حتى 5 ملفات.` : `لا توجد ملفات قابلة للطلب بعد — التنزيل الحي غير مفعّل.`)}</small></div>
       </section>
       <div className="market-intelligence">
         <div className="market-title"><p className="eyebrow">ذكاء المنافسة</p><h3>{crowdingSignal.label}</h3><span>ثقة التقدير: {crowdingSignal.confidence}</span></div>
@@ -753,7 +775,7 @@ export default function Home() {
         <div className="signal-factors">{crowdingSignal.factors.slice(0, 4).map((factor) => <span key={factor}>• {factor}</span>)}</div>
       </div>
       <div className="detail-body">
-        {activeDetailTab === "المعلومات الأساسية" && <div className="detail-facts"><article><span>الرقم المرجعي</span><b>{selected.reference}</b></article><article><span>رقم المنافسة</span><b>{selected.tenderNumber ?? "غير مسجل"}</b></article><article><span>نوع المنافسة</span><b>{selected.tenderType ?? "غير مسجل"}</b></article><article><span>حالة المنافسة</span><b>{selected.platformStatus ?? "المنافسات النشطة (تقديم العروض)"}</b></article><article><span>المنطقة</span><b>{selected.region}</b></article><article><span>قيمة الوثائق</span><b>{selected.fee === 0 ? "مجانية" : `${selected.fee.toLocaleString('ar-SA')} ر.س`}</b></article></div>}
+        {activeDetailTab === "المعلومات الأساسية" && <div className="detail-facts"><article><span>الرقم المرجعي</span><b>{selected.reference}</b></article><article><span>رقم المنافسة</span><b>{selected.tenderNumber ?? "غير مسجل"}</b></article><article><span>نوع المنافسة</span><b>{selected.tenderType ?? "غير مسجل"}</b></article><article><span>حالة المنافسة</span><b>{selected.platformStatus ?? "المنافسات النشطة (تقديم العروض)"}</b></article><article><span>المنطقة</span><b>{selected.region}</b></article><article><span>قيمة الوثائق</span><b>{feeEvidenceLabel(selected)}</b></article></div>}
         {activeDetailTab === "العناوين والمواعيد" && <div className="detail-facts"><article><span>موقع التنفيذ</span><b>{selected.location ?? selected.region}</b></article><article><span>آخر موعد لتقديم العروض</span><b>{selected.deadline}</b></article><article><span>تاريخ النشر</span><b>{selected.publishedAt ?? "غير مسجل"}</b></article><article><span>مدة العقد</span><b>{selected.contractDuration ?? "غير مسجلة"}</b></article></div>}
         {activeDetailTab === "التصنيف والتنفيذ" && <div className="detail-facts"><article><span>النشاط الأساسي</span><b>{selected.activity ?? "غير مصنف"}</b></article><article><span>النشاط الفرعي</span><b>{selected.subActivity ?? "غير مسجل"}</b></article><article><span>الضمان الابتدائي</span><b>{selected.guarantee ?? "غير معروف"}</b></article><article><span>حالة الملاءمة</span><b>{selected.score}/100</b></article></div>}
         {activeDetailTab === "جدول الكميات" && <div className="single-file-focus"><div><p className="eyebrow">ملف التسعير</p><h3>{fileLabels.boq}</h3><p>{fileDescriptions.boq}</p>{selected.quantitySummary && <span className="source-available">ظاهر في اعتماد: {selected.quantitySummary}</span>}</div>{selected.files?.boq ? <div className="stored-file"><span><b>{selected.files.boq.name}</b><small>{formatSize(selected.files.boq.size)} · محفوظ محليًا</small></span><button type="button" onClick={() => openStoredFile("boq")}>{openingFile === "boq" ? "جارٍ الفتح..." : "فتح الملف"}</button></div> : <label className="upload-cta">إضافة جدول الكميات بعد موافقتك<input type="file" accept=".pdf,.xlsx,.xls" onChange={(event) => onFileChange("boq", event)} /></label>}</div>}
@@ -776,7 +798,7 @@ export default function Home() {
         <dl className="download-gate-facts">
           <div><dt>المرجع</dt><dd>{selected.reference}</dd></div>
           <div><dt>اسم المنافسة</dt><dd>{selected.title}</dd></div>
-          <div><dt>قيمة الكراسة</dt><dd>{selected.fee === 0 ? "مجانية" : `${selected.fee.toLocaleString('ar-SA')} ر.س`}</dd></div>
+          <div><dt>قيمة الكراسة</dt><dd>{feeEvidenceLabel(selected)}</dd></div>
           <div><dt>حالة الإتاحة</dt><dd>{[...new Set(downloadableMeta.map((meta) => availabilityLabels[meta.availability]))].join(" · ") || "غير معروفة"}</dd></div>
         </dl>
         <div className="download-gate-files"><b>الملفات المحددة: {selectedDownloadMeta.length} (الحد الأقصى 5)</b>
@@ -786,8 +808,9 @@ export default function Home() {
         <label className="download-gate-consent"><input type="checkbox" checked={downloadConsentChecked} onChange={(event) => setDownloadConsentChecked(event.target.checked)} /> {downloadConsentPhrase}</label>
         {selected.fee > 0 && <label className="download-gate-consent"><input type="checkbox" checked={downloadPurchaseChecked} onChange={(event) => setDownloadPurchaseChecked(event.target.checked)} /> {purchaseConsentPhrase}</label>}
         {downloadGateMessage && <p className="download-gate-message">{downloadGateMessage}</p>}
+        {feeUnverifiedHint(selected) && <p className="download-gate-message">{feeUnverifiedHint(selected)}</p>}
         <div className="download-gate-actions">
-          <button type="button" disabled={!selectedDownloadMeta.length || selectedDownloadMeta.length > 5 || !downloadConsentChecked || (selected.fee > 0 && !downloadPurchaseChecked) || downloadRequestBusy} onClick={() => void submitDownloadApproval()}>{downloadRequestBusy ? "جارٍ تسجيل الموافقة..." : "تأكيد الموافقة"}</button>
+          <button type="button" disabled={!selectedDownloadMeta.length || selectedDownloadMeta.length > 5 || !downloadConsentChecked || (selected.fee > 0 && !downloadPurchaseChecked) || Boolean(feeUnverifiedHint(selected)) || downloadRequestBusy} onClick={() => void submitDownloadApproval()}>{downloadRequestBusy ? "جارٍ تسجيل الموافقة..." : "تأكيد الموافقة"}</button>
           <button type="button" className="outline-button" onClick={closeDownloadDialog}>إلغاء</button>
         </div>
       </div>

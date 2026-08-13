@@ -30,7 +30,7 @@ async function freshRepository(prefix) {
   return { projectRoot, repository };
 }
 
-test("Schema v5 migration preserves live tenders, details, and attachments from a v3 database", async () => {
+test("Schema v6 migration preserves live tenders, details, and attachments from a v3 database", async () => {
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), "radar-v3-"));
   let repository;
   try {
@@ -98,9 +98,10 @@ test("Schema v5 migration preserves live tenders, details, and attachments from 
     legacy.close();
 
     repository = await createRadarRepository({ projectRoot });
-    assert.equal(repository.schemaVersion, 5);
+    assert.equal(repository.schemaVersion, 6);
     const stored = repository.getTender("260000000030");
     assert.equal(stored.title, "منافسة من v3");
+    assert.equal(stored.feeVerification, "unknown");
     assert.equal(stored.details.status, "complete");
     assert.equal(stored.details.fields.tenderNumber, "T-30");
     assert.deepEqual(stored.remoteAttachments, ["كراسة الشروط.pdf"]);

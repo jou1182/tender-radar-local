@@ -14,8 +14,9 @@ import {
   validateDownloadRequest,
   verifyDownloadConsent,
 } from "./download-gate.mjs";
+import { assertDownloadFeeGate, cardFeeEvidence, detailFeeEvidence, mergeSyncFeeEvidence } from "./fee-evidence.mjs";
 
-const migrationVersion = 5;
+const migrationVersion = 6;
 const trackedTenderFields = ["title", "agency", "fee", "region", "deadline", "publishedAt", "platformStatus", "activity", "etimadUrl"];
 
 function safeJson(value, fallback) {
@@ -34,6 +35,9 @@ function rowToTender(row) {
     title: row.title,
     agency: row.agency,
     fee: Number(row.fee),
+    feeVerification: row.fee_verification || "unknown",
+    feeRawText: row.fee_raw_text || null,
+    feeVerifiedAt: row.fee_verified_at || null,
     region: row.region,
     deadline: row.deadline,
     publishedAt: row.published_at,
@@ -104,6 +108,9 @@ export async function createRadarRepository({ projectRoot }) {
       location TEXT NOT NULL DEFAULT '',
       quantity_summary TEXT NOT NULL DEFAULT '',
       attachment_names_json TEXT NOT NULL DEFAULT '[]',
+      fee_verification TEXT NOT NULL DEFAULT 'unknown' CHECK (fee_verification IN ('unknown', 'card-observed', 'detail-verified')),
+      fee_raw_text TEXT,
+      fee_verified_at TEXT,
       source_hash TEXT NOT NULL DEFAULT '',
       first_seen_at TEXT NOT NULL,
       last_seen_at TEXT NOT NULL,
@@ -365,6 +372,11 @@ export async function createRadarRepository({ projectRoot }) {
   ensureColumn("approvals", "revoked_at", "revoked_at TEXT");
   ensureColumn("approvals", "status", "status TEXT NOT NULL DEFAULT 'approved' CHECK (status IN ('approved', 'consumed', 'expired', 'revoked'))");
 
+  // كل قيمة تاريخية، ومنها الصفر، تبدأ بلا دليل. لا تعتمد المجانية إلا من صفحة التفاصيل.
+  ensureColumn("tenders", "fee_verification", "fee_verification TEXT NOT NULL DEFAULT 'unknown' CHECK (fee_verification IN ('unknown', 'card-observed', 'detail-verified'))");
+  ensureColumn("tenders", "fee_raw_text", "fee_raw_text TEXT");
+  ensureColumn("tenders", "fee_verified_at", "fee_verified_at TEXT");
+
   // موافقات v4 لم تكن مرتبطة بنطاق أو مدة؛ تُبطل صراحة ولا يمكن توريثها إلى مسار تنزيل حي.
   database.prepare(`
     UPDATE approvals SET status = 'revoked', revoked_at = COALESCE(revoked_at, ?)
@@ -459,6 +471,14 @@ export async function createRadarRepository({ projectRoot }) {
       UPDATE attachments SET availability = ?, requires_approval = ?, availability_updated_at = ?
       WHERE tender_reference = ? AND display_name = ?
     `),
+    applyDetailFeeEvidence: database.prepare(`
+      UPDATE tenders SET fee = ?, fee_raw_text = ?, fee_verification = 'detail-verified', fee_verified_at = ?
+      WHERE reference = ?
+    `),
+    demoteFreeAvailableAttachments: database.prepare(`
+      UPDATE attachments SET availability = 'restricted', availability_updated_at = ?
+      WHERE tender_reference = ? AND availability = 'free-available'
+    `),
     markAttachmentDownloaded: database.prepare(`
       UPDATE attachments SET download_status = 'downloaded', local_path = ?, sha256 = ?, mime_type = ?, size = ?
       WHERE tender_reference = ? AND display_name = ? AND remote_visible = 1 AND availability = 'free-available'
@@ -531,8 +551,8 @@ export async function createRadarRepository({ projectRoot }) {
       INSERT INTO tenders (
         reference, title, agency, fee, region, deadline, published_at, platform_status, activity,
         sub_activity, tender_type, etimad_url, tender_number, contract_duration, guarantee, location,
-        quantity_summary, attachment_names_json, source_hash, first_seen_at, last_seen_at, active
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+        quantity_summary, attachment_names_json, fee_verification, fee_raw_text, source_hash, first_seen_at, last_seen_at, active
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
       ON CONFLICT(reference) DO UPDATE SET
         title = excluded.title, agency = excluded.agency, fee = excluded.fee, region = excluded.region,
         deadline = excluded.deadline, published_at = excluded.published_at, platform_status = excluded.platform_status,
@@ -540,6 +560,7 @@ export async function createRadarRepository({ projectRoot }) {
         etimad_url = excluded.etimad_url, tender_number = excluded.tender_number,
         contract_duration = excluded.contract_duration, guarantee = excluded.guarantee, location = excluded.location,
         quantity_summary = excluded.quantity_summary, attachment_names_json = excluded.attachment_names_json,
+        fee_verification = excluded.fee_verification, fee_raw_text = excluded.fee_raw_text,
         source_hash = excluded.source_hash, last_seen_at = excluded.last_seen_at, active = 1
     `),
     ensureUserState: database.prepare(`
@@ -945,6 +966,7 @@ export async function createRadarRepository({ projectRoot }) {
       error.code = "TENDER_NOT_FOUND";
       throw error;
     }
+    assertDownloadFeeGate(tender);
     const manifest = validateDownloadRequest({ tenderReference: tender.reference, files, attachmentsMeta: tender.attachmentsMeta });
     const scopeHash = hashDownloadManifest(manifest);
     const nowDate = now instanceof Date ? now : new Date(now);
@@ -966,6 +988,7 @@ export async function createRadarRepository({ projectRoot }) {
     if (intent.status !== "pending") throw approvalError({ code: "APPROVAL_INTENT_USED", message: "تم تأكيد هذا الطلب أو إغلاقه بالفعل." });
     const tender = getTender(intent.tenderReference);
     if (!tender) throw approvalError({ code: "TENDER_NOT_FOUND", message: "المنافسة غير موجودة في قاعدة SQLite." });
+    assertDownloadFeeGate(tender);
     validateDownloadRequest({ tenderReference: tender.reference, files: intent.scope.files, attachmentsMeta: tender.attachmentsMeta });
     verifyDownloadConsent({ consentText, purchaseConfirmed, bookletFee: tender.fee });
     if (hashDownloadManifest(intent.scope) !== intent.scopeHash) {
@@ -1107,6 +1130,15 @@ export async function createRadarRepository({ projectRoot }) {
         fields.contractDuration || "", fields.guarantee || "", fields.location || "",
         fields.quantitySummary || "", record.reference,
       );
+      // partial مقبول فقط عندما التقط القارئ الحقل نفسه؛ failed لا يصنع دليلًا مهما احتوى السجل.
+      const readableStatus = ["complete", "partial"].includes(record.status || "complete");
+      const feeEvidence = readableStatus
+        ? detailFeeEvidence({ rawText: fields.bookletFee, sourceUrl: record.sourceUrl, verifiedAt: record.inspectedAt })
+        : null;
+      if (feeEvidence) {
+        statements.applyDetailFeeEvidence.run(feeEvidence.value, feeEvidence.rawText, feeEvidence.verifiedAt, record.reference);
+        if (feeEvidence.value > 0) statements.demoteFreeAvailableAttachments.run(feeEvidence.verifiedAt, record.reference);
+      }
       statements.upsertDetails.run(
         record.reference, record.status || "complete", record.inspectedAt, record.sourceUrl || "",
         record.pageTitle || "", JSON.stringify(fields), JSON.stringify(record.sections || []),
@@ -1234,21 +1266,31 @@ export async function createRadarRepository({ projectRoot }) {
       }
       for (const item of result.items) {
         const previous = before.get(item.reference);
-        const snapshot = comparable(item);
+        const incomingEvidence = item.feeVerification
+          ? {
+              fee: item.fee === null || item.fee === undefined ? null : Number(item.fee),
+              feeVerification: item.feeVerification,
+              feeRawText: item.feeRawText || null,
+            }
+          : cardFeeEvidence(Number(item.fee) > 0 ? String(item.fee) : (item.feeRawText || ""));
+        const feeState = mergeSyncFeeEvidence(previous, incomingEvidence);
+        const effectiveItem = { ...item, ...feeState };
+        const snapshot = comparable(effectiveItem);
         const sourceHash = JSON.stringify(snapshot);
         statements.upsertTender.run(
-          item.reference, item.title || "", item.agency || "", Number(item.fee || 0), item.region || "غير محددة",
+          item.reference, item.title || "", item.agency || "", feeState.fee, item.region || "غير محددة",
           item.deadline || "", item.publishedAt || "", item.platformStatus || "", item.activity || "",
           item.subActivity || "", item.tenderType || "", item.etimadUrl || "", item.tenderNumber || "",
           item.contractDuration || "", item.guarantee || "", item.location || "", item.quantitySummary || "",
-          JSON.stringify(item.remoteAttachments || []), sourceHash, previous?.firstSeenAt || observedAt, observedAt,
+          JSON.stringify(item.remoteAttachments || []), feeState.feeVerification, feeState.feeRawText,
+          sourceHash, previous?.firstSeenAt || observedAt, observedAt,
         );
         statements.ensureUserState.run(item.reference, Number(item.score ?? 60), observedAt);
         for (const name of item.remoteAttachments || []) statements.upsertAttachment.run(item.reference, name, "supporting");
         if (previous) {
           for (const field of trackedTenderFields) {
-            if (JSON.stringify(previous[field] ?? null) !== JSON.stringify(item[field] ?? null)) {
-              statements.insertChange.run(item.reference, runId, field, JSON.stringify(previous[field] ?? null), JSON.stringify(item[field] ?? null), observedAt);
+            if (JSON.stringify(previous[field] ?? null) !== JSON.stringify(effectiveItem[field] ?? null)) {
+              statements.insertChange.run(item.reference, runId, field, JSON.stringify(previous[field] ?? null), JSON.stringify(effectiveItem[field] ?? null), observedAt);
             }
           }
         }
