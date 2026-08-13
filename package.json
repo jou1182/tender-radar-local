@@ -11,8 +11,8 @@
     "start": "vinext start",
     "radar": "node scripts/start-radar.mjs",
     "sync-service": "node scripts/etimad-sync-service.mjs",
-    "test": "npm run build && node --test tests/rendered-html.test.mjs tests/n8n-integration.test.mjs tests/repository.test.mjs tests/sync-p1.test.mjs",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "test": "npm run build && node --test tests/rendered-html.test.mjs tests/n8n-integration.test.mjs tests/repository.test.mjs tests/sync-p1.test.mjs tests/details-p2.test.mjs",
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern .radar-data",
     "db:init": "node scripts/initialize-database.mjs",
     "db:generate": "drizzle-kit generate"
   },

@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { createRadarRepository } from "./lib/radar-repository.mjs";
 import { createRadarChromeSession } from "./lib/radar-chrome-session.mjs";
+import { buildDetailRecord, cleanDetailText } from "./lib/etimad-detail-parser.mjs";
 import {
   advanceCursor,
   feeBuckets,
@@ -20,7 +21,7 @@ const privateDir = path.join(projectRoot, ".radar-data");
 const baselineFile = path.join(projectRoot, "scripts", "sync-baseline.json");
 const listUrl = "https://tenders.etimad.sa/Tender/AllSuppliersTenders?PageNumber=1";
 const port = Number(process.env.RADAR_SYNC_PORT || 4318);
-const serviceVersion = "p1-checkpoints-cdp-2";
+const serviceVersion = "p2-visible-details-3";
 const n8nWebhookUrl = process.env.N8N_RADAR_WEBHOOK_URL || "http://127.0.0.1:5678/webhook/radar-sync-5d354757-90d1-4dc3-b7f7-c93e4c50ecb1";
 const repository = await createRadarRepository({ projectRoot });
 const baselineIds = JSON.parse(await readFile(baselineFile, "utf8"));
@@ -76,13 +77,64 @@ async function inspectTenderDetails(reference) {
   }
   const page = await chromeSession.getEtimadPage({ navigate: false });
   await page.goto(tender.etimadUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
-  await assertEtimadAuthorized(page);
-  const names = await page.locator('a, button, [role="button"]').evaluateAll((elements) => elements
+  const firstBody = await assertEtimadAuthorized(page);
+  await page.waitForLoadState("networkidle", { timeout: 8_000 }).catch(() => {});
+
+  const sections = [];
+  const attachmentNames = [];
+  const captureVisibleAttachmentNames = async (rootSelector) => {
+    const names = await page.locator(rootSelector).locator('.etd-item-title, a, button, [role="button"], [download]').evaluateAll((elements) => elements
+      .filter((element) => element instanceof HTMLElement && element.offsetParent !== null)
+      .map((element) => {
+        const text = (element.textContent || "").replace(/\s+/g, " ").trim();
+        const href = element.getAttribute("href") || "";
+        const fileName = decodeURIComponent(href.split("/").pop()?.split("?")[0] || "");
+        return text || fileName;
+      })
+      .filter((text) => text && text.length <= 220
+        && !/^(?:تحميل الملف|ملفات داعمة|المرفق)$|شراء|انضمام/i.test(text)
+        && (/\.pdf|\.xlsx?|\.docx?|كراسة|جدول.*كم|كميات|الغرامات|الجزاءات|معايير.*(?:العروض|التقييم)|المحتوى المحلي|نموذج|ملحق/i.test(text))));
+    attachmentNames.push(...names);
+  };
+  const readVisiblePanel = async () => page.locator('.tab-pane.active, [role="tabpanel"]:visible, .tab-content .active:visible, main:visible').evaluateAll((elements) => {
+    const texts = elements
+      .filter((element) => element instanceof HTMLElement && element.offsetParent !== null)
+      .map((element) => (element.innerText || "").trim())
+      .filter(Boolean)
+      .sort((left, right) => right.length - left.length);
+    return texts[0] || "";
+  }).catch(() => "");
+
+  const initialText = cleanDetailText((await readVisiblePanel()) || firstBody).slice(0, 35_000);
+  if (initialText) sections.push({ name: "صفحة تفاصيل المنافسة", text: initialText });
+
+  const tabs = await page.locator('a.nav-link[href^="#d-"]').evaluateAll((elements) => elements
     .filter((element) => element instanceof HTMLElement && element.offsetParent !== null)
-    .map((element) => (element.textContent || "").replace(/\s+/g, " ").trim())
-    .filter((text) => text && text.length <= 180 && (/\.pdf|\.xlsx?|\.docx?|كراسة|الغرامات|معايير العروض|المحتوى المحلي|نموذج/i.test(text))));
-  const attachmentNames = repository.saveVisibleAttachmentNames(reference, names);
-  return { reference, etimadUrl: tender.etimadUrl, attachmentNames, inspectedAt: new Date().toISOString(), downloaded: false };
+    .map((element) => ({
+      target: element.getAttribute("href") || "",
+      name: (element.textContent || "").replace(/\s+/g, " ").trim().replace(/^(?:dashboard|schedule|list|table_chart|attach_file|home)\s+/i, ""),
+    }))
+    .filter((item) => /^#d-\d+$/.test(item.target) && item.name));
+
+  for (const tab of tabs) {
+    await page.locator(`a.nav-link[href="${tab.target}"]`).first().click({ timeout: 4_000 }).catch(() => {});
+    await page.waitForTimeout(550);
+    await assertEtimadAuthorized(page);
+    const text = cleanDetailText(await page.locator(tab.target).innerText().catch(() => "")).slice(0, 35_000);
+    if (text && !sections.some((section) => section.text === text)) sections.push({ name: tab.name, text });
+    if (tab.target === "#d-5") await captureVisibleAttachmentNames(tab.target);
+  }
+
+  const record = buildDetailRecord({ reference, sourceUrl: page.url(), pageTitle: await page.title(), sections, attachmentNames });
+  const storedTender = repository.saveTenderDetails(record);
+  return {
+    reference,
+    etimadUrl: tender.etimadUrl,
+    attachmentNames: storedTender.remoteAttachments || [],
+    details: storedTender.details,
+    inspectedAt: record.inspectedAt,
+    downloaded: false,
+  };
 }
 
 async function revealSearch(page) {
@@ -440,6 +492,19 @@ const server = http.createServer(async (request, response) => {
       const body = await readJsonBody(request);
       const details = await inspectTenderDetails(String(body.reference || ""));
       return send(response, 200, details);
+    }
+    if (request.method === "POST" && request.url === "/details/batch") {
+      const body = await readJsonBody(request);
+      const references = [...new Set((body.references || []).map((value) => String(value).trim()).filter(Boolean))];
+      if (!references.length || references.length > 3) {
+        return send(response, 400, { error: "INVALID_SAMPLE", message: "عينة التفاصيل يجب أن تتراوح بين منافسة واحدة وثلاث منافسات." });
+      }
+      const results = [];
+      for (const reference of references) results.push(await inspectTenderDetails(reference));
+      return send(response, 200, { inspected: results.length, results, downloaded: false, purchased: false });
+    }
+    if (request.method === "GET" && request.url === "/details/status") {
+      return send(response, 200, repository.getDetailsStats());
     }
     if (request.method === "POST" && request.url === "/sync") {
       if (!syncPromise) syncPromise = performSync().finally(() => { syncPromise = undefined; });

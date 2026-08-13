@@ -7,6 +7,16 @@ type TenderStatus = "جديدة" | "قيد المراجعة" | "مناسبة" | 
 type DocumentStatus = "لم تُفتح" | "الكراسة" | "الكراسة + الكميات" | "مكتملة";
 type FileKind = "booklet" | "boq" | "conditions" | "penalties" | "localContent" | "evaluation" | "supporting";
 type LocalFile = { name: string; size: number };
+type CapturedDetails = {
+  status: "complete" | "partial" | "failed";
+  inspectedAt: string;
+  pageTitle: string;
+  sourceUrl: string;
+  fields: Record<string, string>;
+  sections: Array<{ name: string; text: string }>;
+  attachments: Array<{ displayName: string; kind: FileKind }>;
+  errorMessage?: string;
+};
 type Review = {
   scopeFit: "غير مقيم" | "مطابق" | "بحاجة مراجعة" | "غير مطابق";
   classification: "غير مقيم" | "مطابق" | "بحاجة مراجعة" | "غير مطابق";
@@ -25,6 +35,7 @@ type Tender = {
   status: TenderStatus;
   documents: DocumentStatus;
   score: number;
+  active?: boolean;
   platformStatus?: string;
   activity?: string;
   subActivity?: string;
@@ -37,6 +48,7 @@ type Tender = {
   location?: string;
   quantitySummary?: string;
   remoteAttachments?: string[];
+  details?: CapturedDetails;
   disclosedCompetitorCount?: number;
   competitorCountSource?: string;
   files?: Partial<Record<FileKind, LocalFile>>;
@@ -210,6 +222,7 @@ export default function Home() {
   const [activeDetailTab, setActiveDetailTab] = useState<DetailTab>("المعلومات الأساسية");
   const [openingFile, setOpeningFile] = useState<FileKind | null>(null);
   const [isInspectingDetails, setIsInspectingDetails] = useState(false);
+  const [isInspectingSample, setIsInspectingSample] = useState(false);
   const [sessionStartedAt, setSessionStartedAt] = useState<number | null>(null);
   const [remainingMinutes, setRemainingMinutes] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
@@ -415,6 +428,33 @@ export default function Home() {
       setSyncMessage(error instanceof Error ? error.message : "تعذر قراءة تفاصيل المنافسة");
     } finally { setIsInspectingDetails(false); }
   }
+  async function inspectDetailsSample() {
+    if (isInspectingSample) return;
+    const references = tenders.filter((tender) => tender.active !== false && tender.details?.status !== "complete").slice(0, 2).map((tender) => tender.reference);
+    if (!references.length) {
+      setSyncMessage("لا توجد منافسات جديدة بلا تفاصيل لاختبار العينة عليها.");
+      return;
+    }
+    setIsInspectingSample(true);
+    setSyncMessage(`جارٍ اختبار تفاصيل ${references.length} منافسة فقط، دون شراء أو تنزيل ملفات...`);
+    try {
+      const response = await fetch(`${syncServiceUrl}/details/batch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ references }),
+      });
+      const result = await response.json() as { inspected?: number; message?: string };
+      if (!response.ok) throw new Error(result.message || "تعذر اختبار عينة التفاصيل");
+      const storedResponse = await fetch(`${syncServiceUrl}/tenders`);
+      if (storedResponse.ok) {
+        const stored = await storedResponse.json() as { items: Tender[] };
+        setTenders(stored.items);
+      }
+      setSyncMessage(`اكتمل اختبار P2: حُفظت تفاصيل ${result.inspected ?? references.length} منافسة وأسماء المرفقات الظاهرة فقط، دون تنزيل أو شراء.`);
+    } catch (error) {
+      setSyncMessage(error instanceof Error ? error.message : "تعذر اختبار عينة التفاصيل");
+    } finally { setIsInspectingSample(false); }
+  }
   async function onFileChange(kind: FileKind, event: ChangeEvent<HTMLInputElement>) {
     if (!selected) return;
     const file = event.target.files?.[0]; if (!file) return;
@@ -457,7 +497,7 @@ export default function Home() {
       <div className="sync-heading"><div><p className="eyebrow">مركز المزامنة المستقلة</p><h2>زر واحد، بلا وسيط</h2><p>يتصل الرادار بخدمة محلية على جهازك، ويفحص آخر النتائج ويضيف الجديد ويحدّث المتغير منذ آخر مزامنة.</p></div><div className="sync-state"><span className="sync-pulse" /><b>{syncState === "fresh" ? "البيانات حديثة" : syncState === "pending" ? "المزامنة تعمل الآن" : "تحتاج مزامنة"}</b><small>{syncMeta.lastSyncAt ? `آخر مزامنة: ${new Date(syncMeta.lastSyncAt).toLocaleString("ar-SA", { dateStyle: "medium", timeStyle: "short" })}` : "لم تكتمل مزامنة حقيقية بعد"}</small></div></div>
       <div className="sync-stats"><article><strong>{syncMeta.regions}</strong><span>منطقة مستهدفة</span></article><article><strong>{syncMeta.targetPerRegion}</strong><span>منافسة كحد أقصى لكل منطقة</span></article><article><strong>{syncMeta.checked}</strong><span>نتيجة في آخر فحص متاح</span></article><article><strong>{syncMeta.newItems}</strong><span>فرص أُضيفت في آخر جلسة</span></article></div>
       {syncProgress && syncProgress.status !== "complete" && <div className={`sync-progress ${syncProgress.status}`}><div><b>{syncProgress.status === "partial" ? "جولة محفوظة وقابلة للاستئناف" : "تقدم الجولة الحالية"}</b><span>{syncProgress.regionsCompleted} من {syncProgress.regionsTargeted} منطقة · {syncProgress.checked} ظهور مفحوص{syncProgress.cursor?.pageNumber ? ` · الصفحة ${syncProgress.cursor.pageNumber}` : ""}</span></div><progress max={syncProgress.regionsTargeted} value={syncProgress.regionsCompleted} /></div>}
-      <div className="sync-actions"><div><b><span className={`helper-dot ${helperOnline ? "online" : "offline"}`} /> {helperOnline ? "الخدمة المحلية متصلة" : "الخدمة المحلية غير متصلة"}</b><span>{syncMessage}</span></div><div className="sync-buttons"><button type="button" className="outline-button" onClick={() => void openEtimadSession()}>فتح جلسة اعتماد</button><button type="button" disabled={isSyncing} onClick={() => void requestSync()}>{isSyncing ? "جارٍ فحص المناطق..." : syncProgress?.status === "partial" ? "استئناف المزامنة" : "مزامنة الآن"}</button></div></div>
+      <div className="sync-actions"><div><b><span className={`helper-dot ${helperOnline ? "online" : "offline"}`} /> {helperOnline ? "الخدمة المحلية متصلة" : "الخدمة المحلية غير متصلة"}</b><span>{syncMessage}</span></div><div className="sync-buttons"><button type="button" className="outline-button" onClick={() => void openEtimadSession()}>فتح جلسة اعتماد</button><button type="button" className="outline-button" disabled={isInspectingSample || isSyncing} onClick={() => void inspectDetailsSample()}>{isInspectingSample ? "جارٍ فحص العينة..." : "اختبار تفاصيل عينة (2)"}</button><button type="button" disabled={isSyncing || isInspectingSample} onClick={() => void requestSync()}>{isSyncing ? "جارٍ فحص المناطق..." : syncProgress?.status === "partial" ? "استئناف المزامنة" : "مزامنة الآن"}</button></div></div>
     </section>
     <section className={`automation-center ${automation.state}`} aria-label="أتمتة n8n المحلية">
       <div className="automation-head"><div><p className="eyebrow">المرحلة الأولى · أتمتة محلية</p><h2>n8n يستقبل ويسجّل التغييرات</h2><p>بيانات المنافسة الأساسية فقط؛ دون كلمات مرور أو ملفات أو ذكاء اصطناعي.</p></div><div className="automation-status"><span className={`helper-dot ${automation.online ? "online" : "offline"}`} /><b>{automation.online ? "n8n متصل" : automation.state === "error" ? "n8n يحتاج مراجعة" : "بانتظار الاختبار"}</b><small>{automation.workflow ?? "Radar Phase 1"}</small></div></div>
@@ -540,6 +580,7 @@ export default function Home() {
         {activeDetailTab === "المرفقات" && <div className="attachments-workspace">{selected.remoteAttachments?.length ? <div className="remote-files"><div><p className="eyebrow">رُصدت في اعتماد — لم تُنزّل</p><h3>{selected.remoteAttachments.length} ملفات داعمة متاحة</h3></div><div>{selected.remoteAttachments.map((name) => <span key={name}>📄 {name}</span>)}</div></div> : <div className="remote-files empty-remote"><b>لم تظهر ملفات داعمة منفصلة في صفحة اعتماد.</b><span>قد تتاح الملفات بعد شراء الكراسة أو الانضمام للمنافسة.</span></div>}<div className="attachments-grid">{fileKinds.map((kind) => <article className="attachment-card" key={kind}><div className="attachment-icon">{selected.files?.[kind] ? "✓" : "+"}</div><div><h3>{fileLabels[kind]}</h3><p>{fileDescriptions[kind]}</p>{selected.files?.[kind] && <small>{selected.files[kind]?.name} · {formatSize(selected.files[kind]?.size ?? 0)}</small>}</div><div className="attachment-actions">{selected.files?.[kind] && <button type="button" onClick={() => openStoredFile(kind)}>{openingFile === kind ? "جارٍ الفتح..." : "فتح"}</button>}<label>{selected.files?.[kind] ? "استبدال" : "إضافة ملف"}<input type="file" accept={kind === "boq" ? ".pdf,.xlsx,.xls" : ".pdf,.doc,.docx"} onChange={(event) => onFileChange(kind, event)} /></label></div></article>)}</div></div>}
         {activeDetailTab === "معايير التقييم" && <div className="criteria-panel"><div><p className="eyebrow">قرار المشاركة</p><h3>{assessment.decision}</h3><p>{assessment.next}</p></div><div className="criteria-score"><strong>{selected.score}</strong><span>من 100</span></div>{selected.files?.evaluation ? <button type="button" onClick={() => openStoredFile("evaluation")}>فتح ملف معايير التقييم</button> : <label className="upload-cta">إضافة ملف معايير التقييم<input type="file" accept=".pdf,.doc,.docx" onChange={(event) => onFileChange("evaluation", event)} /></label>}</div>}
         {activeDetailTab === "المحتوى المحلي" && <div className="single-file-focus"><div><p className="eyebrow">التفضيل السعري</p><h3>{fileLabels.localContent}</h3><p>{fileDescriptions.localContent}</p></div>{selected.files?.localContent ? <div className="stored-file"><span><b>{selected.files.localContent.name}</b><small>{formatSize(selected.files.localContent.size)} · محفوظ محليًا</small></span><button type="button" onClick={() => openStoredFile("localContent")}>فتح الملف</button></div> : <label className="upload-cta">إضافة ملف المحتوى المحلي<input type="file" accept=".pdf,.doc,.docx" onChange={(event) => onFileChange("localContent", event)} /></label>}</div>}
+        {selected.details && <section className="captured-details" aria-label="البيانات المحفوظة من صفحة اعتماد"><div><p className="eyebrow">رصد P2 محفوظ في SQLite</p><h3>{selected.details.sections.length} أقسام ظاهرة · {selected.details.attachments.length} أسماء مرفقات</h3><small>آخر قراءة: {new Date(selected.details.inspectedAt).toLocaleString("ar-SA", { dateStyle: "medium", timeStyle: "short" })} · دون تنزيل أو شراء</small></div><div className="captured-sections">{selected.details.sections.map((section, index) => <details key={`${section.name}-${index}`}><summary>{section.name}</summary><pre>{section.text}</pre></details>)}</div></section>}
       </div>
       <div className="detail-safety"><b>قاعدة الرادار:</b> يعرض تفاصيل المنافسة وملفاتها المحفوظة محليًا. أي شراء أو تنزيل من اعتماد يظل متوقفًا حتى موافقتك الصريحة.</div>
     </section>

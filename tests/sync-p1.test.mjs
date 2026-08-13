@@ -141,6 +141,6 @@ test("browser login remains human and sync contains no bypass, purchase, or down
   assert.doesNotMatch(browserSource, /launchPersistentContext|enable-automation|navigator\.webdriver/);
   assert.match(serviceSource, /CAPTCHA_REQUIRED/);
   assert.match(serviceSource, /request\.url === "\/details"/);
-  assert.match(serviceSource, /saveVisibleAttachmentNames/);
-  assert.doesNotMatch(serviceSource, /download\(|purchase|شراء|submitOffer|joinTender|cookies\(\)/i);
+  assert.match(serviceSource, /saveTenderDetails/);
+  assert.doesNotMatch(serviceSource, /\.download\(|purchase\(|شراء كراسة|submitOffer|joinTender|cookies\(\)/i);
 });

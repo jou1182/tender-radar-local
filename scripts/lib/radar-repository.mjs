@@ -1,8 +1,9 @@
 import path from "node:path";
 import { mkdir } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 
-const migrationVersion = 2;
+const migrationVersion = 3;
 const trackedTenderFields = ["title", "agency", "fee", "region", "deadline", "publishedAt", "platformStatus", "activity", "etimadUrl"];
 
 function safeJson(value, fallback) {
@@ -14,6 +15,7 @@ function safeJson(value, fallback) {
 function toBoolean(value) { return Number(value) === 1; }
 
 function rowToTender(row) {
+  const details = safeJson(row.detail_fields_json, {});
   return {
     id: row.reference,
     reference: row.reference,
@@ -28,15 +30,25 @@ function rowToTender(row) {
     score: Number(row.score ?? 60),
     platformStatus: row.platform_status,
     activity: row.activity,
-    subActivity: row.sub_activity || undefined,
-    tenderType: row.tender_type || undefined,
+    subActivity: details.subActivity || row.sub_activity || undefined,
+    tenderType: details.tenderType || row.tender_type || undefined,
     etimadUrl: row.etimad_url,
-    tenderNumber: row.tender_number || undefined,
-    contractDuration: row.contract_duration || undefined,
-    guarantee: row.guarantee || undefined,
-    location: row.location || undefined,
-    quantitySummary: row.quantity_summary || undefined,
-    remoteAttachments: safeJson(row.attachment_names_json, []),
+    tenderNumber: details.tenderNumber || row.tender_number || undefined,
+    contractDuration: details.contractDuration || row.contract_duration || undefined,
+    guarantee: details.guarantee || row.guarantee || undefined,
+    location: details.location || row.location || undefined,
+    quantitySummary: details.quantitySummary || row.quantity_summary || undefined,
+    remoteAttachments: safeJson(row.detail_attachment_names_json || row.attachment_names_json, []).map((item) => typeof item === "string" ? item : item.displayName),
+    details: row.detail_status ? {
+      status: row.detail_status,
+      inspectedAt: row.detail_inspected_at,
+      pageTitle: row.detail_page_title || "",
+      sourceUrl: row.detail_source_url || row.etimad_url,
+      fields: details,
+      sections: safeJson(row.detail_sections_json, []),
+      attachments: safeJson(row.detail_attachment_names_json, []),
+      errorMessage: row.detail_error_message || undefined,
+    } : undefined,
     review: safeJson(row.review_json, undefined),
     active: toBoolean(row.active),
     firstSeenAt: row.first_seen_at,
@@ -169,6 +181,28 @@ export async function createRadarRepository({ projectRoot }) {
       UNIQUE (tender_reference, display_name)
     );
 
+    CREATE TABLE IF NOT EXISTS tender_details (
+      tender_reference TEXT PRIMARY KEY REFERENCES tenders(reference) ON DELETE CASCADE,
+      status TEXT NOT NULL CHECK (status IN ('complete', 'partial', 'failed')),
+      inspected_at TEXT NOT NULL,
+      source_url TEXT NOT NULL,
+      page_title TEXT NOT NULL DEFAULT '',
+      fields_json TEXT NOT NULL DEFAULT '{}',
+      sections_json TEXT NOT NULL DEFAULT '[]',
+      attachment_names_json TEXT NOT NULL DEFAULT '[]',
+      content_hash TEXT NOT NULL,
+      error_message TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS tender_detail_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tender_reference TEXT NOT NULL REFERENCES tenders(reference) ON DELETE CASCADE,
+      inspected_at TEXT NOT NULL,
+      content_hash TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      UNIQUE (tender_reference, content_hash)
+    );
+
     CREATE TABLE IF NOT EXISTS analysis_runs (
       id TEXT PRIMARY KEY,
       tender_reference TEXT NOT NULL REFERENCES tenders(reference) ON DELETE CASCADE,
@@ -229,6 +263,7 @@ export async function createRadarRepository({ projectRoot }) {
     CREATE INDEX IF NOT EXISTS idx_changes_reference ON tender_changes(tender_reference, observed_at DESC);
     CREATE INDEX IF NOT EXISTS idx_sync_runs_started ON sync_runs(started_at DESC);
     CREATE INDEX IF NOT EXISTS idx_sync_observations_run ON sync_observations(sync_run_id, region_id);
+    CREATE INDEX IF NOT EXISTS idx_tender_detail_history_reference ON tender_detail_history(tender_reference, inspected_at DESC);
   `);
 
   database.prepare("INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)").run(migrationVersion, new Date().toISOString());
@@ -237,15 +272,25 @@ export async function createRadarRepository({ projectRoot }) {
     insertBaseline: database.prepare("INSERT OR IGNORE INTO sync_baseline (reference, imported_at) VALUES (?, ?)"),
     listBaseline: database.prepare("SELECT reference FROM sync_baseline ORDER BY reference"),
     listTenders: database.prepare(`
-      SELECT t.*, s.user_status, s.document_status, s.score, s.review_json
+      SELECT t.*, s.user_status, s.document_status, s.score, s.review_json,
+        d.status AS detail_status, d.inspected_at AS detail_inspected_at,
+        d.source_url AS detail_source_url, d.page_title AS detail_page_title,
+        d.fields_json AS detail_fields_json, d.sections_json AS detail_sections_json,
+        d.attachment_names_json AS detail_attachment_names_json, d.error_message AS detail_error_message
       FROM tenders t
       LEFT JOIN tender_user_state s ON s.tender_reference = t.reference
+      LEFT JOIN tender_details d ON d.tender_reference = t.reference
       ORDER BY t.published_at DESC, t.last_seen_at DESC
     `),
     getTender: database.prepare(`
-      SELECT t.*, s.user_status, s.document_status, s.score, s.review_json
+      SELECT t.*, s.user_status, s.document_status, s.score, s.review_json,
+        d.status AS detail_status, d.inspected_at AS detail_inspected_at,
+        d.source_url AS detail_source_url, d.page_title AS detail_page_title,
+        d.fields_json AS detail_fields_json, d.sections_json AS detail_sections_json,
+        d.attachment_names_json AS detail_attachment_names_json, d.error_message AS detail_error_message
       FROM tenders t
       LEFT JOIN tender_user_state s ON s.tender_reference = t.reference
+      LEFT JOIN tender_details d ON d.tender_reference = t.reference
       WHERE t.reference = ?
     `),
     insertRun: database.prepare(`
@@ -302,6 +347,39 @@ export async function createRadarRepository({ projectRoot }) {
     listObservations: database.prepare("SELECT payload_json FROM sync_observations WHERE sync_run_id = ? ORDER BY observed_at, tender_reference"),
     countObservations: database.prepare("SELECT COUNT(*) AS count FROM sync_observations WHERE sync_run_id = ?"),
     updateAttachmentNames: database.prepare("UPDATE tenders SET attachment_names_json = ? WHERE reference = ?"),
+    hideAttachments: database.prepare("UPDATE attachments SET remote_visible = 0 WHERE tender_reference = ?"),
+    updateTenderFromDetails: database.prepare(`
+      UPDATE tenders SET
+        tender_number = COALESCE(NULLIF(?, ''), tender_number),
+        tender_type = COALESCE(NULLIF(?, ''), tender_type),
+        sub_activity = COALESCE(NULLIF(?, ''), sub_activity),
+        contract_duration = COALESCE(NULLIF(?, ''), contract_duration),
+        guarantee = COALESCE(NULLIF(?, ''), guarantee),
+        location = COALESCE(NULLIF(?, ''), location),
+        quantity_summary = COALESCE(NULLIF(?, ''), quantity_summary)
+      WHERE reference = ?
+    `),
+    upsertDetails: database.prepare(`
+      INSERT INTO tender_details (
+        tender_reference, status, inspected_at, source_url, page_title,
+        fields_json, sections_json, attachment_names_json, content_hash, error_message
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(tender_reference) DO UPDATE SET
+        status = excluded.status, inspected_at = excluded.inspected_at, source_url = excluded.source_url,
+        page_title = excluded.page_title, fields_json = excluded.fields_json,
+        sections_json = excluded.sections_json, attachment_names_json = excluded.attachment_names_json,
+        content_hash = excluded.content_hash, error_message = excluded.error_message
+    `),
+    insertDetailsHistory: database.prepare(`
+      INSERT OR IGNORE INTO tender_detail_history (tender_reference, inspected_at, content_hash, payload_json)
+      VALUES (?, ?, ?, ?)
+    `),
+    detailsStats: database.prepare(`
+      SELECT COUNT(*) AS inspected,
+        SUM(CASE WHEN status = 'complete' THEN 1 ELSE 0 END) AS complete,
+        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
+      FROM tender_details
+    `),
     upsertTender: database.prepare(`
       INSERT INTO tenders (
         reference, title, agency, fee, region, deadline, published_at, platform_status, activity,
@@ -326,10 +404,12 @@ export async function createRadarRepository({ projectRoot }) {
       VALUES (?, ?, ?, ?, ?, ?)
     `),
     upsertAttachment: database.prepare(`
-      INSERT INTO attachments (tender_reference, display_name, remote_visible)
-      VALUES (?, ?, 1)
-      ON CONFLICT(tender_reference, display_name) DO UPDATE SET remote_visible = 1
+      INSERT INTO attachments (tender_reference, display_name, kind, remote_visible)
+      VALUES (?, ?, ?, 1)
+      ON CONFLICT(tender_reference, display_name) DO UPDATE SET
+        kind = excluded.kind, remote_visible = 1
     `),
+    detailHistoryCount: database.prepare("SELECT COUNT(*) AS count FROM tender_detail_history WHERE tender_reference = ?"),
     getState: database.prepare("SELECT value_json FROM app_state WHERE key = ?"),
     setState: database.prepare(`
       INSERT INTO app_state (key, value_json, updated_at) VALUES (?, ?, ?)
@@ -371,9 +451,60 @@ export async function createRadarRepository({ projectRoot }) {
     const cleanNames = [...new Set((names || []).map((name) => String(name).trim()).filter(Boolean))];
     transaction(() => {
       statements.updateAttachmentNames.run(JSON.stringify(cleanNames), reference);
-      for (const name of cleanNames) statements.upsertAttachment.run(reference, name);
+      for (const name of cleanNames) statements.upsertAttachment.run(reference, name, "supporting");
     });
     return cleanNames;
+  }
+
+  function saveTenderDetails(record) {
+    const attachments = record.attachments || [];
+    const attachmentNames = attachments.map((item) => item.displayName);
+    const payload = {
+      fields: record.fields || {},
+      sections: record.sections || [],
+      attachments,
+      pageTitle: record.pageTitle || "",
+      sourceUrl: record.sourceUrl || "",
+    };
+    const stablePayload = {
+      ...payload,
+      fields: Object.fromEntries(Object.entries(payload.fields).filter(([key]) => key !== "timeRemaining")),
+      sections: payload.sections.map((section) => ({
+        ...section,
+        text: section.text.replace(/(الوقت المتبق[ىي]\s*\n)[^\n]+/g, "$1[قيمة متغيرة]")
+      })),
+    };
+    const stableContent = JSON.stringify(stablePayload);
+    const hash = createHash("sha256").update(stableContent).digest("hex");
+    transaction(() => {
+      statements.updateAttachmentNames.run(JSON.stringify(attachmentNames), record.reference);
+      statements.hideAttachments.run(record.reference);
+      for (const attachment of attachments) {
+        statements.upsertAttachment.run(record.reference, attachment.displayName, attachment.kind || "supporting");
+      }
+      const fields = record.fields || {};
+      statements.updateTenderFromDetails.run(
+        fields.tenderNumber || "", fields.tenderType || "", fields.subActivity || "",
+        fields.contractDuration || "", fields.guarantee || "", fields.location || "",
+        fields.quantitySummary || "", record.reference,
+      );
+      statements.upsertDetails.run(
+        record.reference, record.status || "complete", record.inspectedAt, record.sourceUrl || "",
+        record.pageTitle || "", JSON.stringify(fields), JSON.stringify(record.sections || []),
+        JSON.stringify(attachments), hash, record.errorMessage || null,
+      );
+      statements.insertDetailsHistory.run(record.reference, record.inspectedAt, hash, stableContent);
+    });
+    return getTender(record.reference);
+  }
+
+  function getDetailsStats() {
+    const row = statements.detailsStats.get();
+    return { inspected: Number(row?.inspected || 0), complete: Number(row?.complete || 0), failed: Number(row?.failed || 0) };
+  }
+
+  function getDetailHistoryCount(reference) {
+    return Number(statements.detailHistoryCount.get(reference)?.count || 0);
   }
 
   function loadComparisonItems() {
@@ -484,7 +615,7 @@ export async function createRadarRepository({ projectRoot }) {
           JSON.stringify(item.remoteAttachments || []), sourceHash, previous?.firstSeenAt || observedAt, observedAt,
         );
         statements.ensureUserState.run(item.reference, Number(item.score ?? 60), observedAt);
-        for (const name of item.remoteAttachments || []) statements.upsertAttachment.run(item.reference, name);
+        for (const name of item.remoteAttachments || []) statements.upsertAttachment.run(item.reference, name, "supporting");
         if (previous) {
           for (const field of trackedTenderFields) {
             if (JSON.stringify(previous[field] ?? null) !== JSON.stringify(item[field] ?? null)) {
@@ -507,6 +638,7 @@ export async function createRadarRepository({ projectRoot }) {
       newItems: Number(latest?.new_count || 0),
       changedItems: Number(latest?.changed_count || 0),
       items: listTenders(),
+      details: getDetailsStats(),
       database: { path: databasePath, schemaVersion: migrationVersion },
     };
   }
@@ -533,6 +665,9 @@ export async function createRadarRepository({ projectRoot }) {
     listTenders,
     getTender,
     saveVisibleAttachmentNames,
+    saveTenderDetails,
+    getDetailsStats,
+    getDetailHistoryCount,
     loadComparisonItems,
     startSyncRun,
     startOrResumeSyncRun,
