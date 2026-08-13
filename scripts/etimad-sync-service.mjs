@@ -20,13 +20,15 @@ import {
   planFromSearchProfile,
 } from "./lib/sync-plan.mjs";
 import { createDisabledProductionDownloadAdapter } from "./lib/attachment-adapters.mjs";
+import { createLiveDownloadAdapter } from "./lib/live-attachment-acquisition.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const privateDir = path.join(projectRoot, ".radar-data");
 const baselineFile = path.join(projectRoot, "scripts", "sync-baseline.json");
 const listUrl = "https://tenders.etimad.sa/Tender/AllSuppliersTenders?PageNumber=1";
 const port = Number(process.env.RADAR_SYNC_PORT || 4318);
-const serviceVersion = "p3b-approval-gate-1";
+const serviceVersion = "p3b1-live-guarded-1";
+const localUiOrigins = new Set(["http://localhost:3000", "http://127.0.0.1:3000"]);
 const n8nWebhookUrl = process.env.N8N_RADAR_WEBHOOK_URL || "http://127.0.0.1:5678/webhook/radar-sync-5d354757-90d1-4dc3-b7f7-c93e4c50ecb1";
 const repository = await createRadarRepository({ projectRoot });
 const baselineIds = JSON.parse(await readFile(baselineFile, "utf8"));
@@ -34,6 +36,9 @@ repository.seedBaseline(baselineIds);
 const chromeSession = createRadarChromeSession({ privateDir, startUrl: listUrl });
 // المحوّل الوحيد في P3-B0: أي محاولة تنفيذ حي تعيد DOWNLOAD_ADAPTER_DISABLED.
 const downloadAdapter = createDisabledProductionDownloadAdapter();
+// محوّل P3-B1A الحي المحكوم: معطل افتراضيًا بيئيًا ومقيد بقائمة سماح واحدة ومفتاح إيقاف فوري.
+// لا يوجد driver حي في P3-B1A. حتى مع متغيرات التفعيل سيفشل قبل استهلاك الموافقة.
+const liveAcquisitionAdapter = createLiveDownloadAdapter({ repository, projectRoot, privateDir });
 
 let syncPromise;
 let state = { phase: "idle", region: null, checked: 0, message: "جاهز", progress: repository.getSyncProgress() };
@@ -579,8 +584,7 @@ const server = http.createServer(async (request, response) => {
       });
     }
     if (request.method === "POST" && pathname.startsWith("/approval-intents/") && pathname.endsWith("/confirm")) {
-      const allowedOrigins = new Set(["http://localhost:3000", "http://127.0.0.1:3000"]);
-      if (!allowedOrigins.has(String(request.headers.origin || ""))) {
+      if (!localUiOrigins.has(String(request.headers.origin || ""))) {
         return send(response, 403, { error: "HUMAN_CONFIRMATION_ORIGIN_REQUIRED", message: "تأكيد الموافقة متاح من واجهة الرادار المحلية فقط." });
       }
       const id = decodeURIComponent(pathname.slice("/approval-intents/".length, -"/confirm".length));
@@ -631,6 +635,49 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.method === "GET" && pathname === "/approval-jobs") {
       return send(response, 200, { jobs: repository.listDownloadJobs() });
+    }
+    if (request.method === "POST" && pathname === "/approval-jobs/live") {
+      // مسار P3-B1A: المحوّل الحي المحكوم يتحقق من قائمة السماح والحواجز، ولا يستهلك الموافقة وهو معطل.
+      if (!localUiOrigins.has(String(request.headers.origin || ""))) {
+        return send(response, 403, { error: "HUMAN_CONFIRMATION_ORIGIN_REQUIRED", message: "بدء التجربة متاح من واجهة الرادار المحلية فقط." });
+      }
+      const body = await readJsonBody(request);
+      const approval = repository.getDownloadApproval(String(body.approvalId || ""));
+      if (!approval) {
+        const error = new Error("الموافقة غير موجودة.");
+        error.code = "APPROVAL_NOT_FOUND";
+        throw error;
+      }
+      const job = repository.recordDownloadJob({
+        approvalId: approval.id,
+        tenderReference: approval.tenderReference,
+        manifest: approval.scope,
+        status: "running",
+      });
+      try {
+        const result = await liveAcquisitionAdapter.execute({ id: job.id, approvalId: approval.id, manifest: approval.scope });
+        const finished = repository.updateDownloadJob(job.id, { status: "complete", finished: true });
+        return send(response, 200, { job: finished, result, adapter: liveAcquisitionAdapter.kind });
+      } catch (adapterError) {
+        const guarded = adapterError?.code === "LIVE_ADAPTER_DISABLED"
+          || adapterError?.code === "LIVE_DRIVER_NOT_CONFIGURED"
+          || adapterError?.code === "LIVE_ALLOWLIST_MISMATCH"
+          || adapterError?.code === "LIVE_PRECHECK_FAILED"
+          || adapterError?.code === "LIVE_UNTRUSTED_URL"
+          || adapterError?.code === "LIVE_TARGET_MISMATCH"
+          || String(adapterError?.code || "").startsWith("APPROVAL_");
+        const updated = repository.updateDownloadJob(job.id, {
+          status: guarded ? "blocked" : "failed",
+          errorMessage: adapterError?.code || "LIVE_DOWNLOAD_FAILED",
+          finished: true,
+        });
+        return send(response, guarded ? 409 : 500, {
+          job: updated,
+          adapter: liveAcquisitionAdapter.kind,
+          error: adapterError?.code || "LIVE_DOWNLOAD_FAILED",
+          message: adapterError?.message || "تعذر تنفيذ التنزيل الحي المحكوم؛ لا إعادة محاولة تلقائية.",
+        });
+      }
     }
     if (request.method === "POST" && request.url === "/sync") {
       if (!syncPromise) syncPromise = performSync().finally(() => { syncPromise = undefined; });

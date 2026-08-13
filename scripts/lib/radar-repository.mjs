@@ -10,6 +10,7 @@ import {
   assessApprovalUsability,
   downloadApprovalAction,
   hashDownloadManifest,
+  maxFileBytes,
   validateDownloadRequest,
   verifyDownloadConsent,
 } from "./download-gate.mjs";
@@ -458,6 +459,10 @@ export async function createRadarRepository({ projectRoot }) {
       UPDATE attachments SET availability = ?, requires_approval = ?, availability_updated_at = ?
       WHERE tender_reference = ? AND display_name = ?
     `),
+    markAttachmentDownloaded: database.prepare(`
+      UPDATE attachments SET download_status = 'downloaded', local_path = ?, sha256 = ?, mime_type = ?, size = ?
+      WHERE tender_reference = ? AND display_name = ? AND remote_visible = 1 AND availability = 'free-available'
+    `),
     insertActivity: database.prepare(`
       INSERT INTO activity_catalog (id, etimad_value, name_ar, source, active, first_seen_at, last_seen_at)
       VALUES (?, ?, ?, ?, 1, ?, ?)
@@ -832,6 +837,11 @@ export async function createRadarRepository({ projectRoot }) {
         availability: row.availability,
         requiresApproval: toBoolean(row.requires_approval),
         remoteVisible: toBoolean(row.remote_visible),
+        downloadStatus: row.download_status,
+        localPath: row.local_path,
+        sha256: row.sha256,
+        mimeType: row.mime_type,
+        size: row.size === null ? null : Number(row.size),
       });
     }
     return map;
@@ -848,6 +858,24 @@ export async function createRadarRepository({ projectRoot }) {
       throw error;
     }
     statements.setAttachmentAvailability.run(availability, requiresApproval ? 1 : 0, new Date().toISOString(), String(reference), String(displayName));
+    return listAttachmentMeta(reference);
+  }
+
+  function markAttachmentDownloaded(reference, displayName, { localPath, sha256, mimeType = null, size } = {}) {
+    if (!localPath || !/^[a-f0-9]{64}$/.test(String(sha256 || "")) || !Number.isSafeInteger(size) || size <= 0 || size > maxFileBytes) {
+      const error = new Error("بيانات الملف المحلي غير صالحة للحفظ.");
+      error.code = "INVALID_ATTACHMENT_RESULT";
+      throw error;
+    }
+    const result = statements.markAttachmentDownloaded.run(
+      String(localPath), String(sha256), mimeType ? String(mimeType) : null, size,
+      String(reference), String(displayName),
+    );
+    if (Number(result.changes) !== 1) {
+      const error = new Error("لم يعد المرفق ظاهرًا ومتاحًا مجانًا؛ أُلغي حفظ نتيجة التنزيل.");
+      error.code = "ATTACHMENT_STATE_CHANGED";
+      throw error;
+    }
     return listAttachmentMeta(reference);
   }
 
@@ -1287,6 +1315,7 @@ export async function createRadarRepository({ projectRoot }) {
     updateSearchProfile,
     listAttachmentMeta,
     setAttachmentAvailability,
+    markAttachmentDownloaded,
     getDownloadApproval,
     requestDownloadApprovalIntent,
     getDownloadApprovalIntent,
