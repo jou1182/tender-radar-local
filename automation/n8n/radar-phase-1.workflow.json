@@ -1,0 +1,78 @@
+{
+  "id": "radarPhase1Local",
+  "name": "رادار المنافسات - المرحلة الأولى - استقبال وإزالة التكرار",
+  "active": true,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "radar-sync-5d354757-90d1-4dc3-b7f7-c93e4c50ecb1",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [-520, 40],
+      "id": "6d5fddad-6d15-4c17-9e11-772b8ad02642",
+      "name": "استقبال نتيجة الرادار",
+      "webhookId": "5d354757-90d1-4dc3-b7f7-c93e4c50ecb1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const envelope = $input.first().json;\nconst payload = envelope.body ?? envelope;\n\nif (payload.schemaVersion !== 1 || payload.source !== 'tender-radar') {\n  throw new Error('حمولة غير معتمدة: يلزم schemaVersion=1 وsource=tender-radar');\n}\nif (!Array.isArray(payload.items)) {\n  throw new Error('حمولة غير معتمدة: items يجب أن تكون مصفوفة');\n}\n\nconst fields = ['title', 'agency', 'fee', 'region', 'deadline', 'publishedAt', 'platformStatus', 'activity', 'etimadUrl'];\nconst normalize = (item) => ({\n  reference: String(item.reference ?? '').trim(),\n  title: String(item.title ?? '').trim(),\n  agency: String(item.agency ?? '').trim(),\n  fee: Number.isFinite(Number(item.fee)) ? Number(item.fee) : 0,\n  region: String(item.region ?? '').trim(),\n  deadline: String(item.deadline ?? '').trim(),\n  publishedAt: String(item.publishedAt ?? '').trim(),\n  platformStatus: String(item.platformStatus ?? '').trim(),\n  activity: String(item.activity ?? '').trim(),\n  etimadUrl: String(item.etimadUrl ?? '').trim(),\n});\nconst fingerprint = (item) => JSON.stringify(fields.map((field) => item[field]));\nconst changedFields = (previous, current) => fields.filter((field) => JSON.stringify(previous?.[field] ?? null) !== JSON.stringify(current[field] ?? null));\n\nconst unique = new Map();\nfor (const raw of payload.items) {\n  const item = normalize(raw);\n  if (item.reference) unique.set(item.reference, item);\n}\nconst items = [...unique.values()];\nconst now = new Date().toISOString();\n\nif (payload.dryRun === true) {\n  return [{ json: {\n    ok: true,\n    dryRun: true,\n    workflow: 'Radar Phase 1 · Local n8n',\n    syncId: payload.syncId,\n    duplicate: false,\n    counts: { new: 0, changed: 0, unchanged: items.length },\n    alert: { title: 'اختبار ناجح', message: 'اتصال n8n المحلي جاهز، ولم تُحفظ بيانات الاختبار.' },\n    recordedAt: now,\n  } }];\n}\n\nconst store = $getWorkflowStaticData('global');\nstore.records = store.records ?? {};\nstore.history = Array.isArray(store.history) ? store.history : [];\nstore.processedSyncIds = Array.isArray(store.processedSyncIds) ? store.processedSyncIds : [];\n\nif (store.processedSyncIds.includes(payload.syncId)) {\n  return [{ json: {\n    ok: true,\n    workflow: 'Radar Phase 1 · Local n8n',\n    syncId: payload.syncId,\n    duplicate: true,\n    counts: { new: 0, changed: 0, unchanged: items.length },\n    alert: { title: 'تشغيل مكرر', message: 'تم تجاهل نتيجة المزامنة لأنها سُجلت سابقًا.' },\n    recordedAt: now,\n    historySize: store.history.length,\n  } }];\n}\n\nconst initialized = store.initialized === true;\nconst declaredAdded = new Set(Array.isArray(payload.declaredAdded) ? payload.declaredAdded.map(String) : []);\nconst declaredChanged = new Set(Array.isArray(payload.declaredChanged) ? payload.declaredChanged.map(String) : []);\nconst newItems = [];\nconst changedItems = [];\nlet unchanged = 0;\n\nfor (const current of items) {\n  const previousRecord = store.records[current.reference];\n  const currentFingerprint = fingerprint(current);\n  let classification = 'unchanged';\n\n  if (!initialized) {\n    if (declaredAdded.has(current.reference)) classification = 'new';\n    else if (declaredChanged.has(current.reference)) classification = 'changed';\n  } else if (!previousRecord) classification = 'new';\n  else if (previousRecord.fingerprint !== currentFingerprint) classification = 'changed';\n\n  if (classification === 'new') {\n    newItems.push(current);\n  } else if (classification === 'changed') {\n    changedItems.push({\n      ...current,\n      changedFields: previousRecord ? changedFields(previousRecord.snapshot, current) : ['تحديث معلن من الرادار'],\n      previous: previousRecord?.snapshot ?? null,\n    });\n  } else {\n    unchanged += 1;\n  }\n\n  store.records[current.reference] = {\n    fingerprint: currentFingerprint,\n    snapshot: current,\n    firstSeenAt: previousRecord?.firstSeenAt ?? now,\n    lastSeenAt: now,\n  };\n}\n\nstore.initialized = true;\nstore.processedSyncIds = [...store.processedSyncIds, payload.syncId].slice(-200);\nconst historyEntry = {\n  syncId: payload.syncId,\n  occurredAt: payload.occurredAt,\n  recordedAt: now,\n  counts: { new: newItems.length, changed: changedItems.length, unchanged },\n  newReferences: newItems.map((item) => item.reference),\n  changedReferences: changedItems.map((item) => item.reference),\n};\nstore.history = [...store.history, historyEntry].slice(-500);\n\nconst totalChanges = newItems.length + changedItems.length;\nconst message = totalChanges\n  ? `سجّل n8n ${newItems.length} منافسة جديدة و${changedItems.length} منافسة متغيرة.`\n  : `لم تظهر منافسات جديدة أو متغيرة ضمن ${items.length} منافسة مستلمة.`;\n\nreturn [{ json: {\n  ok: true,\n  workflow: 'Radar Phase 1 · Local n8n',\n  syncId: payload.syncId,\n  duplicate: false,\n  counts: historyEntry.counts,\n  alert: { title: totalChanges ? 'تحديثات جديدة في الرادار' : 'لا توجد تغييرات', message },\n  newItems,\n  changedItems,\n  recordedAt: now,\n  historySize: store.history.length,\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-240, 40],
+      "id": "67934bd6-b63f-4daf-87fa-a388dcc320dd",
+      "name": "تحقق وإزالة التكرار وتسجيل التغييرات"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [80, 40],
+      "id": "bf4faf4a-3083-4c5e-b041-ec5e8619877e",
+      "name": "إرسال التنبيه إلى الرادار"
+    },
+    {
+      "parameters": {
+        "content": "## المرحلة الأولى فقط\n- لا كلمات مرور أو Cookies\n- لا ملفات أو مرفقات\n- لا GPT أو Qwen أو Ollama\n- تُحفظ بصمة البيانات الأساسية ويُعاد تنبيه إلى الرادار",
+        "height": 220,
+        "width": 330,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-520, -250],
+      "id": "30fbac9e-28a0-47bb-8dc3-90a5a057e9d9",
+      "name": "حدود المرحلة"
+    }
+  ],
+  "connections": {
+    "استقبال نتيجة الرادار": {
+      "main": [[{"node": "تحقق وإزالة التكرار وتسجيل التغييرات", "type": "main", "index": 0}]]
+    },
+    "تحقق وإزالة التكرار وتسجيل التغييرات": {
+      "main": [[{"node": "إرسال التنبيه إلى الرادار", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true,
+    "saveExecutionProgress": true,
+    "timezone": "Asia/Riyadh",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "tags": [],
+  "versionId": "78cc1b86-d481-4bc9-b090-8a5a9516a019"
+}
