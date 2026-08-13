@@ -1,0 +1,31 @@
+{
+  "description": "دفعة P2 الحية بعد 4f4fed1: أسماء ملفات ظاهرة عامة بصيغ مضغوطة أغفلها الاكتشاف القديم الذي كان يقتصر على PDF وOffice",
+  "candidates": [
+    { "text": "المخططات.zip", "fileName": "" },
+    { "text": "مرفقات المنصة.zip", "fileName": "" },
+    { "text": "الشروط الخاصة.rar", "fileName": "" },
+    { "text": "الملحقات الداعمة.7z", "fileName": "" },
+    { "text": "كراسة الشروط والمواصفات.pdf", "fileName": "" },
+    { "text": "جدول الكميات.xlsx", "fileName": "" },
+    { "text": "عرض المشروع.pptx", "fileName": "" },
+    { "text": "", "fileName": "boq%20final.zip" },
+    { "text": "Download file", "fileName": "actual%20plans.zip" },
+    { "text": "تحميل الملف", "fileName": "" },
+    { "text": "ملفات داعمة", "fileName": "" },
+    { "text": "المرفق", "fileName": "" },
+    { "text": "شراء الكراسة", "fileName": "" },
+    { "text": "انضمام للمنافسة", "fileName": "" },
+    { "text": "صورة توضيحية.png", "fileName": "" }
+  ],
+  "expectedNames": [
+    "المخططات.zip",
+    "مرفقات المنصة.zip",
+    "الشروط الخاصة.rar",
+    "الملحقات الداعمة.7z",
+    "كراسة الشروط والمواصفات.pdf",
+    "جدول الكميات.xlsx",
+    "عرض المشروع.pptx",
+    "boq final.zip",
+    "actual plans.zip"
+  ]
+}

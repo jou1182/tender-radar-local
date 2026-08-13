@@ -24,6 +24,8 @@ type Review = {
   specialTerms: "لم تُراجع" | "تمت المراجعة" | "توجد ملاحظة حرجة";
   notes: string;
 };
+type AttachmentAvailability = "metadata-only" | "free-available" | "purchased-available" | "restricted" | "unknown";
+type AttachmentMeta = { displayName: string; kind: string; availability: AttachmentAvailability; requiresApproval: boolean; remoteVisible: boolean };
 type Tender = {
   id: string;
   title: string;
@@ -48,11 +50,32 @@ type Tender = {
   location?: string;
   quantitySummary?: string;
   remoteAttachments?: string[];
+  attachmentsMeta?: AttachmentMeta[];
   details?: CapturedDetails;
   disclosedCompetitorCount?: number;
   competitorCountSource?: string;
   files?: Partial<Record<FileKind, LocalFile>>;
   review?: Review;
+};
+type CatalogSubActivity = { id: string; name: string; etimadValue: string | null; source: string; active: boolean };
+type ActivityCatalogItem = { id: string; name: string; etimadValue: string | null; source: string; active: boolean; subActivities: CatalogSubActivity[] };
+type SearchProfile = {
+  id: string;
+  name: string;
+  activityName: string | null;
+  activityEtimadValue: string | null;
+  subActivityNames: string[];
+  subActivityEtimadValues: Array<string | null>;
+  regionIds: string[];
+  platformStatuses: string[];
+  feeMin: number;
+  feeMax: number | null;
+  targetPerRegion: number;
+  enabled: boolean;
+  syncReady: boolean;
+  syncBlockers: string[];
+  createdAt: string;
+  updatedAt: string;
 };
 
 type FeeMode = "all" | "free" | "exact" | "range" | "etimad";
@@ -101,9 +124,14 @@ const finalRanking = [
 ];
 const tenderStatusOptions = ["الكل", "المنافسات النشطة (تقديم العروض)", "المنافسات المنتهية (الكل)", "- مرحلة فتح العروض", "- مرحلة فحص العروض", "- مرحلة الترسية", "- تم إعلان الترسية"];
 const regionOptions = ["منطقة الرياض", "منطقة مكة المكرمة", "منطقة المدينة المنورة", "منطقة القصيم", "المنطقة الشرقية", "منطقة عسير", "منطقة تبوك", "منطقة حائل", "منطقة الحدود الشمالية", "منطقة جازان", "منطقة نجران", "منطقة الباحة", "منطقة الجوف"];
-const activityOptions = ["التجارة", "المقاولات", "التشغيل والصيانة والنظافة للمنشآت", "العقارات والأراضي", "الصناعة والتعدين والتدوير", "الغاز والمياه والطاقة", "المناجم والبترول والمحاجر", "الإعلام والنشر والتوزيع", "الاتصالات وتقنية المعلومات", "الزراعة والصيد", "الرعاية الصحية والنقاهة", "التعليم والتدريب", "التوظيف والاستقدام", "الأمن والسلامة", "النقل والبريد والتخزين", "المهن الاستشارية", "السياحة والمطاعم والفنادق وتنظيم المعارض", "المالية والتمويل والتأمين", "الخدمات الأخرى"];
-const subActivityOptions: Record<string, string[]> = {
-  "المقاولات": ["مقاولات الإنشاءات العامة (التشييد وبناء المرافق العامة)", "مقاولات عامة للمباني (الإنشاء، الإصلاح، الهدم، الترميم)", "مقاولات فرعية تخصصية (أنشطة التشييد المتخصصة)", "مقاولات الإنشاءات العامة (التشييد وبناء المرافق العامة) - إنشاء الطرق", "مقاولات الإنشاءات العامة (التشييد وبناء المرافق العامة) - إنشاءات عامة", "مقاولات فرعية تخصصية (أنشطة التشييد المتخصصة) - إنشاء الطرق", "مقاولات فرعية تخصصية (أنشطة التشييد المتخصصة) - إنشاءات عامة"],
+const regionNameById: Record<string, string> = Object.fromEntries(regionOptions.map((name, index) => [String(index + 1), name]));
+const regionIdByName: Record<string, string> = Object.fromEntries(regionOptions.map((name, index) => [name, String(index + 1)]));
+const availabilityLabels: Record<AttachmentAvailability, string> = {
+  "metadata-only": "أسماء ظاهرة فقط — لم تُنزّل",
+  "free-available": "متاحة مجانًا في اعتماد",
+  "purchased-available": "متاحة بعد اكتمال إجراءات المستخدم في اعتماد",
+  "restricted": "مقيدة بصلاحيات المنصة",
+  "unknown": "غير معروفة بعد",
 };
 
 const tenderTypeOptions = ["الكل", "منافسة عامة", "شراء مباشر", "اتفاقية إطارية", "منافسة محدودة", "منافسة من مرحلتين"];
@@ -203,7 +231,12 @@ export default function Home() {
   const [regions, setRegions] = useState<string[]>([]);
   const [tenderStatus, setTenderStatus] = useState("المنافسات النشطة (تقديم العروض)");
   const [activity, setActivity] = useState("المقاولات");
-  const [subActivity, setSubActivity] = useState("");
+  const [subActivities, setSubActivities] = useState<string[]>([]);
+  const [catalog, setCatalog] = useState<ActivityCatalogItem[]>([]);
+  const [catalogOnline, setCatalogOnline] = useState(false);
+  const [searchProfiles, setSearchProfiles] = useState<SearchProfile[]>([]);
+  const [selectedProfileId, setSelectedProfileId] = useState("");
+  const [profileMessage, setProfileMessage] = useState("");
   const [tenderType, setTenderType] = useState("الكل");
   const [publishPeriod, setPublishPeriod] = useState("منذ 3 شهور");
   const [feeMode, setFeeMode] = useState<FeeMode>("exact");
@@ -259,6 +292,14 @@ export default function Home() {
       setSyncState(ageHours > 4 ? "stale" : "fresh");
     }).catch(() => { setHelperOnline(false); setSyncMessage("شغّل الرادار من ملف تشغيل-الرادار.cmd لتفعيل SQLite والمزامنة المستقلة"); });
     fetch(`${syncServiceUrl}/automation/status`).then((response) => response.ok ? response.json() : Promise.reject()).then((status: AutomationStatus) => setAutomation(status)).catch(() => setAutomation(defaultAutomation));
+    fetch(`${syncServiceUrl}/catalog/activities`).then((response) => response.ok ? response.json() : Promise.reject()).then((payload: { activities?: ActivityCatalogItem[] }) => {
+      setCatalog(payload.activities ?? []); setCatalogOnline(true);
+    }).catch(() => { setCatalog([]); setCatalogOnline(false); });
+    fetch(`${syncServiceUrl}/search-profiles`).then((response) => response.ok ? response.json() : Promise.reject()).then((payload: { profiles?: SearchProfile[] }) => {
+      const profiles = payload.profiles ?? [];
+      setSearchProfiles(profiles);
+      setSelectedProfileId((current) => current || profiles.find((profile) => profile.enabled)?.id || "");
+    }).catch(() => setSearchProfiles([]));
   }, []);
   useEffect(() => {
     if (!sessionStartedAt) return;
@@ -296,7 +337,7 @@ export default function Home() {
       const effectivePlatformStatus = tender.platformStatus ?? "المنافسات النشطة (تقديم العروض)";
       if (tenderStatus !== "الكل" && effectivePlatformStatus !== tenderStatus) return false;
       if (activity && tender.activity && tender.activity !== activity) return false;
-      if (subActivity && tender.subActivity && tender.subActivity !== subActivity) return false;
+      if (subActivities.length && tender.subActivity && !subActivities.includes(tender.subActivity)) return false;
       if (tenderType !== "الكل" && tender.tenderType && tender.tenderType !== tenderType) return false;
       if (publishedThreshold && tender.publishedAt && new Date(tender.publishedAt).getTime() < publishedThreshold) return false;
       if (deadlineFrom && tender.deadline !== "أدخل الموعد" && tender.deadline.slice(0, 10) < deadlineFrom) return false;
@@ -309,7 +350,9 @@ export default function Home() {
       return true;
     });
     return rows.sort((a, b) => sortMode === "crowding" ? getCrowdingSignal(a).score - getCrowdingSignal(b).score || b.score - a.score : sortMode === "fee-asc" ? a.fee - b.fee : sortMode === "fee-desc" ? b.fee - a.fee : sortMode === "deadline" ? a.deadline.localeCompare(b.deadline) : b.score - a.score);
-  }, [activity, agencyQuery, deadlineFrom, deadlineTo, etimadBand, exactFee, feeMode, maxFee, minFee, publishPeriod, query, referenceQuery, regions, sortMode, subActivity, tenderStatus, tenderType, tenders]);
+  }, [activity, agencyQuery, deadlineFrom, deadlineTo, etimadBand, exactFee, feeMode, maxFee, minFee, publishPeriod, query, referenceQuery, regions, sortMode, subActivities, tenderStatus, tenderType, tenders]);
+  const availableSubActivities = catalog.find((item) => item.name === activity)?.subActivities.map((sub) => sub.name) ?? [];
+  const selectedSearchProfile = searchProfiles.find((item) => item.id === selectedProfileId) ?? null;
   const selected = tenders.find((tender) => tender.id === selectedId) ?? tenders[0];
   const assessment = selected ? getAssessment(selected) : null;
   const crowdingSignal = selected ? getCrowdingSignal(selected) : null;
@@ -319,7 +362,7 @@ export default function Home() {
   const quietOpportunities = filtered.filter((tender) => getCrowdingSignal(tender).level === "منخفض").length;
   const priorityRanks = new Map([...filtered].sort((a, b) => getCrowdingSignal(a).score - getCrowdingSignal(b).score || b.score - a.score).slice(0, 3).map((tender, index) => [tender.id, index + 1]));
   const finalists = finalRanking.map((rank) => ({ ...rank, tender: tenders.find((tender) => tender.id === rank.id) })).filter((item): item is typeof item & { tender: Tender } => Boolean(item.tender));
-  const activeFilterCount = [query, referenceQuery, agencyQuery, regions.length ? "regions" : "", activity, subActivity, tenderType !== "الكل" ? tenderType : "", deadlineFrom, deadlineTo, feeMode !== "all" ? feeMode : ""].filter(Boolean).length;
+  const activeFilterCount = [query, referenceQuery, agencyQuery, regions.length ? "regions" : "", activity, subActivities.length ? "subActivities" : "", tenderType !== "الكل" ? tenderType : "", deadlineFrom, deadlineTo, feeMode !== "all" ? feeMode : ""].filter(Boolean).length;
   const updateTender = (id: string, patch: Partial<Tender>) => setTenders((current) => current.map((tender) => tender.id === id ? { ...tender, ...patch } : tender));
 
   function showDemoData() {
@@ -340,20 +383,75 @@ export default function Home() {
     const id = Date.now().toString();
     const band = etimadFeeBands.find((item) => item.value === etimadBand);
     const fee = feeMode === "free" ? 0 : feeMode === "exact" ? Number(exactFee) || 0 : feeMode === "range" ? Number(minFee) || 0 : feeMode === "etimad" ? band?.min ?? 0 : 0;
-    setTenders((current) => [{ id, title: "فرصة جديدة — أضف الاسم من اعتماد", agency: agencyQuery || "غير محددة", reference: referenceQuery || id, fee, region: regions.length === 1 ? regions[0] : "جميع المناطق", deadline: deadlineTo || "أدخل الموعد", status: "جديدة", documents: "لم تُفتح", score: 50, platformStatus: tenderStatus, activity, subActivity, tenderType: tenderType === "الكل" ? undefined : tenderType }, ...current]);
+    setTenders((current) => [{ id, title: "فرصة جديدة — أضف الاسم من اعتماد", agency: agencyQuery || "غير محددة", reference: referenceQuery || id, fee, region: regions.length === 1 ? regions[0] : "جميع المناطق", deadline: deadlineTo || "أدخل الموعد", status: "جديدة", documents: "لم تُفتح", score: 50, platformStatus: tenderStatus, activity, subActivity: subActivities[0], tenderType: tenderType === "الكل" ? undefined : tenderType }, ...current]);
     setSelectedId(id);
   }
 
   function resetSearch() {
     setQuery(""); setReferenceQuery(""); setAgencyQuery(""); setRegions([]);
-    setTenderStatus("المنافسات النشطة (تقديم العروض)"); setActivity("المقاولات"); setSubActivity("");
+    setTenderStatus("المنافسات النشطة (تقديم العروض)"); setActivity("المقاولات"); setSubActivities([]);
     setTenderType("الكل"); setPublishPeriod("منذ 3 شهور"); setDeadlineFrom(""); setDeadlineTo("");
     setFeeMode("all"); setExactFee("200"); setMinFee(""); setMaxFee(""); setEtimadBand(etimadFeeBands[0].value); setSortMode("crowding");
   }
 
   function saveSearch() {
-    window.localStorage.setItem("tender-radar-search-v1", JSON.stringify({ query, referenceQuery, agencyQuery, regions, tenderStatus, activity, subActivity, tenderType, publishPeriod, feeMode, exactFee, minFee, maxFee, etimadBand, deadlineFrom, deadlineTo, sortMode }));
+    window.localStorage.setItem("tender-radar-search-v1", JSON.stringify({ query, referenceQuery, agencyQuery, regions, tenderStatus, activity, subActivities, tenderType, publishPeriod, feeMode, exactFee, minFee, maxFee, etimadBand, deadlineFrom, deadlineTo, sortMode }));
     setSearchSaved(true); window.setTimeout(() => setSearchSaved(false), 1600);
+  }
+
+  function applySearchProfile(profileId: string) {
+    setSelectedProfileId(profileId);
+    const profile = searchProfiles.find((item) => item.id === profileId);
+    if (!profile) return;
+    setActivity(profile.activityName ?? "");
+    setSubActivities(profile.subActivityNames);
+    setRegions(profile.regionIds.map((id) => regionNameById[id]).filter(Boolean));
+    if (profile.platformStatuses.length) setTenderStatus(profile.platformStatuses[0]);
+    setFeeMode("range");
+    setMinFee(String(profile.feeMin));
+    setMaxFee(profile.feeMax === null ? "" : String(profile.feeMax));
+    setProfileMessage(`طُبّق ملف «${profile.name}» على معايير البحث الحالية.`);
+  }
+
+  async function saveCurrentAsProfile() {
+    const feeRange = feeMode === "free" ? { feeMin: 0, feeMax: 0 }
+      : feeMode === "exact" ? { feeMin: Number(exactFee) || 0, feeMax: Number(exactFee) || 0 }
+      : feeMode === "range" ? { feeMin: Number(minFee) || 0, feeMax: maxFee === "" ? null : Number(maxFee) }
+      : { feeMin: 0, feeMax: 600 };
+    const payload = {
+      name: `نطاق ${activity || "كل الأنشطة"} — ${new Date().toLocaleString("ar-SA", { dateStyle: "short", timeStyle: "short" })}`,
+      activityName: activity,
+      subActivityNames: subActivities,
+      regionIds: regions.length ? regions.map((name) => regionIdByName[name]).filter(Boolean) : regionOptions.map((_, index) => String(index + 1)),
+      platformStatuses: tenderStatus === "الكل" ? [] : [tenderStatus],
+      ...feeRange,
+      targetPerRegion: 100,
+      enabled: false,
+    };
+    try {
+      const response = await fetch(`${syncServiceUrl}/search-profiles`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const result = await response.json() as { profile?: SearchProfile; message?: string };
+      if (!response.ok) throw new Error(result.message || "تعذر حفظ ملف البحث");
+      setSearchProfiles((current) => [...current, result.profile as SearchProfile]);
+      setSelectedProfileId((result.profile as SearchProfile).id);
+      setProfileMessage(`حُفظ ملف البحث «${(result.profile as SearchProfile).name}» في SQLite.`);
+    } catch (error) {
+      setProfileMessage(error instanceof Error ? error.message : "تعذر حفظ ملف البحث؛ تأكد أن الخدمة المحلية تعمل");
+    }
+  }
+
+  async function enableProfileForSync() {
+    const profile = searchProfiles.find((item) => item.id === selectedProfileId);
+    if (!profile) return;
+    try {
+      const response = await fetch(`${syncServiceUrl}/search-profiles/${encodeURIComponent(profile.id)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: true }) });
+      const result = await response.json() as { profile?: SearchProfile; message?: string };
+      if (!response.ok) throw new Error(result.message || "تعذر تفعيل ملف البحث");
+      setSearchProfiles((current) => current.map((item) => ({ ...item, enabled: item.id === profile.id })));
+      setProfileMessage(`فُعّل ملف «${profile.name}» — ستستخدمه المزامنة القادمة.`);
+    } catch (error) {
+      setProfileMessage(error instanceof Error ? error.message : "تعذر تفعيل ملف البحث");
+    }
   }
   async function openEtimadSession() {
     setSyncMessage("جارٍ فتح نافذة اعتماد المحلية...");
@@ -517,10 +615,28 @@ export default function Home() {
       </div>
 
       <div className="search-grid search-grid-advanced">
-        <label>النشاط الأساسي<select value={activity} onChange={(event) => { setActivity(event.target.value); setSubActivity(""); }}><option value="">جميع الأنشطة</option>{activityOptions.map((option) => <option key={option}>{option}</option>)}</select></label>
-        <label>النشاط الفرعي<select value={subActivity} disabled={!activity} onChange={(event) => setSubActivity(event.target.value)}><option value="">{activity ? "كل الأنشطة الفرعية" : "اختر النشاط الأساسي أولًا"}</option>{(subActivityOptions[activity] ?? []).map((option) => <option key={option}>{option}</option>)}</select></label>
+        <label>النشاط الأساسي<select value={activity} onChange={(event) => { setActivity(event.target.value); setSubActivities([]); }}><option value="">جميع الأنشطة</option>{catalog.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}</select>{!catalogOnline && <small className="filter-hint">شغّل الخدمة المحلية لقراءة كتالوج الأنشطة من SQLite.</small>}</label>
         <label>نوع المنافسة<select value={tenderType} onChange={(event) => setTenderType(event.target.value)}>{tenderTypeOptions.map((option) => <option key={option}>{option}</option>)}</select></label>
         <label>تاريخ النشر<select value={publishPeriod} onChange={(event) => setPublishPeriod(event.target.value)}>{publishPeriodOptions.map((option) => <option key={option}>{option}</option>)}</select></label>
+      </div>
+
+      <div className="region-panel">
+        <div className="panel-title"><div><b>الأنشطة الفرعية</b><small>{activity ? (availableSubActivities.length ? "اختر واحدًا أو أكثر لنطاق واحد" : "لا توجد أنشطة فرعية مؤكدة لهذا النشاط بعد؛ تُقرأ من اعتماد أو تُضاف لاحقًا") : "اختر النشاط الأساسي أولًا"}</small></div>{subActivities.length > 0 && <button type="button" onClick={() => setSubActivities([])}>إلغاء تحديد الأنشطة الفرعية</button>}</div>
+        <div className="region-chips">{availableSubActivities.map((sub) => <button type="button" key={sub} disabled={!activity} className={subActivities.includes(sub) ? "active" : ""} aria-pressed={subActivities.includes(sub)} onClick={() => setSubActivities((current) => current.includes(sub) ? current.filter((item) => item !== sub) : [...current, sub])}>{sub}</button>)}</div>
+      </div>
+
+      <div className="region-panel">
+        <div className="panel-title"><div><b>ملفات البحث المحفوظة</b><small>تُحفظ في SQLite ويُفعَّل ملف واحد للمزامنة المستقلة</small></div></div>
+        <div className="region-chips">
+          <select aria-label="ملفات البحث المحفوظة" value={selectedProfileId} onChange={(event) => applySearchProfile(event.target.value)}>
+            <option value="">اختر ملف بحث محفوظًا</option>
+            {searchProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.enabled ? "● " : ""}{profile.name}</option>)}
+          </select>
+          <button type="button" onClick={() => void saveCurrentAsProfile()}>حفظ الحالية كملف بحث</button>
+          <button type="button" className="outline-button" disabled={!selectedProfileId || selectedSearchProfile?.syncReady === false} onClick={() => void enableProfileForSync()}>تفعيل للمزامنة</button>
+        </div>
+        {selectedSearchProfile && !selectedSearchProfile.syncReady && <small className="filter-hint">محفوظ للبحث المحلي فقط: {selectedSearchProfile.syncBlockers.join(" ")}</small>}
+        {profileMessage && <small className="filter-hint">{profileMessage}</small>}
       </div>
 
       <div className="region-panel">
@@ -566,6 +682,16 @@ export default function Home() {
         <div className="detail-hero-actions"><span className={selected.fee === 0 ? "free-badge" : "approval-badge"}>{selected.fee === 0 ? "كراسة مجانية" : `الكراسة ${selected.fee.toLocaleString('ar-SA')} ر.س`}</span><button type="button" onClick={() => void inspectVisibleDetails()} disabled={isInspectingDetails}>{isInspectingDetails ? "جارٍ قراءة التفاصيل..." : "قراءة التفاصيل دون تنزيل"}</button><a href={selected.etimadUrl ?? "https://tenders.etimad.sa/Tender/AllSuppliersTenders?PageNumber=1"} target="_blank" rel="noreferrer">عرض المصدر في اعتماد</a></div>
       </div>
       <nav className="detail-tabs" aria-label="أقسام تفاصيل المنافسة">{detailTabs.map((tab) => <button type="button" key={tab} className={activeDetailTab === tab ? "active" : ""} aria-current={activeDetailTab === tab ? "page" : undefined} onClick={() => setActiveDetailTab(tab)}><span>{tab === "المرفقات" ? "📎" : tab === "جدول الكميات" ? "▦" : tab === "العناوين والمواعيد" ? "◷" : "▪"}</span>{tab}</button>)}</nav>
+      <section className="attachment-center" aria-label="مركز المرفقات">
+        <div className="attachment-center-head"><div><p className="eyebrow">مركز المرفقات</p><h3>إتاحة ملفات المنافسة دون تنزيل</h3></div><span className={selected.fee === 0 ? "free-badge" : "approval-badge"}>{selected.fee === 0 ? "كراسة مجانية" : `قيمة الكراسة ${selected.fee.toLocaleString('ar-SA')} ر.س`}</span></div>
+        <div className="detail-facts">
+          <article><span>قيمة الكراسة</span><b>{selected.fee === 0 ? "مجانية (صفر ريال)" : `${selected.fee.toLocaleString('ar-SA')} ر.س`}</b></article>
+          <article><span>حالة الإتاحة</span><b>{selected.attachmentsMeta?.length ? [...new Set(selected.attachmentsMeta.map((meta) => availabilityLabels[meta.availability] ?? availabilityLabels.unknown))].join(" · ") : "غير معروفة بعد"}</b></article>
+          <article><span>هل يلزم شراء سابق في اعتماد</span><b>{selected.fee > 0 ? "نعم — الكراسة مدفوعة ويشتريها المستخدم بنفسه داخل اعتماد عند الحاجة" : "لا — الكراسة مجانية"}</b></article>
+        </div>
+        <div className="remote-files"><div><p className="eyebrow">أسماء المرفقات الظاهرة — رصد فقط</p>{selected.remoteAttachments?.length ? <div>{selected.remoteAttachments.map((name) => <span key={name}>📄 {name}</span>)}</div> : <small>لم تُرصد أسماء مرفقات ظاهرة بعد؛ اقرأ التفاصيل دون تنزيل أولًا.</small>}</div></div>
+        <div className="detail-safety"><b>لا تنزيل قبل موافقة المستخدم</b><button type="button" disabled title="التنزيل بعد الموافقة الصريحة يصل في المرحلة التالية">سيُفعّل في P3-B بعد الموافقة</button></div>
+      </section>
       <div className="market-intelligence">
         <div className="market-title"><p className="eyebrow">ذكاء المنافسة</p><h3>{crowdingSignal.label}</h3><span>ثقة التقدير: {crowdingSignal.confidence}</span></div>
         <div className="crowding-meter"><div><span style={{ width: `${crowdingSignal.score}%` }} /></div><b>{crowdingSignal.score}/100</b><small>كلما ارتفع المؤشر زاد التزاحم المتوقع</small></div>

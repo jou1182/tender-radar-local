@@ -2,8 +2,10 @@ import path from "node:path";
 import { mkdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
+import { attachmentAvailabilityStates, defaultSearchProfile, knownEtimadActivityValues, seedActivities, seedSubActivities } from "./activity-catalog-seed.mjs";
+import { defaultPlan, regions } from "./sync-plan.mjs";
 
-const migrationVersion = 3;
+const migrationVersion = 4;
 const trackedTenderFields = ["title", "agency", "fee", "region", "deadline", "publishedAt", "platformStatus", "activity", "etimadUrl"];
 
 function safeJson(value, fallback) {
@@ -174,11 +176,51 @@ export async function createRadarRepository({ projectRoot }) {
       kind TEXT NOT NULL DEFAULT 'supporting',
       remote_visible INTEGER NOT NULL DEFAULT 1 CHECK (remote_visible IN (0, 1)),
       download_status TEXT NOT NULL DEFAULT 'not-downloaded',
+      availability TEXT NOT NULL DEFAULT 'unknown' CHECK (availability IN ('metadata-only', 'free-available', 'purchased-available', 'restricted', 'unknown')),
+      requires_approval INTEGER NOT NULL DEFAULT 1 CHECK (requires_approval IN (0, 1)),
+      availability_updated_at TEXT,
       local_path TEXT,
       sha256 TEXT,
       mime_type TEXT,
       size INTEGER,
       UNIQUE (tender_reference, display_name)
+    );
+
+    CREATE TABLE IF NOT EXISTS activity_catalog (
+      id TEXT PRIMARY KEY,
+      etimad_value TEXT,
+      name_ar TEXT NOT NULL UNIQUE,
+      source TEXT NOT NULL DEFAULT 'seed' CHECK (source IN ('seed', 'etimad-visible', 'user')),
+      active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      first_seen_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS sub_activity_catalog (
+      id TEXT PRIMARY KEY,
+      activity_id TEXT NOT NULL REFERENCES activity_catalog(id) ON DELETE CASCADE,
+      etimad_value TEXT,
+      name_ar TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'seed' CHECK (source IN ('seed', 'etimad-visible', 'user')),
+      active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      first_seen_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      UNIQUE (activity_id, name_ar)
+    );
+
+    CREATE TABLE IF NOT EXISTS search_profiles (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      activity_id TEXT REFERENCES activity_catalog(id) ON DELETE SET NULL,
+      sub_activity_ids_json TEXT NOT NULL DEFAULT '[]',
+      region_ids_json TEXT NOT NULL DEFAULT '[]',
+      platform_statuses_json TEXT NOT NULL DEFAULT '[]',
+      fee_min INTEGER NOT NULL DEFAULT 0 CHECK (fee_min >= 0),
+      fee_max INTEGER CHECK (fee_max IS NULL OR fee_max >= fee_min),
+      target_per_region INTEGER NOT NULL DEFAULT 100 CHECK (target_per_region BETWEEN 1 AND 100),
+      enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS tender_details (
@@ -266,6 +308,15 @@ export async function createRadarRepository({ projectRoot }) {
     CREATE INDEX IF NOT EXISTS idx_tender_detail_history_reference ON tender_detail_history(tender_reference, inspected_at DESC);
   `);
 
+  // ترقية آمنة من v3: إضافة أعمدة إتاحة المرفقات لقواعد أُنشئت قبل Schema v4 دون فقدان بياناتها.
+  function ensureColumn(table, column, definition) {
+    const columns = database.prepare(`PRAGMA table_info(${table})`).all().map((row) => row.name);
+    if (!columns.includes(column)) database.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
+  }
+  ensureColumn("attachments", "availability", "availability TEXT NOT NULL DEFAULT 'unknown' CHECK (availability IN ('metadata-only', 'free-available', 'purchased-available', 'restricted', 'unknown'))");
+  ensureColumn("attachments", "requires_approval", "requires_approval INTEGER NOT NULL DEFAULT 1 CHECK (requires_approval IN (0, 1))");
+  ensureColumn("attachments", "availability_updated_at", "availability_updated_at TEXT");
+
   database.prepare("INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)").run(migrationVersion, new Date().toISOString());
 
   const statements = {
@@ -318,7 +369,8 @@ export async function createRadarRepository({ projectRoot }) {
     `),
     failRun: database.prepare("UPDATE sync_runs SET finished_at = ?, status = 'failed', error_message = ? WHERE id = ?"),
     latestCompleteRun: database.prepare("SELECT * FROM sync_runs WHERE status = 'complete' ORDER BY finished_at DESC LIMIT 1"),
-    markInactive: database.prepare("UPDATE tenders SET active = 0"),
+    markActivityInactive: database.prepare("UPDATE tenders SET active = 0 WHERE activity = ?"),
+    getRun: database.prepare("SELECT * FROM sync_runs WHERE id = ?"),
     upsertRegion: database.prepare(`
       INSERT INTO sync_regions (sync_run_id, region_id, region_name, status, checked_count, finished_at, error_message)
       VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -348,6 +400,43 @@ export async function createRadarRepository({ projectRoot }) {
     countObservations: database.prepare("SELECT COUNT(*) AS count FROM sync_observations WHERE sync_run_id = ?"),
     updateAttachmentNames: database.prepare("UPDATE tenders SET attachment_names_json = ? WHERE reference = ?"),
     hideAttachments: database.prepare("UPDATE attachments SET remote_visible = 0 WHERE tender_reference = ?"),
+    listAttachmentsAll: database.prepare("SELECT * FROM attachments ORDER BY tender_reference, id"),
+    setAttachmentAvailability: database.prepare(`
+      UPDATE attachments SET availability = ?, requires_approval = ?, availability_updated_at = ?
+      WHERE tender_reference = ? AND display_name = ?
+    `),
+    insertActivity: database.prepare(`
+      INSERT INTO activity_catalog (id, etimad_value, name_ar, source, active, first_seen_at, last_seen_at)
+      VALUES (?, ?, ?, ?, 1, ?, ?)
+      ON CONFLICT(name_ar) DO UPDATE SET
+        etimad_value = COALESCE(activity_catalog.etimad_value, excluded.etimad_value),
+        last_seen_at = excluded.last_seen_at
+    `),
+    insertSubActivity: database.prepare(`
+      INSERT INTO sub_activity_catalog (id, activity_id, etimad_value, name_ar, source, active, first_seen_at, last_seen_at)
+      VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+      ON CONFLICT(activity_id, name_ar) DO UPDATE SET
+        etimad_value = COALESCE(sub_activity_catalog.etimad_value, excluded.etimad_value),
+        last_seen_at = excluded.last_seen_at
+    `),
+    listActivities: database.prepare("SELECT * FROM activity_catalog ORDER BY rowid"),
+    listSubActivities: database.prepare("SELECT * FROM sub_activity_catalog ORDER BY rowid"),
+    getActivityByName: database.prepare("SELECT * FROM activity_catalog WHERE name_ar = ?"),
+    listSearchProfiles: database.prepare("SELECT * FROM search_profiles ORDER BY created_at, rowid"),
+    getSearchProfile: database.prepare("SELECT * FROM search_profiles WHERE id = ?"),
+    insertSearchProfile: database.prepare(`
+      INSERT INTO search_profiles (
+        id, name, activity_id, sub_activity_ids_json, region_ids_json, platform_statuses_json,
+        fee_min, fee_max, target_per_region, enabled, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `),
+    updateSearchProfile: database.prepare(`
+      UPDATE search_profiles SET
+        name = ?, activity_id = ?, sub_activity_ids_json = ?, region_ids_json = ?, platform_statuses_json = ?,
+        fee_min = ?, fee_max = ?, target_per_region = ?, enabled = ?, updated_at = ?
+      WHERE id = ?
+    `),
+    disableOtherProfiles: database.prepare("UPDATE search_profiles SET enabled = 0, updated_at = ? WHERE id != ? AND enabled = 1"),
     updateTenderFromDetails: database.prepare(`
       UPDATE tenders SET
         tender_number = COALESCE(NULLIF(?, ''), tender_number),
@@ -404,10 +493,11 @@ export async function createRadarRepository({ projectRoot }) {
       VALUES (?, ?, ?, ?, ?, ?)
     `),
     upsertAttachment: database.prepare(`
-      INSERT INTO attachments (tender_reference, display_name, kind, remote_visible)
-      VALUES (?, ?, ?, 1)
+      INSERT INTO attachments (tender_reference, display_name, kind, remote_visible, availability)
+      VALUES (?, ?, ?, 1, 'metadata-only')
       ON CONFLICT(tender_reference, display_name) DO UPDATE SET
-        kind = excluded.kind, remote_visible = 1
+        kind = excluded.kind, remote_visible = 1,
+        availability = CASE WHEN attachments.availability = 'unknown' THEN 'metadata-only' ELSE attachments.availability END
     `),
     detailHistoryCount: database.prepare("SELECT COUNT(*) AS count FROM tender_detail_history WHERE tender_reference = ?"),
     getState: database.prepare("SELECT value_json FROM app_state WHERE key = ?"),
@@ -433,6 +523,237 @@ export async function createRadarRepository({ projectRoot }) {
     }
   }
 
+  function catalogSnapshot() {
+    const activities = statements.listActivities.all();
+    const subs = statements.listSubActivities.all();
+    return {
+      activities,
+      subs,
+      byId: new Map(activities.map((row) => [row.id, row])),
+      byName: new Map(activities.map((row) => [row.name_ar, row])),
+      subById: new Map(subs.map((row) => [row.id, row])),
+    };
+  }
+
+  function seedCatalog() {
+    const now = new Date().toISOString();
+    transaction(() => {
+      const activityIds = new Map();
+      seedActivities.forEach((name) => {
+        const proposedId = `act-${createHash("sha256").update(name).digest("hex").slice(0, 12)}`;
+        statements.insertActivity.run(proposedId, knownEtimadActivityValues[name] || null, name, "seed", now, now);
+        activityIds.set(name, statements.getActivityByName.get(name).id);
+      });
+      for (const [activityName, names] of Object.entries(seedSubActivities)) {
+        const activityId = activityIds.get(activityName);
+        if (!activityId) continue;
+        [...new Set(names)].forEach((name) => {
+          const id = `sub-${createHash("sha256").update(`${activityName}:${name}`).digest("hex").slice(0, 12)}`;
+          statements.insertSubActivity.run(id, activityId, null, name, "seed", now, now);
+        });
+      }
+      if (!statements.getSearchProfile.get("profile-default")) {
+        const activity = statements.getActivityByName.get(defaultSearchProfile.activityName);
+        statements.insertSearchProfile.run(
+          "profile-default", defaultSearchProfile.name, activity?.id || null,
+          JSON.stringify(defaultSearchProfile.subActivityNames || []), JSON.stringify(defaultSearchProfile.regionIds),
+          JSON.stringify(defaultSearchProfile.platformStatuses), defaultSearchProfile.feeMin, defaultSearchProfile.feeMax,
+          defaultSearchProfile.targetPerRegion, defaultSearchProfile.enabled ? 1 : 0, now, now,
+        );
+      }
+    });
+  }
+  seedCatalog();
+
+  function listActivityCatalog() {
+    const catalog = catalogSnapshot();
+    return catalog.activities.map((row) => ({
+      id: row.id,
+      name: row.name_ar,
+      etimadValue: row.etimad_value,
+      source: row.source,
+      active: toBoolean(row.active),
+      firstSeenAt: row.first_seen_at,
+      lastSeenAt: row.last_seen_at,
+      subActivities: catalog.subs.filter((sub) => sub.activity_id === row.id).map((sub) => ({
+        id: sub.id,
+        name: sub.name_ar,
+        etimadValue: sub.etimad_value,
+        source: sub.source,
+        active: toBoolean(sub.active),
+      })),
+    }));
+  }
+
+  function rowToSearchProfile(row, catalog = catalogSnapshot()) {
+    const activity = row.activity_id ? catalog.byId.get(row.activity_id) : null;
+    const subActivityIds = safeJson(row.sub_activity_ids_json, []);
+    const subActivities = subActivityIds.map((id) => catalog.subById.get(id)).filter(Boolean);
+    const platformStatuses = safeJson(row.platform_statuses_json, []);
+    const syncBlockers = [];
+    if (!activity) syncBlockers.push("اختر نشاطًا أساسيًا محددًا.");
+    else if (!activity.etimad_value) syncBlockers.push("قيمة هذا النشاط في اعتماد لم تُسجّل بعد.");
+    if (subActivities.length) syncBlockers.push("فلتر الأنشطة الفرعية محفوظ، لكنه لم يُربط بالمزامنة الحية بعد.");
+    if (platformStatuses.length !== 1 || platformStatuses[0] !== "المنافسات النشطة (تقديم العروض)") {
+      syncBlockers.push("المزامنة الحالية تدعم المنافسات النشطة فقط.");
+    }
+    return {
+      id: row.id,
+      name: row.name,
+      activityId: row.activity_id,
+      activityName: activity?.name_ar || null,
+      activityEtimadValue: activity?.etimad_value || null,
+      subActivityIds,
+      subActivityNames: subActivities.map((sub) => sub.name_ar),
+      subActivityEtimadValues: subActivities.map((sub) => sub.etimad_value),
+      regionIds: safeJson(row.region_ids_json, []),
+      platformStatuses,
+      feeMin: Number(row.fee_min),
+      feeMax: row.fee_max === null || row.fee_max === undefined ? null : Number(row.fee_max),
+      targetPerRegion: Number(row.target_per_region),
+      enabled: toBoolean(row.enabled),
+      syncReady: syncBlockers.length === 0,
+      syncBlockers,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  function invalidProfile(message) {
+    const error = new Error(message);
+    error.code = "INVALID_PROFILE";
+    return error;
+  }
+
+  function normalizeSearchProfileInput(input, catalog = catalogSnapshot()) {
+    const name = String(input?.name || "").trim();
+    if (!name || name.length > 120) throw invalidProfile("اسم ملف البحث مطلوب وبحد أقصى 120 حرفًا.");
+    const activityName = String(input?.activityName || "").trim();
+    let activity = null;
+    if (!activityName) throw invalidProfile("اختر نشاطًا أساسيًا واحدًا لملف المزامنة؛ خيار جميع الأنشطة للعرض المحلي فقط.");
+    activity = catalog.byName.get(activityName) || null;
+    if (!activity) throw invalidProfile(`النشاط الأساسي غير موجود في الكتالوج: ${activityName}`);
+    const requestedSubs = Array.isArray(input?.subActivityNames) ? input.subActivityNames.map((value) => String(value).trim()).filter(Boolean) : [];
+    const validSubs = catalog.subs.filter((row) => row.activity_id === activity?.id);
+    const subActivityIds = [];
+    for (const subName of [...new Set(requestedSubs)]) {
+      const match = validSubs.find((row) => row.name_ar === subName);
+      if (!match) throw invalidProfile(`النشاط الفرعي غير معروف لهذا النشاط الأساسي: ${subName}`);
+      subActivityIds.push(match.id);
+    }
+    const regionIds = [...new Set((Array.isArray(input?.regionIds) ? input.regionIds : []).map((value) => String(value).trim()))]
+      .filter((id) => regions.some((region) => region.id === id));
+    const platformStatuses = [...new Set((Array.isArray(input?.platformStatuses) ? input.platformStatuses : []).map((value) => String(value).trim()).filter(Boolean))];
+    const feeMin = Math.max(0, Math.floor(Number(input?.feeMin) || 0));
+    const feeMax = input?.feeMax === null || input?.feeMax === undefined || input?.feeMax === "" ? null : Math.floor(Number(input.feeMax));
+    if (feeMax !== null && (!Number.isFinite(feeMax) || feeMax < feeMin)) throw invalidProfile("الحد الأعلى لقيمة الكراسة يجب أن يساوي أو يفوق الحد الأدنى.");
+    const target = Math.floor(Number(input?.targetPerRegion ?? 100));
+    const targetPerRegion = Number.isFinite(target) ? Math.max(1, Math.min(100, target)) : 100;
+    if (input?.enabled === true) {
+      const candidate = {
+        activity,
+        requestedSubs: validSubs.filter((row) => subActivityIds.includes(row.id)),
+        platformStatuses,
+      };
+      if (!candidate.activity.etimad_value) throw invalidProfile("لا يمكن تفعيل هذا الملف قبل تسجيل قيمة النشاط من اعتماد.");
+      if (candidate.requestedSubs.length) throw invalidProfile("يمكن حفظ الأنشطة الفرعية الآن، لكن تفعيلها ينتظر ربط فلتر اعتماد في مرحلة لاحقة.");
+      if (platformStatuses.length !== 1 || platformStatuses[0] !== "المنافسات النشطة (تقديم العروض)") {
+        throw invalidProfile("لا يمكن تفعيل الملف حاليًا إلا لحالة المنافسات النشطة (تقديم العروض).");
+      }
+    }
+    return {
+      name,
+      activityId: activity?.id || null,
+      subActivityIds,
+      regionIds,
+      platformStatuses,
+      feeMin,
+      feeMax,
+      targetPerRegion,
+      enabled: input?.enabled === true,
+    };
+  }
+
+  function listSearchProfiles() {
+    const catalog = catalogSnapshot();
+    return statements.listSearchProfiles.all().map((row) => rowToSearchProfile(row, catalog));
+  }
+
+  function getEnabledSearchProfile() {
+    return listSearchProfiles().find((profile) => profile.enabled) || null;
+  }
+
+  function createSearchProfile(input) {
+    const data = normalizeSearchProfileInput(input);
+    const now = new Date().toISOString();
+    const id = `profile-${now}-${crypto.randomUUID()}`;
+    try {
+      transaction(() => {
+        if (data.enabled) statements.disableOtherProfiles.run(now, id);
+        statements.insertSearchProfile.run(
+          id, data.name, data.activityId, JSON.stringify(data.subActivityIds), JSON.stringify(data.regionIds),
+          JSON.stringify(data.platformStatuses), data.feeMin, data.feeMax, data.targetPerRegion,
+          data.enabled ? 1 : 0, now, now,
+        );
+      });
+    } catch (error) {
+      if (/UNIQUE/i.test(String(error?.message))) throw invalidProfile("اسم ملف البحث مستخدم بالفعل.");
+      throw error;
+    }
+    return rowToSearchProfile(statements.getSearchProfile.get(id));
+  }
+
+  function updateSearchProfile(id, input) {
+    const existing = statements.getSearchProfile.get(String(id));
+    if (!existing) return null;
+    const current = rowToSearchProfile(existing);
+    const data = normalizeSearchProfileInput({ ...current, ...input });
+    const now = new Date().toISOString();
+    try {
+      transaction(() => {
+        if (data.enabled) statements.disableOtherProfiles.run(now, existing.id);
+        statements.updateSearchProfile.run(
+          data.name, data.activityId, JSON.stringify(data.subActivityIds), JSON.stringify(data.regionIds),
+          JSON.stringify(data.platformStatuses), data.feeMin, data.feeMax, data.targetPerRegion,
+          data.enabled ? 1 : 0, now, existing.id,
+        );
+      });
+    } catch (error) {
+      if (/UNIQUE/i.test(String(error?.message))) throw invalidProfile("اسم ملف البحث مستخدم بالفعل.");
+      throw error;
+    }
+    return rowToSearchProfile(statements.getSearchProfile.get(existing.id));
+  }
+
+  function attachmentMetaMap() {
+    const map = new Map();
+    for (const row of statements.listAttachmentsAll.all()) {
+      if (!map.has(row.tender_reference)) map.set(row.tender_reference, []);
+      map.get(row.tender_reference).push({
+        displayName: row.display_name,
+        kind: row.kind,
+        availability: row.availability,
+        requiresApproval: toBoolean(row.requires_approval),
+        remoteVisible: toBoolean(row.remote_visible),
+      });
+    }
+    return map;
+  }
+
+  function listAttachmentMeta(reference) {
+    return attachmentMetaMap().get(String(reference)) || [];
+  }
+
+  function setAttachmentAvailability(reference, displayName, availability, { requiresApproval = true } = {}) {
+    if (!attachmentAvailabilityStates.includes(availability)) {
+      const error = new Error(`حالة إتاحة غير معروفة: ${availability}`);
+      error.code = "INVALID_AVAILABILITY";
+      throw error;
+    }
+    statements.setAttachmentAvailability.run(availability, requiresApproval ? 1 : 0, new Date().toISOString(), String(reference), String(displayName));
+    return listAttachmentMeta(reference);
+  }
+
   function seedBaseline(references) {
     const importedAt = new Date().toISOString();
     transaction(() => {
@@ -440,11 +761,14 @@ export async function createRadarRepository({ projectRoot }) {
     });
   }
 
-  function listTenders() { return statements.listTenders.all().map(rowToTender); }
+  function listTenders() {
+    const meta = attachmentMetaMap();
+    return statements.listTenders.all().map((row) => ({ ...rowToTender(row), attachmentsMeta: meta.get(row.reference) || [] }));
+  }
 
   function getTender(reference) {
     const row = statements.getTender.get(reference);
-    return row ? rowToTender(row) : null;
+    return row ? { ...rowToTender(row), attachmentsMeta: listAttachmentMeta(reference) } : null;
   }
 
   function saveVisibleAttachmentNames(reference, names) {
@@ -524,7 +848,14 @@ export async function createRadarRepository({ projectRoot }) {
   function startOrResumeSyncRun({ regions = 13, targetPerRegion = 100, initialCursor } = {}) {
     const resumable = statements.resumableRun.get();
     if (resumable) {
-      return { id: resumable.id, resumed: true, cursor: safeJson(resumable.resume_cursor, initialCursor) };
+      const savedCursor = safeJson(resumable.resume_cursor, null);
+      const savedScope = savedCursor?.scopeKey;
+      const requestedScope = initialCursor?.scopeKey;
+      const legacyDefaultScope = !savedScope && requestedScope === defaultPlan.scopeKey;
+      if (!requestedScope || savedScope === requestedScope || legacyDefaultScope) {
+        return { id: resumable.id, resumed: true, cursor: { ...savedCursor, scopeKey: requestedScope || savedScope } };
+      }
+      statements.failRun.run(new Date().toISOString(), "أُغلقت الجولة الجزئية لأن ملف البحث النشط تغيّر؛ ستبدأ جولة جديدة بنطاق مستقل.", resumable.id);
     }
     const id = startSyncRun({ regions, targetPerRegion });
     statements.updateRunCheckpoint.run(0, 0, JSON.stringify(initialCursor), id);
@@ -534,7 +865,8 @@ export async function createRadarRepository({ projectRoot }) {
   function saveSyncCheckpoint(runId, checkpoint) {
     const savedAt = new Date().toISOString();
     const cursor = checkpoint.nextCursor;
-    const regionsCompleted = cursor.complete ? 13 : Math.max(0, Number(cursor.regionIndex || 0));
+    const run = statements.getRun.get(runId);
+    const regionsCompleted = cursor.complete ? Number(run?.regions_targeted || 0) : Math.max(0, Number(cursor.regionIndex || 0));
     transaction(() => {
       for (const item of checkpoint.items || []) {
         statements.upsertObservation.run(
@@ -602,7 +934,9 @@ export async function createRadarRepository({ projectRoot }) {
     const observedAt = result.lastSyncAt;
     const before = new Map(listTenders().map((item) => [item.reference, item]));
     transaction(() => {
-      statements.markInactive.run();
+      if (result.scope?.replacesActivitySnapshot && result.scope?.activity) {
+        statements.markActivityInactive.run(result.scope.activity);
+      }
       for (const item of result.items) {
         const previous = before.get(item.reference);
         const snapshot = comparable(item);
@@ -679,6 +1013,13 @@ export async function createRadarRepository({ projectRoot }) {
     failSyncRun,
     saveCompletedSync,
     getDashboardSnapshot,
+    listActivityCatalog,
+    listSearchProfiles,
+    getEnabledSearchProfile,
+    createSearchProfile,
+    updateSearchProfile,
+    listAttachmentMeta,
+    setAttachmentAvailability,
     loadState,
     saveState,
     recordAutomationStatus,

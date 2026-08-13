@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 
 const command = process.platform === "win32" ? "npm.cmd" : "npm";
-const expectedServiceVersion = "p2-visible-details-3";
+const expectedServiceVersion = "p3-multiactivity-1";
 
 async function readExistingHealth() {
   try {

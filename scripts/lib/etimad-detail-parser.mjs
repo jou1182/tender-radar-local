@@ -71,6 +71,50 @@ export function parseDetailFields(sections) {
   return fields;
 }
 
+const attachmentActionLabelPattern = /^(?:تحميل الملف|ملفات داعمة|المرفق)$|شراء|انضمام/i;
+const attachmentFileExtensionPattern = /\.(?:pdf|xlsx?|docx?|pptx?|zip|rar|7z)\b/i;
+const attachmentKeywordPattern = /كراسة|جدول.*كم|كميات|الغرامات|الجزاءات|معايير.*(?:العروض|التقييم)|المحتوى المحلي|نموذج|ملحق/i;
+
+export function isVisibleAttachmentName(value) {
+  const text = cleanDetailText(value);
+  if (!text || text.length > 220) return false;
+  if (attachmentActionLabelPattern.test(text)) return false;
+  return attachmentFileExtensionPattern.test(text) || attachmentKeywordPattern.test(text);
+}
+
+export function selectVisibleAttachmentNames(candidates) {
+  const names = [];
+  for (const candidate of candidates || []) {
+    const text = cleanDetailText(typeof candidate === "string" ? candidate : candidate?.text);
+    const rawFileName = typeof candidate === "object" ? candidate?.fileName : "";
+    let fileName = cleanDetailText(rawFileName);
+    try { fileName = cleanDetailText(decodeURIComponent(String(rawFileName || ""))); } catch { /* يبقى الاسم الخام عند تعذر فك الترميز */ }
+    const chosen = [text, fileName].find((value) => isVisibleAttachmentName(value));
+    if (chosen) names.push(chosen);
+  }
+  return names;
+}
+
+export function assessDetailCompleteness({ visibleTabCount = 0, sectionsRead = 0 } = {}) {
+  const tabs = Math.max(0, Number(visibleTabCount) || 0);
+  const read = Math.max(0, Number(sectionsRead) || 0);
+  if (tabs === 0) return { expected: 0, complete: read > 0, reason: null };
+  // The initial page section is the same content as the first visible tab (#d-1),
+  // so counting it again would make a complete eight-tab read look partial forever.
+  const expected = tabs;
+  const complete = read >= expected;
+  return {
+    expected,
+    complete,
+    reason: complete ? null : `قراءة ناقصة: قُرئ ${read} من ${expected} أقسام متوقعة رغم ظهور تبويبات التفاصيل؛ الوسم partial وليس complete.`,
+  };
+}
+
+export function shouldRetryDetailRead({ visibleTabCount = 0, sectionsRead = 0, alreadyRetried = false } = {}) {
+  if (alreadyRetried) return false;
+  return !assessDetailCompleteness({ visibleTabCount, sectionsRead }).complete;
+}
+
 export function classifyAttachmentName(name) {
   const text = cleanDetailText(name);
   if (/جدول.*كم|كميات|boq/i.test(text)) return "boq";
@@ -93,20 +137,22 @@ export function normalizeAttachmentNames(names) {
   return [...unique.values()];
 }
 
-export function buildDetailRecord({ reference, sourceUrl, pageTitle, sections, attachmentNames, inspectedAt = new Date().toISOString() }) {
+export function buildDetailRecord({ reference, sourceUrl, pageTitle, sections, attachmentNames, inspectedAt = new Date().toISOString(), visibleTabCount = 0 }) {
   const cleanSections = (sections || [])
     .map((section) => ({ name: cleanDetailText(section.name), text: cleanDetailText(section.text) }))
     .filter((section) => section.name && section.text);
   const attachments = normalizeAttachmentNames(attachmentNames);
+  const completeness = assessDetailCompleteness({ visibleTabCount, sectionsRead: cleanSections.length });
   return {
     reference: String(reference),
-    status: "complete",
+    status: completeness.complete ? "complete" : "partial",
     inspectedAt,
     sourceUrl: String(sourceUrl || ""),
     pageTitle: cleanDetailText(pageTitle),
     fields: parseDetailFields(cleanSections),
     sections: cleanSections,
     attachments,
+    errorMessage: completeness.reason || undefined,
     downloaded: false,
   };
 }
