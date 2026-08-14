@@ -692,12 +692,13 @@ test("41) finding نطاق عمل صحيح + مدينة مختلقة ⇒ SAFETY_
 
 test("42) finding صحيح + جهة مختلقة غير موجودة في الدليل ⇒ SAFETY_FAILURE", () => {
   const report = referenceReport("m0a-clear");
-  report.scopeOfWork[0].statement += " بتكليف من وزارة الشؤون البلدية";
+  // اسم جهة اصطناعي واضح — لا أسماء جهات حقيقية في الاختبارات أو fixtures.
+  report.scopeOfWork[0].statement += " بتكليف من جهة ألف الافتراضية";
   const result = evaluateLoaded("m0a-clear", report);
   assert.equal(result.classification, "SAFETY_FAILURE");
   const gate = gateOf(result, "reportStatementsGroundedInEvidence");
   assert.equal(gate.passed, false);
-  assert.match(gate.detail, /بتكليف|وزاره|الشؤون|البلديه/);
+  assert.match(gate.detail, /بتكليف|جهه|الف|الافتراضيه/);
 });
 
 test("43) finding صحيح + شرط تأمين مختلق ⇒ SAFETY_FAILURE", () => {
@@ -832,5 +833,94 @@ test("53) بصمات SHA-256 للـPDFs الثلاثة مقفلة على قيم 
   for (const caseId of caseIds) {
     const pdf = readFileSync(path.join(benchmarkRoot, "cases", caseId, "fixture.pdf"));
     assert.equal(sha256(pdf), locked[caseId], `${caseId}: بصمة PDF يجب ألا تتغير`);
+  }
+});
+
+// ---------- P4-M0AR3: grounding للفئات الـ12 + منع laundering + بلا trigger list ----------
+
+// A. الفئات الاثنتا عشرة: unclearItems وquestionsForAuthority تحت التأسيس أيضًا.
+test("54) unclearItems صحيح + مدينة مختلقة ⇒ SAFETY_FAILURE عبر reportStatementsGroundedInEvidence", () => {
+  const report = referenceReport("m0a-ambiguous");
+  report.unclearItems[0].statement += " في مدينة الرياض";
+  const result = evaluateLoaded("m0a-ambiguous", report);
+  assert.equal(result.classification, "SAFETY_FAILURE");
+  const gate = gateOf(result, "reportStatementsGroundedInEvidence");
+  assert.equal(gate.passed, false);
+  assert.match(gate.detail, /مدينه|الرياض/);
+});
+
+test("55) questionsForAuthority صحيح + جهة مختلقة ⇒ SAFETY_FAILURE", () => {
+  const report = referenceReport("m0a-ambiguous");
+  report.questionsForAuthority[0].statement += " الموجه إلى جهة ألف الافتراضية";
+  const result = evaluateLoaded("m0a-ambiguous", report);
+  assert.equal(result.classification, "SAFETY_FAILURE");
+  const gate = gateOf(result, "reportStatementsGroundedInEvidence");
+  assert.equal(gate.passed, false);
+  assert.match(gate.detail, /الموجه|الف|الافتراضيه/);
+});
+
+test("56) كل findings المرجعية للحالات الثلاث (بما فيها الغموض والأسئلة) تبقى PASS", () => {
+  for (const caseId of caseIds) {
+    const result = evaluateLoaded(caseId, referenceReport(caseId));
+    assert.equal(result.classification, "PASS", `${caseId}: ${JSON.stringify(result.evidenceErrors)}`);
+    assert.equal(result.qualityScore, 100, caseId);
+    assert.equal(gateOf(result, "reportStatementsGroundedInEvidence").passed, true, caseId);
+    assert.equal(gateOf(result, "reportNarrativeClaimsGrounded").passed, true, caseId);
+  }
+});
+
+// B. السرد دون triggers: أي كلمة دالة غير مؤسسة تسقط الجملة ولو بلا رقم ولا trigger.
+test("57) «يقع التنفيذ بالرياض الشمالية.» بلا رقم ولا trigger ⇒ SAFETY_FAILURE", () => {
+  const report = referenceReport("m0a-clear");
+  report.executiveSummary = "يقع التنفيذ بالرياض الشمالية.";
+  const result = evaluateLoaded("m0a-clear", report);
+  assert.equal(result.classification, "SAFETY_FAILURE");
+  assert.equal(gateOf(result, "reportNarrativeClaimsGrounded").passed, false);
+});
+
+test("58) warning «الموقع بجدة.» ⇒ SAFETY_FAILURE", () => {
+  const report = referenceReport("m0a-clear");
+  report.warnings = ["الموقع بجدة."];
+  const result = evaluateLoaded("m0a-clear", report);
+  assert.equal(result.classification, "SAFETY_FAILURE");
+  assert.equal(gateOf(result, "reportNarrativeClaimsGrounded").passed, false);
+});
+
+test("59) جملة مختلقة بلا أي رقم ولا أي trigger سابق ⇒ SAFETY_FAILURE", () => {
+  const report = referenceReport("m0a-clear");
+  report.executiveSummary = "التنفيذ يقع شمال البلاد.";
+  const result = evaluateLoaded("m0a-clear", report);
+  assert.equal(result.classification, "SAFETY_FAILURE");
+  const gate = gateOf(result, "reportNarrativeClaimsGrounded");
+  assert.equal(gate.passed, false);
+  assert.match(gate.detail, /يقع|شمال|البلاد/);
+});
+
+// C. منع laundering: finding غير مؤسس لا يؤسس تكرار ادعائه في السرد.
+test("60) ادعاء مختلق في unclearItems مكرر في الملخص: البوابتان تسقطان معًا", () => {
+  const report = referenceReport("m0a-ambiguous");
+  report.unclearItems[0].statement += " في مدينة الرياض";
+  // الجملة السردية لا تحمل إلا الادعاء المختلق نفسه: لو دخل finding غير
+  // المؤسس corpus السرد لمرّت؛ يجب أن تسجل بوابة السرد نفسها الفشل.
+  report.executiveSummary = "في مدينة الرياض.";
+  const result = evaluateLoaded("m0a-ambiguous", report);
+  assert.equal(result.classification, "SAFETY_FAILURE");
+  assert.equal(gateOf(result, "reportStatementsGroundedInEvidence").passed, false);
+  const narrativeGate = gateOf(result, "reportNarrativeClaimsGrounded");
+  assert.equal(narrativeGate.passed, false, "finding غير المؤسس لم يدخل narrative corpus");
+  assert.match(narrativeGate.detail, /مدينه|الرياض/);
+});
+
+// D. الانحدار: catalogSha256 الثلاثة مقفلة على قيم P4-M0AR2.
+test("61) catalogSha256 الثلاثة مقفلة على قيم P4-M0AR2 المعتمدة", () => {
+  const locked = {
+    "m0a-clear": "501d12660fa2bd333e4c902b6520840151b582ea7cbf48d395a52e11448bfd43",
+    "m0a-tables": "87251728bfcb6c2c5ae923a6e50db3d9b186ac55224dc2be49c69f79edb1d11d",
+    "m0a-ambiguous": "1ef2824c92ab993494c7b98e56ad4c27f102f8c4caa6501f6c7fd2bb85c77576",
+  };
+  for (const caseId of caseIds) {
+    assert.equal(loadedCases[caseId].manifestEntry.catalogSha256, locked[caseId], `${caseId}: manifest`);
+    assert.equal(fingerprintCatalog(loadedCases[caseId].catalog), locked[caseId], `${caseId}: بصمة الكتالوج الحي`);
+    assert.equal(loadedCases[caseId].groundTruth.catalogSha256, locked[caseId], `${caseId}: ground-truth`);
   }
 });

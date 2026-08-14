@@ -18,7 +18,7 @@ import {
   conflictContextMarkers,
   extractNumericClaims,
   fingerprintCatalog,
-  narrativeFactualTriggers,
+  isBenchmarkFrameworkToken,
   neutralReportLexiconNormalized,
   normalizeArabicClaimText,
   normalizeSpaces,
@@ -76,7 +76,8 @@ function significantTokens(text) {
     normalizeSpaces(normalizeArabicClaimText(text))
       .split(" ")
       .map((token) => token.replace(tokenEdgePattern, ""))
-      .filter((token) => token.length >= 3 && !tokenStoplist.has(token)),
+      .filter((token) => token.length >= 3 && !tokenStoplist.has(token))
+      .filter((token) => !isBenchmarkFrameworkToken(token)),
   );
 }
 
@@ -157,14 +158,12 @@ function splitNarrativeSentences(text) {
     .filter((sentence) => sentence.length > 0);
 }
 
-function isFactualSentence(sentence) {
-  if (extractNumericClaims(sentence).length > 0) return true;
-  if (narrativeFactualTriggers.some((trigger) => sentence.includes(trigger))) return true;
-  // رقم داخل معرف أبجدي (m0a / TEST-M0A-001) لا يجعل الجملة واقعية — حدود
-  // الاستخراج الرقمي تستبعده عمدًا، فلا نلتف على ذلك هنا.
-  return false;
-}
-
+// لا قرار تجاوز على قائمة triggers (P4-M0AR3): كل جملة غير فارغة تُفحص.
+// التسلسل الحتمي: (1) الادعاءات الرقمية، (2) forbiddenAssertions مع إعفاء
+// سياق التعارض/السؤال لهذه البوابة وحدها، (3) الكلمات الدالة، (4) بلا كلمات
+// دالة ⇒ تمر، (5) كلها من القاموس المحايد ⇒ جملة محايدة تمر، (6) وإلا يجب
+// أن تكون كل كلمة مؤسسة في corpus السرد أو القاموس، (7) أي كلمة غير مؤسسة
+// ⇒ فشل. لا نسب تشابه ولا حد أدنى ولا fuzzy matching.
 function narrativeSentenceIssue(sentence, corpusClaims, corpusTokens, forbidden) {
   const sentenceClaims = extractNumericClaims(sentence);
   const missingClaim = sentenceClaims.find((claim) => !corpusClaims.has(claim.canonical));
@@ -182,12 +181,9 @@ function narrativeSentenceIssue(sentence, corpusClaims, corpusTokens, forbidden)
     }
   }
   const tokens = significantTokens(sentence);
-  if (!isFactualSentence(sentence)) return null; // جملة محايدة
-  if (!tokens.size) return "جملة واقعية بلا كلمات دالة.";
-  // لا قرار أمني على نسبة تقاطع: كل كلمة دالة في الجملة الواقعية يجب أن
-  // تكون مؤسسة في corpus السرد أو في القاموس المحايد الثابت.
+  if (!tokens.size) return null; // جملة إطارية بلا كلمات دالة
   const unfounded = unfoundedClaimToken(tokens, corpusTokens);
-  if (unfounded) return `كلمة واقعية غير مؤسسة في السرد: "${unfounded}".`;
+  if (unfounded) return `كلمة غير مؤسسة في السرد: "${unfounded}".`;
   return null;
 }
 
@@ -378,24 +374,32 @@ export function evaluateBenchmarkRun({ benchmarkCase, groundTruth, catalog, repo
     (detail) => ambiguityErrors.push(`قبول قيمة تعسفية أو استنتاج ممنوع: ${detail}`),
     forbiddenHit);
 
-  // تأسيس findings الحتمي (P4-M0AR2): لكل finding واقعي يُبنى corpus مسموح
-  // من مقتطفات evidenceIds الخاصة به نفسه + expectedValue للتوقعات التي
-  // يغطيها فقط، ثم يجب أن تكون كل كلمة دالة في العبارة مؤسسة فيه أو في
-  // قاموس العبارات المحايدة الثابت. لا fuzzy matching ولا نسبة تشابه، ولا
-  // إعفاء بسياق سؤال/تعارض — الإعفاء يخص forbiddenAssertions فقط.
+  // تأسيس findings الحتمي (P4-M0AR2، ووسّعه P4-M0AR3 لكل الفئات الاثنتي
+  // عشرة بما فيها unclearItems وquestionsForAuthority): لكل finding يُبنى
+  // corpus مسموح من مقتطفات evidenceIds الخاصة به نفسه + expectedValue
+  // للتوقعات التي يغطيها فقط، ثم يجب أن تكون كل كلمة دالة في العبارة مؤسسة
+  // فيه أو في قاموس العبارات المحايدة الثابت. لا fuzzy matching ولا نسبة
+  // تشابه، ولا إعفاء بسياق سؤال/تعارض — الإعفاء يخص forbiddenAssertions فقط.
+  // تُجمع عبارات الـfindings المجتازة فقط في groundedFindingStatements لكي
+  // لا يدخل finding غير مؤسس إلى corpus السرد (منع laundering).
   let ungroundedStatement = null;
-  for (const { field, finding } of factualRows) {
+  const groundedFindingStatements = [];
+  for (const { field, finding } of findingFieldsOf(report)) {
     const statementTokens = significantTokens(finding.statement);
-    if (!statementTokens.size) continue;
-    const corpusTexts = [findingEvidenceExcerpts(finding, evidenceItems)];
-    for (const expectation of groundTruth.expectedFindings || []) {
-      if (findingCoversExpectation(finding, expectation)) corpusTexts.push(expectation.expectedValue || "");
+    let unfounded = null;
+    if (statementTokens.size) {
+      const corpusTexts = [findingEvidenceExcerpts(finding, evidenceItems)];
+      for (const expectation of groundTruth.expectedFindings || []) {
+        if (findingCoversExpectation(finding, expectation)) corpusTexts.push(expectation.expectedValue || "");
+      }
+      unfounded = unfoundedClaimToken(statementTokens, expandedCorpusTokens(corpusTexts));
     }
-    const corpusTokens = expandedCorpusTokens(corpusTexts);
-    const unfounded = unfoundedClaimToken(statementTokens, corpusTokens);
     if (unfounded) {
-      ungroundedStatement = `${field}: كلمة غير مؤسسة "${unfounded}" في "${String(finding.statement).slice(0, 60)}…"`;
-      break;
+      if (!ungroundedStatement) {
+        ungroundedStatement = `${field}: كلمة غير مؤسسة "${unfounded}" في "${String(finding.statement).slice(0, 60)}…"`;
+      }
+    } else {
+      groundedFindingStatements.push(finding.statement || "");
     }
   }
   gate("reportStatementsGroundedInEvidence", !ungroundedStatement,
@@ -423,14 +427,15 @@ export function evaluateBenchmarkRun({ benchmarkCase, groundTruth, catalog, repo
       ? `${unexpectedFactual.field}: "${String(unexpectedFactual.finding.statement || "").slice(0, 60)}…"`
       : null);
 
-  // تدقيق السرد (P4-M0AR2): corpus = مقتطفات الأدلة الموجودة فعليًا داخل
-  // report.evidence + عبارات الـfindings المقبولة والمؤسسة في التقرير (كلها
-  // اجتازت بوابة التأسيس أعلاه وإلا لعدنا SAFETY_FAILURE) + قاموس العبارات
-  // المحايدة الثابت. لا تُستخدم expectedValues كدعم صامت لادعاء لم يستند
-  // إليه التقرير.
+  // تدقيق السرد (P4-M0AR3): corpus = مقتطفات الأدلة الموجودة فعليًا داخل
+  // report.evidence + عبارات الـfindings التي اجتازت تأسيس الكلمات فعليًا فقط
+  // (groundedFindingStatements) — finding غير مؤسس لا يدخل corpus، فلا
+  // يستطيع تكرار ادعائه في الملخص/التحذيرات وتحويله إلى ادعاء مؤسس (منع
+  // laundering). + قاموس العبارات المحايدة الثابت. لا تُستخدم expectedValues
+  // كدعم صامت لادعاء لم يستند إليه التقرير.
   const narrativeCorpusTexts = [
     ...evidenceItems.map((item) => item?.excerpt || ""),
-    ...findingFieldsOf(report).map(({ finding }) => finding.statement || ""),
+    ...groundedFindingStatements,
   ];
   const narrativeCorpusClaims = numericClaimsOfText(narrativeCorpusTexts.join(" "));
   const narrativeCorpusTokens = expandedCorpusTokens(narrativeCorpusTexts);

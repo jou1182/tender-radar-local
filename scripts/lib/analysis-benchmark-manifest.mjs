@@ -180,8 +180,10 @@ export const conflictContextMarkers = Object.freeze([
 //   3) توحيد أشكال الألف (أ إ آ ٱ → ا) والهمزات على الواو/الياء (ؤ→و، ئ→ي)
 //      وألف المقصورة (ى→ي) والتاء المربوطة (ة→ه) — توحيد شكلي لا يغير المعنى.
 //   4) تطبيع الأرقام كما في normalizeNumericText (أرقام عربية، فواصل، ٪).
+//   5) خفض حالة الأحرف اللاتينية (Offline ← offline) — شكلي حتمي بلا أثر على
+//      المعنى.
 export function normalizeArabicClaimText(value) {
-  let text = String(value || "").normalize("NFC");
+  let text = String(value || "").normalize("NFC").toLowerCase();
   text = text.replace(/[ً-ٰٔـ]/g, "");
   text = text
     .replace(/[أإآٱ]/g, "ا")
@@ -192,34 +194,48 @@ export function normalizeArabicClaimText(value) {
 }
 
 // معالجة محدودة وموثقة للواصقات العربية الشائعة: عند فحص انتماء كلمة إلى
-// corpus نسمح بتجريد حرف وصل واحد (و ف ب ل ك) و/أو أداة التعريف "ال" من
-// الطرفين (كلمة الادعاء وكلمات الـcorpus) — لا يُنشئ الجذر المجرد أي كلمة
-// جديدة، فالكيان المختلق يبقى غير مؤسس.
+// corpus نسمح بتجريد ما يصل إلى حرفي وصل متتابعين (و ف ب ل ك — يغطي
+// «للحالة» = ل+ل+الحالة و«والتنفيذ») ثم أداة التعريف "ال"، من الطرفين
+// (كلمة الادعاء وكلمات الـcorpus). التجريد لا يُنشئ جذرًا جديدًا: الكيان
+// المختلق يبقى غير مؤسس.
 export function claimTokenVariants(token) {
   const variants = new Set([token]);
   let stripped = token;
-  if (stripped.length > 3 && "وفبلك".includes(stripped[0])) {
+  for (let i = 0; i < 2 && stripped.length > 3 && "وفبلك".includes(stripped[0]); i += 1) {
     stripped = stripped.slice(1);
     variants.add(stripped);
   }
   if (token.length > 5 && token.startsWith("ال")) variants.add(token.slice(2));
-  if (stripped.length > 5 && stripped.startsWith("ال")) variants.add(stripped.slice(2));
+  if (stripped.length > 3 && stripped.startsWith("ال")) variants.add(stripped.slice(2));
   return variants;
 }
 
+// معرفات إطار الاختبار الاصطناعية (معرف الحالة/الـfixture): تظهر في علامة
+// الـfixture والميتاداتا ولا تحمل أي ادعاء واقعي، فتُستثنى من الكلمات الدالة.
+export function isBenchmarkFrameworkToken(token) {
+  return /^(m0a-[a-z]+|test-m0a-\d+)$/i.test(token);
+}
+
 // قاموس محلي صغير وثابت لعبارات التقرير المحايدة وإعادة الصياغة الآمنة:
-// كلمات وصفية/إطارية فقط، بلا أي كيان واقعي (لا مدن ولا جهات ولا شروط ولا
-// أنواع ضمان). تُطبَّع حتميًا عند الاستخدام عبر normalizeArabicClaimText.
+// كلمات وصفية/إطارية فقط، بلا أي كيان واقعي (لا مدن ولا جهات ولا أنشطة ولا
+// شروط ولا ضمانات ولا مواقع). تُطبَّع حتميًا عند الاستخدام عبر
+// normalizeArabicClaimText وتُوسَّع بمتغيرات الوصل الموثقة.
+// إضافات P4-M0AR3 (موثقة): دليل/أدلة/الأدلة (لعبارة «الأدلة الواردة محدودة
+// وتحتاج استكمالًا»)، وليس/ناتج (لعبارة التحذير المرجعية الثابتة).
 export const neutralReportLexicon = Object.freeze([
   "تقرير", "مرجعي", "مصطنع", "اصطناعي", "مبدئي", "أولي", "للمراجعة", "لأغراض",
   "المقارنة", "الحالة", "النموذج", "فقط", "يستند", "استنادا", "استنادًا", "الواردة",
   "أدناه", "أعلاه", "يلي", "بناء", "بناءً", "موثق", "موثقة", "الموثقة", "بيانات",
   "اختبار", "ليست", "منافسة", "حقيقية", "offline", "مذكور", "مذكورة", "صريح",
   "صريحة", "غير", "محدودة", "تحتاج", "استكمالا", "استكمالًا", "مراجعة", "كما",
-  "الواردة", "حرفيا", "حرفيًا", "نصا", "نصًا",
+  "حرفيا", "حرفيًا", "نصا", "نصًا",
+  "دليل", "أدلة", "الأدلة", "ليس", "ناتج",
 ]);
 export const neutralReportLexiconNormalized = Object.freeze(
-  neutralReportLexicon.map((word) => normalizeSpaces(normalizeArabicClaimText(word))),
+  [...new Set(neutralReportLexicon.flatMap((word) => {
+    const normalized = normalizeSpaces(normalizeArabicClaimText(word));
+    return [...claimTokenVariants(normalized)];
+  }))],
 );
 
 // ---------- تحقق manifest (مطابق لـ benchmark-manifest.schema.json) ----------
