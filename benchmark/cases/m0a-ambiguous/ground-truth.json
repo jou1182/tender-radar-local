@@ -4,7 +4,7 @@
   "fixtureId": "TEST-M0A-003",
   "documentId": "bench-m0a-ambiguous",
   "fixtureSha256": "9cdc56fda0dc30bee7b9d9df468f25c8cf0ca7ff2e46957a7c920afdf2de9ea5",
-  "catalogSha256": "936001d7697d6996f7396545ef9e10d302b7bf8dcc331efb455ff284fdb33039",
+  "catalogSha256": "1ef2824c92ab993494c7b98e56ad4c27f102f8c4caa6501f6c7fd2bb85c77576",
   "expectedFindings": [
     {
       "expectedId": "exp-ambiguous-duration-conflict",

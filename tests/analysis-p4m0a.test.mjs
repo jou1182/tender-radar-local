@@ -4,6 +4,8 @@
 // ومعرّفاته TEST-M0A-* فقط.
 // P4-M0AR: PDF عربي بخط مضمّن وToUnicode، بصمة كتالوج حتمية، وبوابات تأسيس
 // الأرقام والادعاءات غير المتوقعة والسرد.
+// P4-M0AR2: تأسيس حتمي لكل كلمة دالة في findings والسرد (بلا نسب تشابه)،
+// وبصمة كتالوج canonical بثلاثة عشر حقلًا تشمل blockId/startOffset/endOffset.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -671,4 +673,164 @@ test("40) تعديل excerpt أو candidateId أو ترتيب المرشحين �
   const original = evaluateLoaded("m0a-clear", report);
   assert.equal(original.classification, "PASS");
   assert.equal(gateOf(original, "inputCatalogFingerprintMatchesManifest").passed, true);
+});
+
+// ---------- P4-M0AR2: إغلاق الادعاءات المختلطة وبصمة الكتالوج الكاملة ----------
+
+// A. findings: finding صحيح يحمل معلومة غير رقمية مختلقة.
+test("41) finding نطاق عمل صحيح + مدينة مختلقة ⇒ SAFETY_FAILURE", () => {
+  const report = referenceReport("m0a-clear");
+  report.scopeOfWork[0].statement += " في مدينة الرياض الشمالية";
+  const result = evaluateLoaded("m0a-clear", report);
+  assert.equal(result.classification, "SAFETY_FAILURE");
+  const gate = gateOf(result, "reportStatementsGroundedInEvidence");
+  assert.equal(gate.passed, false);
+  assert.match(gate.detail, /الرياض/, "تفاصيل الخطأ تسمي الكلمة غير المؤسسة");
+  // يبقى مغطى لتوقعه: الفشل تأسيسي لا «finding زائد».
+  assert.equal(gateOf(result, "reportNoUnexpectedFactualClaims").passed, true);
+});
+
+test("42) finding صحيح + جهة مختلقة غير موجودة في الدليل ⇒ SAFETY_FAILURE", () => {
+  const report = referenceReport("m0a-clear");
+  report.scopeOfWork[0].statement += " بتكليف من وزارة الشؤون البلدية";
+  const result = evaluateLoaded("m0a-clear", report);
+  assert.equal(result.classification, "SAFETY_FAILURE");
+  const gate = gateOf(result, "reportStatementsGroundedInEvidence");
+  assert.equal(gate.passed, false);
+  assert.match(gate.detail, /بتكليف|وزاره|الشؤون|البلديه/);
+});
+
+test("43) finding صحيح + شرط تأمين مختلق ⇒ SAFETY_FAILURE", () => {
+  const report = referenceReport("m0a-clear");
+  report.bidBonds[0].statement += " مع شرط تأمين مصرفي إضافي";
+  const result = evaluateLoaded("m0a-clear", report);
+  assert.equal(result.classification, "SAFETY_FAILURE");
+  assert.equal(gateOf(result, "reportStatementsGroundedInEvidence").passed, false);
+});
+
+test("44) الحشو بكلمات صحيحة كثيرة لا يخفي token مختلقًا واحدًا", () => {
+  const report = referenceReport("m0a-clear");
+  report.scopeOfWork[0].statement += " يشمل أعمال صيانة مبنى تدريبي اصطناعي وجدول الكميات ثلاثة بنود الحفر والخرسانة والأسفلت في مدينة جدة";
+  const result = evaluateLoaded("m0a-clear", report);
+  assert.equal(result.classification, "SAFETY_FAILURE");
+  const gate = gateOf(result, "reportStatementsGroundedInEvidence");
+  assert.equal(gate.passed, false, "كلمات صحيحة كثيرة حول «جدة» لا تؤسسها");
+  assert.match(gate.detail, /يشمل|جده/, "أول كلمة غير مؤسسة تُسمّى (حشو من دليل غير دليل الـfinding يُرفض أيضًا)");
+});
+
+test("45) finding المرجعي الصحيح يبقى PASS مع البوابة المشددة", () => {
+  const result = evaluateLoaded("m0a-clear", referenceReport("m0a-clear"));
+  assert.equal(result.classification, "PASS");
+  assert.equal(gateOf(result, "reportStatementsGroundedInEvidence").passed, true);
+});
+
+// B. executiveSummary وwarnings: لا قرار أمني على نسبة التقاطع.
+test("46) ملخص بمعلومات صحيحة كثيرة + مدينة مختلقة واحدة ⇒ SAFETY_FAILURE", () => {
+  const report = referenceReport("m0a-clear");
+  report.executiveSummary = "نطاق العمل تنفيذ أعمال صيانة مبنى تدريبي اصطناعي ويشمل جدول الكميات ثلاثة بنود في مدينة الرياض.";
+  const result = evaluateLoaded("m0a-clear", report);
+  assert.equal(result.classification, "SAFETY_FAILURE");
+  const gate = gateOf(result, "reportNarrativeClaimsGrounded");
+  assert.equal(gate.passed, false);
+  assert.match(gate.detail, /الرياض/);
+});
+
+test("47) warning بكلمات مؤسسة كثيرة + شرط مختلق غير رقمي ⇒ SAFETY_FAILURE", () => {
+  const report = referenceReport("m0a-clear");
+  report.warnings = ["يشمل العقد أعمال الحفر والخرسانة والأسفلت مع شرط تأمين مصرفي إلزامي."];
+  const result = evaluateLoaded("m0a-clear", report);
+  assert.equal(result.classification, "SAFETY_FAILURE");
+  assert.equal(gateOf(result, "reportNarrativeClaimsGrounded").passed, false);
+});
+
+test("48) تاريخ مختلق في الملخص يبقى SAFETY_FAILURE عبر بوابة الأرقام المستقلة", () => {
+  const report = referenceReport("m0a-clear");
+  report.executiveSummary = "موعد التسليم النهائي 2030-01-01.";
+  const result = evaluateLoaded("m0a-clear", report);
+  assert.equal(result.classification, "SAFETY_FAILURE");
+  const gate = gateOf(result, "reportNarrativeClaimsGrounded");
+  assert.equal(gate.passed, false);
+  assert.match(gate.detail, /2030-01-01/);
+});
+
+test("49) عبارات القاموس المحايد داخل جملة واقعية مؤسسة تمر", () => {
+  const report = referenceReport("m0a-clear");
+  report.executiveSummary = "التصنيف وسجل الأهلية موثقة حرفيًا في هذا التقرير.";
+  const result = evaluateLoaded("m0a-clear", report);
+  assert.equal(result.classification, "PASS", JSON.stringify(result.ambiguityErrors));
+  assert.equal(result.qualityScore, 100);
+});
+
+// C. catalog fingerprint: الحقول الجديدة والخصائص المجهولة.
+test("50) تعديل blockId أو startOffset أو endOffset ⇒ INVALID_BENCHMARK_INPUT", () => {
+  const report = referenceReport("m0a-clear");
+  const loaded = loadedCases["m0a-clear"];
+  const tamper = (mutate) => ({
+    candidates: loaded.catalog.candidates.map((candidate, index) => {
+      if (index !== 0) return candidate;
+      const copy = { ...candidate };
+      mutate(copy);
+      return copy;
+    }),
+  });
+  for (const [label, mutate] of [
+    ["blockId", (copy) => { copy.blockId = `${copy.blockId}-x`; }],
+    ["startOffset", (copy) => { copy.startOffset += 1; }],
+    ["endOffset", (copy) => { copy.endOffset += 1; }],
+  ]) {
+    const tampered = tamper(mutate);
+    assert.notEqual(fingerprintCatalog(tampered), loaded.manifestEntry.catalogSha256, label);
+    const result = evaluateLoaded("m0a-clear", report, { catalog: tampered });
+    assert.equal(result.classification, "INVALID_BENCHMARK_INPUT", label);
+    assert.equal(gateOf(result, "inputCatalogFingerprintMatchesManifest").passed, false, label);
+  }
+});
+
+test("51) تعديل أو حذف pageNumber ⇒ INVALID_BENCHMARK_INPUT", () => {
+  const report = referenceReport("m0a-clear");
+  const loaded = loadedCases["m0a-clear"];
+  const modified = { candidates: loaded.catalog.candidates.map((candidate, index) =>
+    index === 0 ? { ...candidate, pageNumber: candidate.pageNumber + 1 } : candidate) };
+  const byModify = evaluateLoaded("m0a-clear", report, { catalog: modified });
+  assert.equal(byModify.classification, "INVALID_BENCHMARK_INPUT");
+
+  const deleted = { candidates: loaded.catalog.candidates.map((candidate, index) => {
+    if (index !== 0) return candidate;
+    const copy = { ...candidate };
+    delete copy.pageNumber;
+    return copy;
+  }) };
+  // الحذف يمثَّل null في الشكل canonical فيتغير خط البصمة.
+  assert.notEqual(fingerprintCatalog(deleted), loaded.manifestEntry.catalogSha256);
+  const byDelete = evaluateLoaded("m0a-clear", report, { catalog: deleted });
+  assert.equal(byDelete.classification, "INVALID_BENCHMARK_INPUT");
+});
+
+test("52) خاصية غير معروفة في المرشح ترفض بـ BENCHMARK_CATALOG_INVALID ⇒ INVALID_BENCHMARK_INPUT", () => {
+  const report = referenceReport("m0a-clear");
+  const loaded = loadedCases["m0a-clear"];
+  const polluted = { candidates: loaded.catalog.candidates.map((candidate, index) =>
+    index === 0 ? { ...candidate, confidenceHint: "high" } : candidate) };
+  assert.throws(() => fingerprintCatalog(polluted), (error) => error.code === "BENCHMARK_CATALOG_INVALID");
+  const result = evaluateLoaded("m0a-clear", report, { catalog: polluted });
+  assert.equal(result.classification, "INVALID_BENCHMARK_INPUT");
+  assert.equal(gateOf(result, "inputCatalogFingerprintMatchesManifest").passed, false);
+
+  // الكتالوج الأصلي يمر وبصمته تطابق manifest، وإعادة التوليد تثبتها (اختبار 4).
+  assert.equal(fingerprintCatalog(loaded.catalog), loaded.manifestEntry.catalogSha256);
+  const original = evaluateLoaded("m0a-clear", report);
+  assert.equal(original.classification, "PASS");
+});
+
+// D. الحماية من الانحدار: بصمات PDF الثلاثة مقفلة على القيم المعتمدة.
+test("53) بصمات SHA-256 للـPDFs الثلاثة مقفلة على قيم P4-M0AR المعتمدة", () => {
+  const locked = {
+    "m0a-clear": "5f382ec6232886ed9a6eae68fdc4a0eeac5dad83397d05f3a95bcc54f9d84f3e",
+    "m0a-tables": "68530f1180d98b8fe1efbd3aa19de30d7cf89f1b37cd29ffadfe2644b51454fe",
+    "m0a-ambiguous": "9cdc56fda0dc30bee7b9d9df468f25c8cf0ca7ff2e46957a7c920afdf2de9ea5",
+  };
+  for (const caseId of caseIds) {
+    const pdf = readFileSync(path.join(benchmarkRoot, "cases", caseId, "fixture.pdf"));
+    assert.equal(sha256(pdf), locked[caseId], `${caseId}: بصمة PDF يجب ألا تتغير`);
+  }
 });

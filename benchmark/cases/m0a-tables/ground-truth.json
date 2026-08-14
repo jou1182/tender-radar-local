@@ -4,7 +4,7 @@
   "fixtureId": "TEST-M0A-002",
   "documentId": "bench-m0a-tables",
   "fixtureSha256": "68530f1180d98b8fe1efbd3aa19de30d7cf89f1b37cd29ffadfe2644b51454fe",
-  "catalogSha256": "c63ea7f511d3d0be6c4d6dce08c8afa4387ff7ed2293a1f1d1ed58292a04158f",
+  "catalogSha256": "87251728bfcb6c2c5ae923a6e50db3d9b186ac55224dc2be49c69f79edb1d11d",
   "expectedFindings": [
     {
       "expectedId": "exp-tables-boq",

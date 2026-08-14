@@ -14,10 +14,13 @@ import {
   benchmarkAmbiguityCategories,
   benchmarkFactualCategories,
   benchmarkVersion,
+  claimTokenVariants,
   conflictContextMarkers,
   extractNumericClaims,
   fingerprintCatalog,
   narrativeFactualTriggers,
+  neutralReportLexiconNormalized,
+  normalizeArabicClaimText,
   normalizeSpaces,
   validateBenchmarkGroundTruth,
 } from "./analysis-benchmark-manifest.mjs";
@@ -54,19 +57,51 @@ export const qualityScoreWeights = Object.freeze({
   requiredCompleteness: 10,
 });
 
-// كلمات وظيفية لا تصلح دلالةً على التأسيس النصي.
-const tokenStoplist = new Set([
+// كلمات وظيفية لا تصلح دلالةً على التأسيس النصي (تُطبَّع عربيًا عند البناء).
+const tokenStoplistRaw = [
   "من", "في", "على", "إلى", "عن", "أو", "ثم", "هذا", "هذه", "ذلك",
   "لم", "لن", "لا", "ما", "مع", "كل", "أي", "بعد", "قبل", "بين", "حسب", "وفق",
-]);
+];
+const tokenStoplist = new Set(
+  tokenStoplistRaw.map((token) => normalizeSpaces(normalizeArabicClaimText(token))),
+);
+
+// الكلمات الدالة (claim-bearing): تطبيع عربي حتمي (NFC، إزالة تشكيل وتطويل،
+// توحيد ألف/همزات، تطبيع أرقام) ثم إسقاط علامات الترقيم من الطرفين وإسقاط
+// الكلمات الوظيفية والقصيرة.
+const tokenEdgePattern = /^[:،؛؟?()[\]—–\-"'«».;]+|[:،؛؟?()[\]—–\-"'«».;]+$/g;
 
 function significantTokens(text) {
   return new Set(
-    normalizeSpaces(text)
+    normalizeSpaces(normalizeArabicClaimText(text))
       .split(" ")
-      .map((token) => token.replace(/^[:،؛؟?()[\]—–-]+|[:،؛؟?()[\]—–-]+$/g, ""))
+      .map((token) => token.replace(tokenEdgePattern, ""))
       .filter((token) => token.length >= 3 && !tokenStoplist.has(token)),
   );
+}
+
+const neutralLexiconSet = new Set(neutralReportLexiconNormalized);
+
+// corpus موسّع بمتغيرات الواصقات الموثقة (claimTokenVariants) لكل كلمة.
+function expandedCorpusTokens(texts) {
+  const corpus = new Set();
+  for (const token of texts.flatMap((text) => [...significantTokens(text)])) {
+    for (const variant of claimTokenVariants(token)) corpus.add(variant);
+  }
+  return corpus;
+}
+
+// تأسيس حتمي لكل كلمة دالة: تُقبل فقط إذا وُجدت (هي أو أحد متغيرات وصلها
+// الموثقة) في corpus أو في قاموس العبارات المحايدة الثابت. أي كلمة واقعية —
+// مدينة أو جهة أو شرط أو كيان — غير مؤسسة تُرجع هنا فتسقط البوابة.
+function unfoundedClaimToken(tokens, corpusTokens) {
+  for (const token of tokens) {
+    const variants = [...claimTokenVariants(token)];
+    if (variants.some((variant) => corpusTokens.has(variant))) continue;
+    if (variants.some((variant) => neutralLexiconSet.has(variant))) continue;
+    return token;
+  }
+  return null;
 }
 
 function findingFieldsOf(report) {
@@ -136,6 +171,8 @@ function narrativeSentenceIssue(sentence, corpusClaims, corpusTokens, forbidden)
   if (missingClaim) return `ادعاء رقمي غير مؤسس في السرد: "${missingClaim.raw}".`;
   const hasConflictContext = conflictContextMarkers.some((marker) => sentence.includes(marker));
   // سياق استفهامي (؟ أو ?): السؤال عن قيمة غير محددة ليس ادعاءً بها.
+  // هذان الإعفاءان يخصان forbiddenAssertions فقط — لا يعفيان أي كلمة واقعية
+  // مختلقة من تحقق التأسيس الحتمي أدناه.
   const hasQuestionContext = sentence.includes("؟") || sentence.includes("?");
   if (!hasConflictContext && !hasQuestionContext) {
     for (const assertion of forbidden) {
@@ -147,10 +184,10 @@ function narrativeSentenceIssue(sentence, corpusClaims, corpusTokens, forbidden)
   const tokens = significantTokens(sentence);
   if (!isFactualSentence(sentence)) return null; // جملة محايدة
   if (!tokens.size) return "جملة واقعية بلا كلمات دالة.";
-  const shared = [...tokens].filter((token) => corpusTokens.has(token));
-  if (shared.length < 2 || shared.length / tokens.size < 0.5) {
-    return `جملة واقعية ضعيفة التأسيس: ${shared.length}/${tokens.size} كلمات دالة مشتركة.`;
-  }
+  // لا قرار أمني على نسبة تقاطع: كل كلمة دالة في الجملة الواقعية يجب أن
+  // تكون مؤسسة في corpus السرد أو في القاموس المحايد الثابت.
+  const unfounded = unfoundedClaimToken(tokens, corpusTokens);
+  if (unfounded) return `كلمة واقعية غير مؤسسة في السرد: "${unfounded}".`;
   return null;
 }
 
@@ -341,22 +378,28 @@ export function evaluateBenchmarkRun({ benchmarkCase, groundTruth, catalog, repo
     (detail) => ambiguityErrors.push(`قبول قيمة تعسفية أو استنتاج ممنوع: ${detail}`),
     forbiddenHit);
 
+  // تأسيس findings الحتمي (P4-M0AR2): لكل finding واقعي يُبنى corpus مسموح
+  // من مقتطفات evidenceIds الخاصة به نفسه + expectedValue للتوقعات التي
+  // يغطيها فقط، ثم يجب أن تكون كل كلمة دالة في العبارة مؤسسة فيه أو في
+  // قاموس العبارات المحايدة الثابت. لا fuzzy matching ولا نسبة تشابه، ولا
+  // إعفاء بسياق سؤال/تعارض — الإعفاء يخص forbiddenAssertions فقط.
   let ungroundedStatement = null;
   for (const { field, finding } of factualRows) {
     const statementTokens = significantTokens(finding.statement);
     if (!statementTokens.size) continue;
-    const excerptText = (finding.evidenceIds || [])
-      .map((id) => evidenceItems.find((item) => item?.evidenceId === id)?.excerpt || "")
-      .join(" ");
-    const excerptTokens = significantTokens(excerptText);
-    const overlap = [...statementTokens].some((token) => excerptTokens.has(token));
-    if (!overlap) {
-      ungroundedStatement = `${field}: "${String(finding.statement).slice(0, 60)}…"`;
+    const corpusTexts = [findingEvidenceExcerpts(finding, evidenceItems)];
+    for (const expectation of groundTruth.expectedFindings || []) {
+      if (findingCoversExpectation(finding, expectation)) corpusTexts.push(expectation.expectedValue || "");
+    }
+    const corpusTokens = expandedCorpusTokens(corpusTexts);
+    const unfounded = unfoundedClaimToken(statementTokens, corpusTokens);
+    if (unfounded) {
+      ungroundedStatement = `${field}: كلمة غير مؤسسة "${unfounded}" في "${String(finding.statement).slice(0, 60)}…"`;
       break;
     }
   }
   gate("reportStatementsGroundedInEvidence", !ungroundedStatement,
-    (detail) => evidenceErrors.push(`finding مختلق: لا يشارك أدلته أي محتوى دال: ${detail}`),
+    (detail) => evidenceErrors.push(`finding يحمل ادعاءً غير مؤسس في أدلته: ${detail}`),
     ungroundedStatement);
 
   // تأسيس الأرقام: كل ادعاء رقمي/تاريخ/نسبة في أي finding (كل الفئات الاثنتي
@@ -380,13 +423,17 @@ export function evaluateBenchmarkRun({ benchmarkCase, groundTruth, catalog, repo
       ? `${unexpectedFactual.field}: "${String(unexpectedFactual.finding.statement || "").slice(0, 60)}…"`
       : null);
 
-  // تدقيق السرد: corpus = مقتطفات أدلة التقرير + expectedValues الموثقة.
-  const narrativeCorpusText = [
+  // تدقيق السرد (P4-M0AR2): corpus = مقتطفات الأدلة الموجودة فعليًا داخل
+  // report.evidence + عبارات الـfindings المقبولة والمؤسسة في التقرير (كلها
+  // اجتازت بوابة التأسيس أعلاه وإلا لعدنا SAFETY_FAILURE) + قاموس العبارات
+  // المحايدة الثابت. لا تُستخدم expectedValues كدعم صامت لادعاء لم يستند
+  // إليه التقرير.
+  const narrativeCorpusTexts = [
     ...evidenceItems.map((item) => item?.excerpt || ""),
-    ...(groundTruth.expectedFindings || []).map((expectation) => expectation.expectedValue || ""),
-  ].join(" ");
-  const narrativeCorpusClaims = numericClaimsOfText(narrativeCorpusText);
-  const narrativeCorpusTokens = significantTokens(narrativeCorpusText);
+    ...findingFieldsOf(report).map(({ finding }) => finding.statement || ""),
+  ];
+  const narrativeCorpusClaims = numericClaimsOfText(narrativeCorpusTexts.join(" "));
+  const narrativeCorpusTokens = expandedCorpusTokens(narrativeCorpusTexts);
   const forbidden = groundTruth.forbiddenAssertions || [];
   let narrativeIssue = null;
   for (const sentence of [

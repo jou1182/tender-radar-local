@@ -35,28 +35,74 @@ function isNonEmptyString(value) {
 // ---------- بصمة كتالوج الأدلة: تسلسل canonical حتمي + SHA-256 ----------
 // تربط manifest وground-truth بالكتالوج الفعلي الناتج من الـfixture؛ أي تغيير
 // في مقتطف أو معرف أو ترتيب أو موقع يغيّر البصمة فيرفض المقيّم الكتالوج الأجنبي.
+//
+// الشكل canonical (P4-M0AR2): 13 حقلًا بترتيب ثابت وصريح، لا يعتمد على ترتيب
+// خصائص JavaScript — يُبنى نص JSON يدويًا حقلًا حقلًا. الحقول الاختيارية
+// الغائبة تُمثَّل بـ null حتميًا. أي حقل إضافي غير معروف أو نوع خاطئ يرمي
+// BENCHMARK_CATALOG_INVALID فيسقط الكتالوج في INVALID_BENCHMARK_INPUT.
+export const catalogFingerprintFieldSpec = Object.freeze([
+  { key: "index", kind: "integer" },
+  { key: "candidateId", kind: "string" },
+  { key: "documentId", kind: "string" },
+  { key: "sourceType", kind: "string" },
+  { key: "excerpt", kind: "string" },
+  { key: "chunkId", kind: "string" },
+  { key: "blockId", kind: "string" },
+  { key: "startOffset", kind: "integer" },
+  { key: "endOffset", kind: "integer" },
+  { key: "pageNumber", kind: "integer|null" },
+  { key: "sheetName", kind: "string|null" },
+  { key: "cellRange", kind: "string|null" },
+  { key: "section", kind: "string|null" },
+]);
+const catalogCandidateKeys = new Set(catalogFingerprintFieldSpec.map((field) => field.key).filter((key) => key !== "index"));
+
+function catalogInvalid(reason) {
+  const error = new Error(`بصمة الكتالوج: ${reason}`);
+  error.code = "BENCHMARK_CATALOG_INVALID";
+  return error;
+}
+
+function catalogFieldValue(candidate, index, { key, kind }) {
+  const value = key === "index" ? index : candidate[key];
+  if (value === undefined || value === null) {
+    if (kind.endsWith("|null")) return null;
+    throw catalogInvalid(`الحقل المطلوب ${key} مفقود عند المرشح ${index}.`);
+  }
+  if (kind.startsWith("string")) {
+    if (typeof value !== "string") throw catalogInvalid(`الحقل ${key} عند المرشح ${index} يجب أن يكون نصًا.`);
+    return value;
+  }
+  // integer أو integer|null
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw catalogInvalid(`الحقل ${key} عند المرشح ${index} يجب أن يكون عددًا صحيحًا غير سالب.`);
+  }
+  return value;
+}
+
 function catalogFingerprintLine(candidate, index) {
-  const line = {
-    index,
-    candidateId: candidate.candidateId,
-    documentId: candidate.documentId,
-    sourceType: candidate.sourceType,
-    excerpt: candidate.excerpt,
-    chunkId: candidate.chunkId,
-  };
-  if (candidate.pageNumber !== undefined) line.pageNumber = candidate.pageNumber;
-  if (candidate.sheetName !== undefined) line.sheetName = candidate.sheetName;
-  if (candidate.cellRange !== undefined) line.cellRange = candidate.cellRange;
-  if (candidate.section !== undefined) line.section = candidate.section;
-  return JSON.stringify(line);
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+    throw catalogInvalid(`المرشح ${index} ليس كائنًا.`);
+  }
+  for (const key of Object.keys(candidate)) {
+    if (!catalogCandidateKeys.has(key)) {
+      throw catalogInvalid(`حقل غير معروف "${key}" عند المرشح ${index} (additionalProperties: false).`);
+    }
+  }
+  // بناء يدوي حقلًا حقلًا بترتيب catalogFingerprintFieldSpec — لا يعتمد على
+  // ترتيب خصائص الكائن في JavaScript.
+  const pairs = catalogFingerprintFieldSpec.map((spec) => {
+    const value = catalogFieldValue(candidate, index, spec);
+    const serialized = value === null ? "null" : JSON.stringify(value);
+    return `${JSON.stringify(spec.key)}:${serialized}`;
+  });
+  return `{${pairs.join(",")}}`;
 }
 
 export function fingerprintCatalog(catalog) {
   const candidates = catalog?.candidates;
   if (!Array.isArray(candidates)) {
-    const error = new Error("فهرسة بصمة الكتالوج تتطلب candidates مصفوفة.");
-    error.code = "BENCHMARK_CATALOG_INVALID";
-    throw error;
+    throw catalogInvalid("فهرسة بصمة الكتالوج تتطلب candidates مصفوفة.");
   }
   const canonical = candidates.map((candidate, index) => catalogFingerprintLine(candidate, index)).join("\n");
   return createHash("sha256").update(canonical, "utf8").digest("hex");
@@ -124,6 +170,57 @@ export const conflictContextMarkers = Object.freeze([
   "متعارض", "تعارض", "غير محدد", "لم تحدد", "لم تُحدد", "لم يُحسم", "لم تُحسم",
   "دون حسم", "لا يمكن الجزم", "يحدد لاحقا", "غير مسجل", "غير واضح",
 ]);
+
+// ---------- تطبيع الادعاءات العربية (P4-M0AR2): حتمي وموثق ----------
+// يُستخدم في بوابتي تأسيس findings والسرد: مقارنة كلمات دالة بعد توحيد
+// الأشكال، بلا fuzzy matching ولا نسب تشابه.
+// الخطوات بالترتيب:
+//   1) Unicode NFC.
+//   2) إزالة التشكيل (064B–0652 و0670) والتطويل (0640).
+//   3) توحيد أشكال الألف (أ إ آ ٱ → ا) والهمزات على الواو/الياء (ؤ→و، ئ→ي)
+//      وألف المقصورة (ى→ي) والتاء المربوطة (ة→ه) — توحيد شكلي لا يغير المعنى.
+//   4) تطبيع الأرقام كما في normalizeNumericText (أرقام عربية، فواصل، ٪).
+export function normalizeArabicClaimText(value) {
+  let text = String(value || "").normalize("NFC");
+  text = text.replace(/[ً-ٰٔـ]/g, "");
+  text = text
+    .replace(/[أإآٱ]/g, "ا")
+    .replace(/ؤ/g, "و")
+    .replace(/ئ/g, "ي")
+    .replace(/ى/g, "ي")
+    .replace(/ة/g, "ه");  return normalizeNumericText(text);
+}
+
+// معالجة محدودة وموثقة للواصقات العربية الشائعة: عند فحص انتماء كلمة إلى
+// corpus نسمح بتجريد حرف وصل واحد (و ف ب ل ك) و/أو أداة التعريف "ال" من
+// الطرفين (كلمة الادعاء وكلمات الـcorpus) — لا يُنشئ الجذر المجرد أي كلمة
+// جديدة، فالكيان المختلق يبقى غير مؤسس.
+export function claimTokenVariants(token) {
+  const variants = new Set([token]);
+  let stripped = token;
+  if (stripped.length > 3 && "وفبلك".includes(stripped[0])) {
+    stripped = stripped.slice(1);
+    variants.add(stripped);
+  }
+  if (token.length > 5 && token.startsWith("ال")) variants.add(token.slice(2));
+  if (stripped.length > 5 && stripped.startsWith("ال")) variants.add(stripped.slice(2));
+  return variants;
+}
+
+// قاموس محلي صغير وثابت لعبارات التقرير المحايدة وإعادة الصياغة الآمنة:
+// كلمات وصفية/إطارية فقط، بلا أي كيان واقعي (لا مدن ولا جهات ولا شروط ولا
+// أنواع ضمان). تُطبَّع حتميًا عند الاستخدام عبر normalizeArabicClaimText.
+export const neutralReportLexicon = Object.freeze([
+  "تقرير", "مرجعي", "مصطنع", "اصطناعي", "مبدئي", "أولي", "للمراجعة", "لأغراض",
+  "المقارنة", "الحالة", "النموذج", "فقط", "يستند", "استنادا", "استنادًا", "الواردة",
+  "أدناه", "أعلاه", "يلي", "بناء", "بناءً", "موثق", "موثقة", "الموثقة", "بيانات",
+  "اختبار", "ليست", "منافسة", "حقيقية", "offline", "مذكور", "مذكورة", "صريح",
+  "صريحة", "غير", "محدودة", "تحتاج", "استكمالا", "استكمالًا", "مراجعة", "كما",
+  "الواردة", "حرفيا", "حرفيًا", "نصا", "نصًا",
+]);
+export const neutralReportLexiconNormalized = Object.freeze(
+  neutralReportLexicon.map((word) => normalizeSpaces(normalizeArabicClaimText(word))),
+);
 
 // ---------- تحقق manifest (مطابق لـ benchmark-manifest.schema.json) ----------
 const manifestRootKeys = ["benchmarkVersion", "generatedBy", "cases"];
@@ -202,8 +299,18 @@ export function validateBenchmarkGroundTruth(groundTruth, catalog) {
   }
   if (!isNonEmptyString(groundTruth.catalogSha256) || !/^[0-9a-f]{64}$/.test(groundTruth.catalogSha256 || "")) {
     errors.push("ground-truth: catalogSha256 مفقود أو غير صالح.");
-  } else if (catalog && fingerprintCatalog(catalog) !== groundTruth.catalogSha256) {
-    errors.push("ground-truth: catalogSha256 لا يطابق بصمة الكتالوج الفعلي.");
+  } else if (catalog) {
+    // كتالوج تالف البنية (حقل مجهول/نوع خاطئ) يرمي BENCHMARK_CATALOG_INVALID؛
+    // يُعامل كعدم تطابق بصمة لا كاستثناء هارب.
+    let actualFingerprint = null;
+    try {
+      actualFingerprint = fingerprintCatalog(catalog);
+    } catch {
+      actualFingerprint = null;
+    }
+    if (actualFingerprint !== groundTruth.catalogSha256) {
+      errors.push("ground-truth: catalogSha256 لا يطابق بصمة الكتالوج الفعلي.");
+    }
   }
   if (groundTruth.allowDerivedNumericClaims !== undefined && typeof groundTruth.allowDerivedNumericClaims !== "boolean") {
     errors.push("ground-truth: allowDerivedNumericClaims يجب أن تكون منطقية عند وجودها.");
