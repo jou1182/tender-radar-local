@@ -97,10 +97,19 @@ export function validateAnalysisReport(report) {
     errors.push("decisionEvidenceIds يجب أن تكون مصفوفة معرفات أدلة.");
   }
 
+  // سلامة المراجع بحواجز بنيوية صريحة (P4-A1R): لا يُمرّ على report[field] إلا
+  // إذا كانت مصفوفة فعلًا، ولا على finding.evidenceIds إلا إذا كانت مصفوفة
+  // فعلًا. أي قيمة JSON أخرى (كائن، نص، عدد، منطقية، null) سجّلها المرور الأول
+  // خطأ تحقق، وهنا تُتخطى بأمان — المدقق دالة كلية لا ترمي TypeError إطلاقًا.
   for (const field of analysisFindingFields) {
-    for (const finding of report[field] || []) {
-      for (const id of finding?.evidenceIds || []) {
-        if (!evidenceIds.has(id)) errors.push(`الدليل ${id} المشار إليه في ${field} غير موجود في evidence.`);
+    if (!Array.isArray(report[field])) continue;
+    for (const finding of report[field]) {
+      if (!finding || typeof finding !== "object") continue;
+      if (!Array.isArray(finding.evidenceIds)) continue;
+      for (const id of finding.evidenceIds) {
+        if (isNonEmptyString(id) && !evidenceIds.has(id)) {
+          errors.push(`الدليل ${id} المشار إليه في ${field} غير موجود في evidence.`);
+        }
       }
     }
   }
