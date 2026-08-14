@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "benchmark-manifest.schema.json",
+  "title": "analysis-benchmark-manifest",
+  "description": "مخطط manifest منصة المقارنة Offline المحايدة (P4-M0A). يصف الحالات الثلاث وبصمات fixtures دون أي افتراض عن نموذج بعينه.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["benchmarkVersion", "generatedBy", "cases"],
+  "properties": {
+    "benchmarkVersion": { "const": "analysis-benchmark-v1" },
+    "generatedBy": { "type": "string", "minLength": 1 },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "caseId",
+          "fixtureId",
+          "documentId",
+          "title",
+          "fixtureFile",
+          "fixtureSha256",
+          "pageCount",
+          "specFile",
+          "groundTruthFile"
+        ],
+        "properties": {
+          "caseId": { "type": "string", "pattern": "^m0a-[a-z]+$" },
+          "fixtureId": { "type": "string", "pattern": "^TEST-M0A-\\d{3}$" },
+          "documentId": { "type": "string", "minLength": 1 },
+          "title": { "type": "string", "minLength": 1 },
+          "fixtureFile": { "type": "string", "minLength": 1 },
+          "fixtureSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "pageCount": { "type": "integer", "minimum": 1 },
+          "specFile": { "type": "string", "minLength": 1 },
+          "groundTruthFile": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

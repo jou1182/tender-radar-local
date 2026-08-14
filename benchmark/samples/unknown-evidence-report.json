@@ -1,0 +1,249 @@
+{
+  "executiveSummary": "تقرير مرجعي مصطنع للحالة m0a-clear — لأغراض المقارنة Offline فقط.",
+  "preliminaryDecision": "review",
+  "confidence": "medium",
+  "decisionEvidenceIds": [
+    "cand-1fa98e9f5df184bb82e424f3"
+  ],
+  "warnings": [
+    "تقرير مرجعي مصطنع لأغراض المقارنة Offline فقط؛ ليس ناتج نموذج."
+  ],
+  "scopeOfWork": [
+    {
+      "category": "scopeOfWork",
+      "statement": "نطاق العمل: تنفيذ أعمال صيانة مبنى تدريبي اصطناعي في مدينة افتراضية",
+      "severity": "medium",
+      "confidence": "high",
+      "evidenceIds": [
+        "cand-deadbeefdeadbeefdeadbeef"
+      ]
+    }
+  ],
+  "boqSummary": [
+    {
+      "category": "boqSummary",
+      "statement": "يشمل جدول الكميات ثلاثة بنود اصطناعية هي الحفر والخرسانة والأسفلت",
+      "severity": "medium",
+      "confidence": "high",
+      "evidenceIds": [
+        "cand-ddcaffb307d415961507b0b9"
+      ]
+    }
+  ],
+  "criticalQuantities": [
+    {
+      "category": "criticalQuantities",
+      "statement": "كمية أعمال الحفر 1200 متر مكعب وكمية الخرسانة 800 متر مكعب",
+      "severity": "medium",
+      "confidence": "high",
+      "evidenceIds": [
+        "cand-a8db9deeb4a3b0ea1a94c22f"
+      ]
+    }
+  ],
+  "eligibilityRequirements": [
+    {
+      "category": "eligibilityRequirements",
+      "statement": "شروط الأهلية: سجل تجاري ساري وشهادة تصنيف سارية المفعول",
+      "severity": "medium",
+      "confidence": "high",
+      "evidenceIds": [
+        "cand-d8274f7f9bf05bdf28778d12"
+      ]
+    }
+  ],
+  "requiredExperience": [
+    {
+      "category": "requiredExperience",
+      "statement": "الخبرة المطلوبة: ثلاثة مشاريع مشابهة خلال السنوات الخمس الماضية",
+      "severity": "medium",
+      "confidence": "high",
+      "evidenceIds": [
+        "cand-91be05584650f60317e22d9b"
+      ]
+    }
+  ],
+  "deadlines": [
+    {
+      "category": "deadlines",
+      "statement": "الموعد النهائي لتقديم العروض: 2026-11-15 الساعة 10:00 صباحًا",
+      "severity": "medium",
+      "confidence": "high",
+      "evidenceIds": [
+        "cand-2f8d20ef7494202e79fa68fc"
+      ]
+    }
+  ],
+  "bidBonds": [
+    {
+      "category": "bidBonds",
+      "statement": "الضمان الابتدائي: 5000 ريال يقدم مع العرض ولا يرد إلا بعد الترسية",
+      "severity": "medium",
+      "confidence": "high",
+      "evidenceIds": [
+        "cand-afb79ca2df4f5d4bdbfc26d9"
+      ]
+    }
+  ],
+  "guarantees": [
+    {
+      "category": "guarantees",
+      "statement": "الضمان النهائي: 5% من قيمة العقد وضمان أعمال لمدة سنة كاملة",
+      "severity": "medium",
+      "confidence": "high",
+      "evidenceIds": [
+        "cand-66e79266180ef6aae46c4f6c"
+      ]
+    }
+  ],
+  "penalties": [
+    {
+      "category": "penalties",
+      "statement": "غرامة التأخير: 0.1% يوميًا بحد أقصى 10% من قيمة العقد",
+      "severity": "medium",
+      "confidence": "high",
+      "evidenceIds": [
+        "cand-c447c85df9aefcd896c6cd97"
+      ]
+    }
+  ],
+  "contractualRisks": [
+    {
+      "category": "contractualRisks",
+      "statement": "يتحمل المتعاقد مخاطر تقلبات الأسعار طوال مدة العقد",
+      "severity": "medium",
+      "confidence": "high",
+      "evidenceIds": [
+        "cand-c35bf38191523746314b0683"
+      ]
+    }
+  ],
+  "unclearItems": [
+    {
+      "category": "unclearItems",
+      "statement": "بند غير واضح: آلية احتساب الأعمال الإضافية لم توضح في الوثيقة",
+      "severity": "high",
+      "confidence": "high",
+      "evidenceIds": [
+        "cand-2b5376aca09eb4e4c29f4f87"
+      ]
+    }
+  ],
+  "questionsForAuthority": [
+    {
+      "category": "questionsForAuthority",
+      "statement": "سؤال للجهة: هل تشمل قيمة العقد ضريبة القيمة المضافة؟",
+      "severity": "info",
+      "confidence": "high",
+      "evidenceIds": [
+        "cand-37b6e22525eb816808400fcc"
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "evidenceId": "cand-1fa98e9f5df184bb82e424f3",
+      "documentId": "bench-m0a-clear",
+      "sourceType": "pdf",
+      "pageNumber": 1,
+      "excerpt": "نطاق العمل: تنفيذ أعمال صيانة مبنى تدريبي اصطناعي في مدينة افتراضية",
+      "chunkId": "chk-8499f9f75009d5b9"
+    },
+    {
+      "evidenceId": "cand-ddcaffb307d415961507b0b9",
+      "documentId": "bench-m0a-clear",
+      "sourceType": "pdf",
+      "pageNumber": 1,
+      "excerpt": "يشمل جدول الكميات ثلاثة بنود اصطناعية هي الحفر والخرسانة والأسفلت",
+      "chunkId": "chk-8499f9f75009d5b9"
+    },
+    {
+      "evidenceId": "cand-a8db9deeb4a3b0ea1a94c22f",
+      "documentId": "bench-m0a-clear",
+      "sourceType": "pdf",
+      "pageNumber": 1,
+      "excerpt": "كمية أعمال الحفر 1200 متر مكعب وكمية الخرسانة 800 متر مكعب",
+      "chunkId": "chk-8499f9f75009d5b9"
+    },
+    {
+      "evidenceId": "cand-d8274f7f9bf05bdf28778d12",
+      "documentId": "bench-m0a-clear",
+      "sourceType": "pdf",
+      "pageNumber": 1,
+      "excerpt": "شروط الأهلية: سجل تجاري ساري وشهادة تصنيف سارية المفعول",
+      "chunkId": "chk-8499f9f75009d5b9"
+    },
+    {
+      "evidenceId": "cand-91be05584650f60317e22d9b",
+      "documentId": "bench-m0a-clear",
+      "sourceType": "pdf",
+      "pageNumber": 1,
+      "excerpt": "الخبرة المطلوبة: ثلاثة مشاريع مشابهة خلال السنوات الخمس الماضية",
+      "chunkId": "chk-8499f9f75009d5b9"
+    },
+    {
+      "evidenceId": "cand-2f8d20ef7494202e79fa68fc",
+      "documentId": "bench-m0a-clear",
+      "sourceType": "pdf",
+      "pageNumber": 2,
+      "excerpt": "الموعد النهائي لتقديم العروض: 2026-11-15 الساعة 10:00 صباحًا",
+      "chunkId": "chk-8499f9f75009d5b9"
+    },
+    {
+      "evidenceId": "cand-afb79ca2df4f5d4bdbfc26d9",
+      "documentId": "bench-m0a-clear",
+      "sourceType": "pdf",
+      "pageNumber": 2,
+      "excerpt": "الضمان الابتدائي: 5000 ريال يقدم مع العرض ولا يرد إلا بعد الترسية",
+      "chunkId": "chk-8499f9f75009d5b9"
+    },
+    {
+      "evidenceId": "cand-66e79266180ef6aae46c4f6c",
+      "documentId": "bench-m0a-clear",
+      "sourceType": "pdf",
+      "pageNumber": 2,
+      "excerpt": "الضمان النهائي: 5% من قيمة العقد وضمان أعمال لمدة سنة كاملة",
+      "chunkId": "chk-8499f9f75009d5b9"
+    },
+    {
+      "evidenceId": "cand-c447c85df9aefcd896c6cd97",
+      "documentId": "bench-m0a-clear",
+      "sourceType": "pdf",
+      "pageNumber": 2,
+      "excerpt": "غرامة التأخير: 0.1% يوميًا بحد أقصى 10% من قيمة العقد",
+      "chunkId": "chk-8499f9f75009d5b9"
+    },
+    {
+      "evidenceId": "cand-c35bf38191523746314b0683",
+      "documentId": "bench-m0a-clear",
+      "sourceType": "pdf",
+      "pageNumber": 2,
+      "excerpt": "يتحمل المتعاقد مخاطر تقلبات الأسعار طوال مدة العقد",
+      "chunkId": "chk-8499f9f75009d5b9"
+    },
+    {
+      "evidenceId": "cand-2b5376aca09eb4e4c29f4f87",
+      "documentId": "bench-m0a-clear",
+      "sourceType": "pdf",
+      "pageNumber": 2,
+      "excerpt": "بند غير واضح: آلية احتساب الأعمال الإضافية لم توضح في الوثيقة",
+      "chunkId": "chk-8499f9f75009d5b9"
+    },
+    {
+      "evidenceId": "cand-37b6e22525eb816808400fcc",
+      "documentId": "bench-m0a-clear",
+      "sourceType": "pdf",
+      "pageNumber": 2,
+      "excerpt": "سؤال للجهة: هل تشمل قيمة العقد ضريبة القيمة المضافة؟",
+      "chunkId": "chk-8499f9f75009d5b9"
+    },
+    {
+      "evidenceId": "cand-deadbeefdeadbeefdeadbeef",
+      "documentId": "bench-m0a-clear",
+      "sourceType": "pdf",
+      "pageNumber": 1,
+      "excerpt": "نطاق العمل: تنفيذ أعمال صيانة مبنى تدريبي اصطناعي في مدينة افتراضية",
+      "chunkId": "chk-8499f9f75009d5b9"
+    }
+  ]
+}

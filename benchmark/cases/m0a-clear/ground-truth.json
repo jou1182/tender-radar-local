@@ -1,0 +1,178 @@
+{
+  "groundTruthVersion": "benchmark-ground-truth-v1",
+  "caseId": "m0a-clear",
+  "fixtureId": "TEST-M0A-001",
+  "documentId": "bench-m0a-clear",
+  "fixtureSha256": "850ef975052fb5fcac2dd28b81017522e79fa14aefc3125004990e7efcc8079e",
+  "expectedFindings": [
+    {
+      "expectedId": "exp-clear-scope",
+      "category": "scopeOfWork",
+      "expectedValue": "نطاق العمل: تنفيذ أعمال صيانة مبنى تدريبي اصطناعي في مدينة افتراضية",
+      "required": true,
+      "criticalTerms": [
+        "نطاق",
+        "العمل",
+        "صيانة"
+      ],
+      "availability": "explicit",
+      "candidateIds": [
+        "cand-1fa98e9f5df184bb82e424f3"
+      ]
+    },
+    {
+      "expectedId": "exp-clear-boq",
+      "category": "boqSummary",
+      "expectedValue": "يشمل جدول الكميات ثلاثة بنود اصطناعية هي الحفر والخرسانة والأسفلت",
+      "required": true,
+      "criticalTerms": [
+        "جدول",
+        "الكميات",
+        "ثلاثة"
+      ],
+      "availability": "explicit",
+      "candidateIds": [
+        "cand-ddcaffb307d415961507b0b9"
+      ]
+    },
+    {
+      "expectedId": "exp-clear-quantities",
+      "category": "criticalQuantities",
+      "expectedValue": "كمية أعمال الحفر 1200 متر مكعب وكمية الخرسانة 800 متر مكعب",
+      "required": true,
+      "criticalTerms": [
+        "1200",
+        "800"
+      ],
+      "availability": "explicit",
+      "candidateIds": [
+        "cand-a8db9deeb4a3b0ea1a94c22f"
+      ]
+    },
+    {
+      "expectedId": "exp-clear-eligibility",
+      "category": "eligibilityRequirements",
+      "expectedValue": "شروط الأهلية: سجل تجاري ساري وشهادة تصنيف سارية المفعول",
+      "required": true,
+      "criticalTerms": [
+        "سجل",
+        "تصنيف"
+      ],
+      "availability": "explicit",
+      "candidateIds": [
+        "cand-d8274f7f9bf05bdf28778d12"
+      ]
+    },
+    {
+      "expectedId": "exp-clear-experience",
+      "category": "requiredExperience",
+      "expectedValue": "الخبرة المطلوبة: ثلاثة مشاريع مشابهة خلال السنوات الخمس الماضية",
+      "required": true,
+      "criticalTerms": [
+        "ثلاثة",
+        "مشاريع"
+      ],
+      "availability": "explicit",
+      "candidateIds": [
+        "cand-91be05584650f60317e22d9b"
+      ]
+    },
+    {
+      "expectedId": "exp-clear-deadline",
+      "category": "deadlines",
+      "expectedValue": "الموعد النهائي لتقديم العروض: 2026-11-15 الساعة 10:00 صباحًا",
+      "required": true,
+      "criticalTerms": [
+        "2026-11-15"
+      ],
+      "availability": "explicit",
+      "candidateIds": [
+        "cand-2f8d20ef7494202e79fa68fc"
+      ]
+    },
+    {
+      "expectedId": "exp-clear-bidbond",
+      "category": "bidBonds",
+      "expectedValue": "الضمان الابتدائي: 5000 ريال يقدم مع العرض ولا يرد إلا بعد الترسية",
+      "required": true,
+      "criticalTerms": [
+        "الابتدائي",
+        "5000"
+      ],
+      "availability": "explicit",
+      "candidateIds": [
+        "cand-afb79ca2df4f5d4bdbfc26d9"
+      ]
+    },
+    {
+      "expectedId": "exp-clear-guarantees",
+      "category": "guarantees",
+      "expectedValue": "الضمان النهائي: 5% من قيمة العقد وضمان أعمال لمدة سنة كاملة",
+      "required": true,
+      "criticalTerms": [
+        "النهائي",
+        "5%"
+      ],
+      "availability": "explicit",
+      "candidateIds": [
+        "cand-66e79266180ef6aae46c4f6c"
+      ]
+    },
+    {
+      "expectedId": "exp-clear-penalties",
+      "category": "penalties",
+      "expectedValue": "غرامة التأخير: 0.1% يوميًا بحد أقصى 10% من قيمة العقد",
+      "required": true,
+      "criticalTerms": [
+        "0.1%",
+        "10%"
+      ],
+      "availability": "explicit",
+      "candidateIds": [
+        "cand-c447c85df9aefcd896c6cd97"
+      ]
+    },
+    {
+      "expectedId": "exp-clear-risks",
+      "category": "contractualRisks",
+      "expectedValue": "يتحمل المتعاقد مخاطر تقلبات الأسعار طوال مدة العقد",
+      "required": false,
+      "criticalTerms": [
+        "تقلبات",
+        "الأسعار"
+      ],
+      "availability": "explicit",
+      "candidateIds": [
+        "cand-c35bf38191523746314b0683"
+      ]
+    },
+    {
+      "expectedId": "exp-clear-unclear",
+      "category": "unclearItems",
+      "expectedValue": "بند غير واضح: آلية احتساب الأعمال الإضافية لم توضح في الوثيقة",
+      "required": true,
+      "criticalTerms": [
+        "آلية",
+        "الإضافية"
+      ],
+      "availability": "explicit",
+      "candidateIds": [
+        "cand-2b5376aca09eb4e4c29f4f87"
+      ]
+    },
+    {
+      "expectedId": "exp-clear-question",
+      "category": "questionsForAuthority",
+      "expectedValue": "سؤال للجهة: هل تشمل قيمة العقد ضريبة القيمة المضافة؟",
+      "required": true,
+      "criticalTerms": [
+        "ضريبة"
+      ],
+      "availability": "explicit",
+      "candidateIds": [
+        "cand-37b6e22525eb816808400fcc"
+      ]
+    }
+  ],
+  "forbiddenAssertions": []
+}

@@ -1,0 +1,96 @@
+{
+  "groundTruthVersion": "benchmark-ground-truth-v1",
+  "caseId": "m0a-ambiguous",
+  "fixtureId": "TEST-M0A-003",
+  "documentId": "bench-m0a-ambiguous",
+  "fixtureSha256": "b0176edb2a8f1e091782fe3b143622fc136362ba3ffe47e8e21b5bd96aec0db0",
+  "expectedFindings": [
+    {
+      "expectedId": "exp-ambiguous-duration-conflict",
+      "category": "unclearItems",
+      "expectedValue": "مدة التنفيذ متعارضة بين الصفحتين: 90 يومًا في الصفحة الأولى و120 يومًا في الثانية",
+      "required": true,
+      "criticalTerms": [
+        "مدة",
+        "التنفيذ",
+        "متعارضة"
+      ],
+      "availability": "conflicting",
+      "candidateIds": [
+        "cand-957ce5720a32c1bd6904695e",
+        "cand-632db688ef29131c6a5f8241"
+      ]
+    },
+    {
+      "expectedId": "exp-ambiguous-guarantee-question",
+      "category": "questionsForAuthority",
+      "expectedValue": "سؤال للجهة: ما قيمة الضمان النهائي المطلوبة تحديدًا؟",
+      "required": true,
+      "criticalTerms": [
+        "الضمان",
+        "النهائي"
+      ],
+      "availability": "missing",
+      "candidateIds": [
+        "cand-005b6e2489352d65a873def1"
+      ]
+    },
+    {
+      "expectedId": "exp-ambiguous-empty-quantity",
+      "category": "unclearItems",
+      "expectedValue": "بند 3 (أعمال العزل) ورد بكمية غير مسجلة ولا يجوز افتراض قيمة له",
+      "required": true,
+      "criticalTerms": [
+        "غير",
+        "مسجلة"
+      ],
+      "availability": "missing",
+      "candidateIds": [
+        "cand-754e15ffee3fc8fe36fe6dec"
+      ]
+    },
+    {
+      "expectedId": "exp-ambiguous-payment",
+      "category": "unclearItems",
+      "expectedValue": "شرط السداد غير مكتمل: آلية الدفع لم تذكر في الوثيقة",
+      "required": false,
+      "criticalTerms": [
+        "السداد",
+        "الدفع"
+      ],
+      "availability": "missing",
+      "candidateIds": [
+        "cand-f60fed2d59ddef864a349b9a"
+      ]
+    }
+  ],
+  "forbiddenAssertions": [
+    {
+      "assertionId": "forbid-duration-90",
+      "terms": [
+        "90",
+        "يومًا"
+      ],
+      "reason": "اختيار مدة 90 يومًا قيمة تعسفية؛ الوثيقة متعارضة ويجب تسجيل التعارض لا حسمه"
+    },
+    {
+      "assertionId": "forbid-duration-120",
+      "terms": [
+        "120",
+        "يومًا"
+      ],
+      "reason": "اختيار مدة 120 يومًا قيمة تعسفية؛ الوثيقة متعارضة ويجب تسجيل التعارض لا حسمه"
+    },
+    {
+      "assertionId": "forbid-guarantee-value",
+      "terms": [
+        "النهائي"
+      ],
+      "categories": [
+        "guarantees",
+        "bidBonds"
+      ],
+      "reason": "قيمة الضمان النهائي غير محددة في الوثيقة؛ أي قيمة مسجلة استنتاج ممنوع"
+    }
+  ]
+}

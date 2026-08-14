@@ -1,0 +1,39 @@
+{
+  "benchmarkVersion": "analysis-benchmark-v1",
+  "generatedBy": "scripts/generate-analysis-benchmark-fixtures.mjs",
+  "cases": [
+    {
+      "caseId": "m0a-clear",
+      "fixtureId": "TEST-M0A-001",
+      "documentId": "bench-m0a-clear",
+      "title": "وثيقة اصطناعية واضحة — معلومات صريحة من جميع الفئات",
+      "fixtureFile": "cases/m0a-clear/fixture.pdf",
+      "fixtureSha256": "850ef975052fb5fcac2dd28b81017522e79fa14aefc3125004990e7efcc8079e",
+      "pageCount": 2,
+      "specFile": "cases/m0a-clear/fixture-spec.json",
+      "groundTruthFile": "cases/m0a-clear/ground-truth.json"
+    },
+    {
+      "caseId": "m0a-tables",
+      "fixtureId": "TEST-M0A-002",
+      "documentId": "bench-m0a-tables",
+      "title": "وثيقة اصطناعية متعددة الصفحات بجدول كميات — موزعة بين النص والجدول",
+      "fixtureFile": "cases/m0a-tables/fixture.pdf",
+      "fixtureSha256": "75cdee2296b9b43fde12969a26cba44507a5131be8a197da8fef4c3b8d9f28fe",
+      "pageCount": 3,
+      "specFile": "cases/m0a-tables/fixture-spec.json",
+      "groundTruthFile": "cases/m0a-tables/ground-truth.json"
+    },
+    {
+      "caseId": "m0a-ambiguous",
+      "fixtureId": "TEST-M0A-003",
+      "documentId": "bench-m0a-ambiguous",
+      "title": "وثيقة اصطناعية متعارضة وناقصة — يمنع اختيار قيمة تعسفية",
+      "fixtureFile": "cases/m0a-ambiguous/fixture.pdf",
+      "fixtureSha256": "b0176edb2a8f1e091782fe3b143622fc136362ba3ffe47e8e21b5bd96aec0db0",
+      "pageCount": 2,
+      "specFile": "cases/m0a-ambiguous/fixture-spec.json",
+      "groundTruthFile": "cases/m0a-ambiguous/ground-truth.json"
+    }
+  ]
+}

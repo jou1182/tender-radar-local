@@ -1,0 +1,129 @@
+{
+  "groundTruthVersion": "benchmark-ground-truth-v1",
+  "caseId": "m0a-tables",
+  "fixtureId": "TEST-M0A-002",
+  "documentId": "bench-m0a-tables",
+  "fixtureSha256": "75cdee2296b9b43fde12969a26cba44507a5131be8a197da8fef4c3b8d9f28fe",
+  "expectedFindings": [
+    {
+      "expectedId": "exp-tables-boq",
+      "category": "boqSummary",
+      "expectedValue": "جدول الكميات الاصطناعي — البنود التالية تقديرية لأغراض الاختبار فقط",
+      "required": true,
+      "criticalTerms": [
+        "جدول",
+        "الكميات"
+      ],
+      "availability": "explicit",
+      "candidateIds": [
+        "cand-7a7cce7bb3353a917e1c48de"
+      ]
+    },
+    {
+      "expectedId": "exp-tables-excavation",
+      "category": "criticalQuantities",
+      "expectedValue": "بند 1: أعمال حفر اصطناعية — الوحدة: متر مكعب — الكمية: 1500",
+      "required": true,
+      "criticalTerms": [
+        "حفر",
+        "1500"
+      ],
+      "availability": "explicit",
+      "candidateIds": [
+        "cand-e35ab27cdef12d9f7686d777"
+      ],
+      "expectedPageNumber": 1
+    },
+    {
+      "expectedId": "exp-tables-concrete",
+      "category": "criticalQuantities",
+      "expectedValue": "بند 2: خرسانة مسلحة اصطناعية — الوحدة: متر مكعب — الكمية: 950",
+      "required": true,
+      "criticalTerms": [
+        "خرسانة",
+        "950"
+      ],
+      "availability": "explicit",
+      "candidateIds": [
+        "cand-034072a7a4c4bbeb64cef9d4"
+      ],
+      "expectedPageNumber": 1
+    },
+    {
+      "expectedId": "exp-tables-asphalt",
+      "category": "criticalQuantities",
+      "expectedValue": "بند 3: أعمال أسفلت اصطناعية — الوحدة: متر مربع — الكمية: 4200",
+      "required": true,
+      "criticalTerms": [
+        "أسفلت",
+        "4200"
+      ],
+      "availability": "explicit",
+      "candidateIds": [
+        "cand-639d4147fc558c82b5e56d88"
+      ],
+      "expectedPageNumber": 2
+    },
+    {
+      "expectedId": "exp-tables-duration",
+      "category": "deadlines",
+      "expectedValue": "مدة التنفيذ: 180 يومًا من تاريخ استلام الموقع",
+      "required": true,
+      "criticalTerms": [
+        "180",
+        "يومًا"
+      ],
+      "availability": "explicit",
+      "candidateIds": [
+        "cand-7972ed3a4ff2e79c5fdb38e0"
+      ],
+      "expectedPageNumber": 2
+    },
+    {
+      "expectedId": "exp-tables-bidbond",
+      "category": "bidBonds",
+      "expectedValue": "الضمان الابتدائي: 7500 ريال يقدم مع العرض",
+      "required": true,
+      "criticalTerms": [
+        "الابتدائي",
+        "7500"
+      ],
+      "availability": "explicit",
+      "candidateIds": [
+        "cand-90d8a544a6d63454d5c7f85f"
+      ],
+      "expectedPageNumber": 3
+    },
+    {
+      "expectedId": "exp-tables-guarantees",
+      "category": "guarantees",
+      "expectedValue": "الضمان النهائي: 10% من قيمة العقد يقدم قبل التوقيع",
+      "required": true,
+      "criticalTerms": [
+        "النهائي",
+        "10%"
+      ],
+      "availability": "explicit",
+      "candidateIds": [
+        "cand-6526cee7eb73ef7269a481cd"
+      ],
+      "expectedPageNumber": 3
+    },
+    {
+      "expectedId": "exp-tables-penalties",
+      "category": "penalties",
+      "expectedValue": "غرامة التأخير: 0.2% يوميًا بحد أقصى 15% من قيمة العقد",
+      "required": true,
+      "criticalTerms": [
+        "0.2%",
+        "15%"
+      ],
+      "availability": "explicit",
+      "candidateIds": [
+        "cand-d454226972af40d167cdd240"
+      ],
+      "expectedPageNumber": 3
+    }
+  ],
+  "forbiddenAssertions": []
+}

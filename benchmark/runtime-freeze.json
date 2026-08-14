@@ -1,0 +1,15 @@
+{
+  "frozenAtPhase": "P4-M0A",
+  "baseCommit": "47478c8a22a197c823853c1a87f195d1198cce66",
+  "files": {
+    "scripts/lib/analysis-api.mjs": "f93e514a25de4b376af8861601e998835e8465f8ae01962b52dbf9786b80495a",
+    "scripts/lib/analysis-chunking.mjs": "9b6e5e5412fa8fb6651061a8c970ce99ffe736143c9fee80e36c09ec4e274f88",
+    "scripts/lib/analysis-documents.mjs": "1e790914f1921e9f24d99975fa55819b342c8a00576cb6a9b1188634f726ff22",
+    "scripts/lib/analysis-engine.mjs": "b7d61b812a9fab356347f5ed92072e1adb96d430e9f8606eb7d689e829bca950",
+    "scripts/lib/analysis-evidence-candidates.mjs": "ba4ec7f1b1b8b090871bdf6d60bb3712ca14466295398ac102deec4342fb904f",
+    "scripts/lib/analysis-fixtures.mjs": "1e12c6e51ea250c80af7a6836db1e20451d196cf3f89cb0f3692e0f31cdeac58",
+    "scripts/lib/analysis-model-selection.mjs": "04d1c28700ff8ac3e189f62d3fc1814dd634c61698e3ff93cda6a4173b92d981",
+    "scripts/lib/analysis-providers.mjs": "9526602bd29f737bdf7359b83ed14c59dd403896dd841e74fc43e57100c07704",
+    "scripts/lib/analysis-report.mjs": "e3308c109335304dc086cfb592b887802d1b1a36b43d6ef0d371080310ee8bbe"
+  }
+}

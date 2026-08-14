@@ -1,0 +1,110 @@
+{
+  "specVersion": "benchmark-fixture-spec-v1",
+  "caseId": "m0a-tables",
+  "fixtureId": "TEST-M0A-002",
+  "documentId": "bench-m0a-tables",
+  "title": "وثيقة اصطناعية متعددة الصفحات بجدول كميات — موزعة بين النص والجدول",
+  "description": "PDF من ثلاث صفحات يتضمن جدول كميات عربيًا ببنود حفر وخرسانة وأسفلت اصطناعية مع وحدات وكميات واضحة، ومدة تنفيذ، وضمانات وغرامات موزعة بين الصفحات؛ يختبر المحافظة على رقم الصفحة في كتالوج الأدلة.",
+  "pages": [
+    [
+      "بيانات اختبار اصطناعية — ليست منافسة حقيقية",
+      "معرف الاختبار: TEST-M0A-002",
+      "جدول الكميات الاصطناعي — البنود التالية تقديرية لأغراض الاختبار فقط",
+      "بند 1: أعمال حفر اصطناعية — الوحدة: متر مكعب — الكمية: 1500",
+      "بند 2: خرسانة مسلحة اصطناعية — الوحدة: متر مكعب — الكمية: 950"
+    ],
+    [
+      "بيانات اختبار اصطناعية — ليست منافسة حقيقية",
+      "بند 3: أعمال أسفلت اصطناعية — الوحدة: متر مربع — الكمية: 4200",
+      "مدة التنفيذ: 180 يومًا من تاريخ استلام الموقع"
+    ],
+    [
+      "بيانات اختبار اصطناعية — ليست منافسة حقيقية",
+      "الضمان الابتدائي: 7500 ريال يقدم مع العرض",
+      "الضمان النهائي: 10% من قيمة العقد يقدم قبل التوقيع",
+      "غرامة التأخير: 0.2% يوميًا بحد أقصى 15% من قيمة العقد"
+    ]
+  ],
+  "expectedFindings": [
+    {
+      "expectedId": "exp-tables-boq",
+      "category": "boqSummary",
+      "expectedValue": "جدول الكميات الاصطناعي — البنود التالية تقديرية لأغراض الاختبار فقط",
+      "required": true,
+      "criticalTerms": ["جدول", "الكميات"],
+      "availability": "explicit",
+      "evidenceExcerpt": "جدول الكميات الاصطناعي — البنود التالية تقديرية لأغراض الاختبار فقط"
+    },
+    {
+      "expectedId": "exp-tables-excavation",
+      "category": "criticalQuantities",
+      "expectedValue": "بند 1: أعمال حفر اصطناعية — الوحدة: متر مكعب — الكمية: 1500",
+      "required": true,
+      "criticalTerms": ["حفر", "1500"],
+      "availability": "explicit",
+      "evidenceExcerpt": "بند 1: أعمال حفر اصطناعية — الوحدة: متر مكعب — الكمية: 1500",
+      "expectedPageNumber": 1
+    },
+    {
+      "expectedId": "exp-tables-concrete",
+      "category": "criticalQuantities",
+      "expectedValue": "بند 2: خرسانة مسلحة اصطناعية — الوحدة: متر مكعب — الكمية: 950",
+      "required": true,
+      "criticalTerms": ["خرسانة", "950"],
+      "availability": "explicit",
+      "evidenceExcerpt": "بند 2: خرسانة مسلحة اصطناعية — الوحدة: متر مكعب — الكمية: 950",
+      "expectedPageNumber": 1
+    },
+    {
+      "expectedId": "exp-tables-asphalt",
+      "category": "criticalQuantities",
+      "expectedValue": "بند 3: أعمال أسفلت اصطناعية — الوحدة: متر مربع — الكمية: 4200",
+      "required": true,
+      "criticalTerms": ["أسفلت", "4200"],
+      "availability": "explicit",
+      "evidenceExcerpt": "بند 3: أعمال أسفلت اصطناعية — الوحدة: متر مربع — الكمية: 4200",
+      "expectedPageNumber": 2
+    },
+    {
+      "expectedId": "exp-tables-duration",
+      "category": "deadlines",
+      "expectedValue": "مدة التنفيذ: 180 يومًا من تاريخ استلام الموقع",
+      "required": true,
+      "criticalTerms": ["180", "يومًا"],
+      "availability": "explicit",
+      "evidenceExcerpt": "مدة التنفيذ: 180 يومًا من تاريخ استلام الموقع",
+      "expectedPageNumber": 2
+    },
+    {
+      "expectedId": "exp-tables-bidbond",
+      "category": "bidBonds",
+      "expectedValue": "الضمان الابتدائي: 7500 ريال يقدم مع العرض",
+      "required": true,
+      "criticalTerms": ["الابتدائي", "7500"],
+      "availability": "explicit",
+      "evidenceExcerpt": "الضمان الابتدائي: 7500 ريال يقدم مع العرض",
+      "expectedPageNumber": 3
+    },
+    {
+      "expectedId": "exp-tables-guarantees",
+      "category": "guarantees",
+      "expectedValue": "الضمان النهائي: 10% من قيمة العقد يقدم قبل التوقيع",
+      "required": true,
+      "criticalTerms": ["النهائي", "10%"],
+      "availability": "explicit",
+      "evidenceExcerpt": "الضمان النهائي: 10% من قيمة العقد يقدم قبل التوقيع",
+      "expectedPageNumber": 3
+    },
+    {
+      "expectedId": "exp-tables-penalties",
+      "category": "penalties",
+      "expectedValue": "غرامة التأخير: 0.2% يوميًا بحد أقصى 15% من قيمة العقد",
+      "required": true,
+      "criticalTerms": ["0.2%", "15%"],
+      "availability": "explicit",
+      "evidenceExcerpt": "غرامة التأخير: 0.2% يوميًا بحد أقصى 15% من قيمة العقد",
+      "expectedPageNumber": 3
+    }
+  ],
+  "forbiddenAssertions": []
+}
