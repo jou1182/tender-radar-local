@@ -1,12 +1,28 @@
 {
   "stateSchemaVersion": "neutral-continuity-state-v1",
   "projectName": "tender-radar-local",
-  "approvedBaselineCommit": "5428aeec839311cb1ada8bd2157b4d366a309267",
-  "lastApprovedPhase": "P4-A1D0M",
+  "functionalBaselineCommit": "5428aeec839311cb1ada8bd2157b4d366a309267",
+  "repositoryHeadSource": "git",
+  "taskBasePolicy": {
+    "taskMustSpecifyFullCommit": true,
+    "worktreeHeadMustEqualTaskBase": true,
+    "functionalBaselineMustBeAncestor": true,
+    "doNotRequireHeadToEqualFunctionalBaseline": true
+  },
+  "lastApprovedFunctionalPhase": "P4-A1D0M",
+  "continuityPackagePhase": "P4-H0",
   "databaseSchemaVersion": 7,
-  "approvedTestBaseline": {
-    "passed": 143,
-    "failed": 0
+  "testBaselines": {
+    "functionalBaseline": {
+      "commit": "5428aeec839311cb1ada8bd2157b4d366a309267",
+      "passed": 143,
+      "failed": 0
+    },
+    "continuityPackage": {
+      "phase": "P4-H0",
+      "passed": 155,
+      "failed": 0
+    }
   },
   "analysisReportSchemaVersion": "analysis-report-v2",
   "analysisPromptVersion": "p4a-prompt-v3",
@@ -25,6 +41,21 @@
   },
   "modelSelectionSource": "OLLAMA_MODEL",
   "nextPlannedPhase": "P4-M0",
+  "attachmentLiveStages": {
+    "p3b1b": {
+      "status": "approved_safe_stop",
+      "detailVerifiedFreeTenderFound": false,
+      "attachmentNameInspected": false,
+      "downloadElementInspected": false,
+      "approvalConsumed": false,
+      "fileDownloaded": false,
+      "resumeCondition": "العثور على منافسة تؤكد صفحة تفاصيلها الموثوقة أن قيمة الكراسة صفر"
+    },
+    "p3b1c": {
+      "status": "paused",
+      "reason": "تحتاج موافقة بشرية جديدة بعد إكمال P3-B1B على منافسة مجانية مؤكدة"
+    }
+  },
   "pendingHumanGates": [
     "P3-B1C: التنزيل الحي الأول لملف واحد — موافقة بشرية جديدة بمرجع وملف وبصمة",
     "تجربة التحليل على مستند حقيقي واحد — موافقة بشرية منفصلة",
@@ -51,6 +82,8 @@
   "notes": [
     "مصدر الحقيقة هو Git وSQLite والاختبارات وليس أي محادثة سابقة.",
     "لا يحتوي هذا الملف على أسرار أو مسارات مطلقة أو أسماء مستخدمين.",
+    "functionalBaselineCommit مرجع وظيفي معتمد، لا رأس مستودع إلزامي: كل مهمة تحدد commit أساس كاملًا، ورأس main الحالي يُقرأ من Git مباشرة.",
+    "لا يوضع Hash حزمة الاستمرارية نفسها هنا — ذلك مرجع ذاتي يتغير مع كل commit.",
     "أي قيمة هنا وصف لأساس معتمد وليست حالة حية مضمونة؛ تحقق من الحالة الحية بأوامر OPERATIONS_RUNBOOK عند الحاجة."
   ]
 }

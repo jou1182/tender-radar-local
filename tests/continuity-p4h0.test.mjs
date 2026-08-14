@@ -41,13 +41,31 @@ test("2) CURRENT_STATE.json صالح وبنيته neutral-continuity-state-v1", 
   assert.equal(state.projectName, "tender-radar-local");
 });
 
-test("3) القيم الأساسية في CURRENT_STATE.json صحيحة", () => {
+test("3) القيم الأساسية في CURRENT_STATE.json صحيحة (بنية P4-H0R المصححة)", () => {
   const state = JSON.parse(readPackageFile("docs/continuity/CURRENT_STATE.json"));
-  assert.equal(state.approvedBaselineCommit, "5428aeec839311cb1ada8bd2157b4d366a309267", "commit الأساس المعتمد");
-  assert.equal(state.lastApprovedPhase, "P4-A1D0M");
+  // الحقول القديمة أُزيلت.
+  assert.ok(!("approvedBaselineCommit" in state), "لا approvedBaselineCommit");
+  assert.ok(!("approvedTestBaseline" in state), "لا approvedTestBaseline");
+  assert.ok(!("lastApprovedPhase" in state), "لا lastApprovedPhase");
+  // دلالة الأساس المصححة.
+  assert.equal(state.functionalBaselineCommit, "5428aeec839311cb1ada8bd2157b4d366a309267", "الأساس الوظيفي المعتمد");
+  assert.equal(state.repositoryHeadSource, "git", "رأس المستودع يُقرأ من Git");
+  assert.deepEqual(state.taskBasePolicy, {
+    taskMustSpecifyFullCommit: true,
+    worktreeHeadMustEqualTaskBase: true,
+    functionalBaselineMustBeAncestor: true,
+    doNotRequireHeadToEqualFunctionalBaseline: true,
+  }, "سياسة أساس المهمة بالقيم الأربع");
+  assert.equal(state.lastApprovedFunctionalPhase, "P4-A1D0M");
+  assert.equal(state.continuityPackagePhase, "P4-H0");
   assert.equal(state.databaseSchemaVersion, 7, "schemaVersion 7");
-  assert.equal(state.approvedTestBaseline.passed, 143, "143 اختبارًا ناجحًا عند الأساس");
-  assert.equal(state.approvedTestBaseline.failed, 0, "صفر فاشل");
+  // أعداد الاختبارات: بنية واضحة تفصل الأساس الوظيفي عن الحزمة.
+  assert.equal(state.testBaselines.functionalBaseline.passed, 143, "143 عند الأساس الوظيفي");
+  assert.equal(state.testBaselines.functionalBaseline.failed, 0);
+  assert.equal(state.testBaselines.functionalBaseline.commit, "5428aeec839311cb1ada8bd2157b4d366a309267");
+  assert.equal(state.testBaselines.continuityPackage.passed, 155, "155 لحزمة P4-H0");
+  assert.equal(state.testBaselines.continuityPackage.failed, 0);
+  assert.equal(state.testBaselines.continuityPackage.phase, "P4-H0");
   assert.equal(state.analysisReportSchemaVersion, "analysis-report-v2");
   assert.equal(state.analysisPromptVersion, "p4a-prompt-v3");
   assert.equal(state.modelSelectionSchemaVersion, "analysis-model-selection-v1");
@@ -57,6 +75,21 @@ test("3) القيم الأساسية في CURRENT_STATE.json صحيحة", () => 
   assert.ok(Array.isArray(state.pendingHumanGates) && state.pendingHumanGates.length > 0);
   assert.ok(Array.isArray(state.knownRisks) && state.knownRisks.length > 0);
   assert.ok(Array.isArray(state.authoritativeDocuments) && state.authoritativeDocuments.length === 10);
+  // حالة المراحل الحية للمرفقات: توقف آمن معتمد وليس نجاحًا وظيفيًا.
+  const stages = state.attachmentLiveStages;
+  assert.equal(stages.p3b1b.status, "approved_safe_stop", "P3-B1B توقف آمن معتمد");
+  for (const flag of [
+    "detailVerifiedFreeTenderFound",
+    "attachmentNameInspected",
+    "downloadElementInspected",
+    "approvalConsumed",
+    "fileDownloaded",
+  ]) {
+    assert.equal(stages.p3b1b[flag], false, `p3b1b.${flag} = false`);
+  }
+  assert.match(stages.p3b1b.resumeCondition, /صفحة تفاصيلها/, "شرط الاستئناف يشترط صفحة التفاصيل");
+  assert.match(stages.p3b1b.resumeCondition, /صفر/, "شرط الاستئناف يشترط قيمة الكراسة صفر");
+  assert.equal(stages.p3b1c.status, "paused", "P3-B1C متوقفة");
 });
 
 test("4) تسجيل النموذجين: qwen2.5:14b معروف وNemotron بحالة installed_tag_unverified فقط", () => {
@@ -117,6 +150,11 @@ test("8) AGENTS.md نقطة الدخول ويشير إلى ملفات docs/conti
   assert.match(agents, /docs\/continuity\/SAFETY_BOUNDARIES\.md/, "يشير إلى SAFETY_BOUNDARIES.md");
   assert.match(agents, /مصدر الحقيقة/, "يؤكد أن Git وSQLite والاختبارات مصدر الحقيقة");
   assert.match(agents, /الأدوار أهم من اسم الوكيل|الأدوار والقواعد أهم/, "الأدوار أهم من الأسماء");
+  // سياسة أساس المهمة المصححة (P4-H0R).
+  assert.ok(!agents.includes("approvedBaselineCommit"), "لا يعود لاسم الحقل القديم approvedBaselineCommit");
+  assert.match(agents, /يساوي أساس المهمة/, "HEAD داخل worktree يساوي أساس المهمة");
+  assert.match(agents, /ancestor/, "الأساس الوظيفي ancestor لأساس المهمة لا مساويًا له بالضرورة");
+  assert.match(agents, /تُقرأ من Git/, "حالة main تُقرأ من Git مباشرة");
 });
 
 test("9) ملفات السلامة تتضمن القيود الأساسية غير القابلة للتفاوض", () => {
@@ -162,7 +200,13 @@ test("11) الوثائق تسجل القيود الحاكمة: fixtures فقط �
   assert.match(handoff, /fixtures فقط/, "التحليل مجرّب على fixtures فقط");
   assert.match(handoff, /P3‑B1C.*متوقفة|متوقفة.*P3‑B1C/, "P3-B1C متوقفة");
   assert.match(handoff, /المجانية لا تُثبت إلا من صفحة التفاصيل/, "المجانية من صفحة التفاصيل فقط");
+  // دلالة P3-B1B الدقيقة: توقف آمن معتمد لا نجاح وظيفي (P4-H0R).
+  assert.match(handoff, /approved_safe_stop/, "حالة التوقف الآمن المعتمد موثقة في التسليم");
+  assert.match(handoff, /لم يُنزَّل أي ملف/, "يوثق أنه لم يُنزَّل أي ملف");
+  assert.match(handoff, /ليس نجاحًا وظيفيًا كاملًا/, "يصرّح أنه ليس نجاحًا وظيفيًا كاملًا");
+  assert.doesNotMatch(handoff, /P3‑B1B[^\n]*مكتملة وظيفيًا/, "لا يصف P3-B1B بأنها مكتملة وظيفيًا");
   const next = readPackageFile("docs/continuity/NEXT_PHASES.md");
+  assert.match(next, /إعادة الفحص الحي P3‑B1B معلقة/, "إعادة الفحص الحي معلقة في NEXT_PHASES");
   assert.match(next, /48 مرشحًا/, "خطر قص أول 48 مرشحًا موثق");
   assert.match(next, /تحيز الصفحات الأولى/, "تحيز الصفحات الأولى موثق");
   assert.match(next, /ممنوع في P4‑H0|لا تعديل لخوارزمية الكتالوج/, "منع تعديل الخوارزمية في P4-H0 موثق");
@@ -176,4 +220,8 @@ test("12) السجل يوثق المراحل وحالاتها دون نسخ تق
   assert.match(ledger, /5428aee/, "commit P4-A1D0 موثق");
   assert.match(ledger, /fast-forward/, "سياسة الدمج موثقة");
   assert.match(ledger, /paused/, "حالة التوقف مستخدمة");
+  // حالة P3-B1B المصححة (P4-H0R): توقف آمن معتمد وليست approved عادية.
+  assert.match(ledger, /approved_safe_stop/, "حالة approved_safe_stop في أسطورة الحالات");
+  assert.match(ledger, /P3-B1B[^\n]*approved_safe_stop/, "سطر P3-B1B بحالة التوقف الآمن المعتمد");
+  assert.doesNotMatch(ledger, /\| P3-B1B \|[^|\n]*\| approved \|/, "P3-B1B ليست approved عادية");
 });
