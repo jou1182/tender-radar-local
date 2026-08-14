@@ -41,7 +41,7 @@ test("2) CURRENT_STATE.json صالح وبنيته neutral-continuity-state-v1", 
   assert.equal(state.projectName, "tender-radar-local");
 });
 
-test("3) القيم الأساسية في CURRENT_STATE.json صحيحة (بنية P4-H0R المصححة)", () => {
+test("3) القيم الأساسية في CURRENT_STATE.json صحيحة (بنية P4-H0R المصححة) والحزمة خالية من الحقول المحذوفة", () => {
   const state = JSON.parse(readPackageFile("docs/continuity/CURRENT_STATE.json"));
   // الحقول القديمة أُزيلت.
   assert.ok(!("approvedBaselineCommit" in state), "لا approvedBaselineCommit");
@@ -90,6 +90,21 @@ test("3) القيم الأساسية في CURRENT_STATE.json صحيحة (بني�
   assert.match(stages.p3b1b.resumeCondition, /صفحة تفاصيلها/, "شرط الاستئناف يشترط صفحة التفاصيل");
   assert.match(stages.p3b1b.resumeCondition, /صفر/, "شرط الاستئناف يشترط قيمة الكراسة صفر");
   assert.equal(stages.p3b1c.status, "paused", "P3-B1C متوقفة");
+  // لا يبقى اسم أي حقل حالة محذوف في أي وثيقة من حزمة الاستمرارية (P4-H0R2) —
+  // الفحص يعم كل ملفات packageFiles: AGENTS.md وجميع markdown داخل docs/continuity وCURRENT_STATE.json.
+  const removedFields = ["approvedBaselineCommit", "approvedTestBaseline", "lastApprovedPhase"];
+  for (const file of packageFiles) {
+    const content = readPackageFile(file);
+    for (const field of removedFields) {
+      assert.ok(!content.includes(field), `${file}: لا يحتوي اسم الحقل المحذوف ${field}`);
+    }
+  }
+  // قالب المهمة يحمل دلالة الأساس المصححة.
+  const template = readPackageFile("docs/continuity/TASK_TEMPLATE.md");
+  assert.ok(template.includes("functionalBaselineCommit"), "القالب يذكر functionalBaselineCommit");
+  assert.match(template, /يساوي HEAD داخل worktree أساس المهمة/, "القالب: HEAD يساوي أساس المهمة");
+  assert.match(template, /ancestor/, "القالب: الأساس الوظيفي ancestor لأساس المهمة");
+  assert.match(template, /ليس مساويًا له بالضرورة/, "القالب: المساواة مع functionalBaselineCommit غير إلزامية");
 });
 
 test("4) تسجيل النموذجين: qwen2.5:14b معروف وNemotron بحالة installed_tag_unverified فقط", () => {

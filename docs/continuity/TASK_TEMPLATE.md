@@ -9,7 +9,7 @@
 <جملة واحدة واضحة قابلة للتحقق>
 
 commit الأساس:
-<hash كامل من main المعتمد — يطابق approvedBaselineCommit أو أساسًا أحدث معتمدًا>
+<hash كامل من main المعتمد يحدده المشرف؛ يجب أن يساوي HEAD داخل worktree أساس المهمة، وأن يكون functionalBaselineCommit في CURRENT_STATE.json ancestor له وليس مساويًا له بالضرورة>
 
 الفرع:
 <kimi/… أو أي بادئة فريق معتمدة — فرع معزول جديد>
