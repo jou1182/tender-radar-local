@@ -41,6 +41,7 @@ function main() {
     benchmarkCase: {
       caseId: loaded.manifestEntry.caseId,
       fixtureSha256: loaded.manifestEntry.fixtureSha256,
+      catalogSha256: loaded.manifestEntry.catalogSha256,
       document: loaded.document,
       chunks: loaded.chunks,
     },

@@ -1,15 +1,16 @@
-// مولد fixtures منصة المقارنة Offline — P4-M0A.
+// مولد fixtures منصة المقارنة Offline — P4-M0A / P4-M0AR.
 // يقرأ fixture-spec.json المؤلفة يدويًا لكل حالة، وينتج حتميًا: fixture.pdf
-// (عبر باني PDF المحلي الموجود — بلا metadata ولا تواريخ)، وground-truth.json
+// عبر باني benchmark الخاص (analysis-benchmark-pdf.mjs): خط عربي مضمن +
+// ToUnicode + ترتيب RTL — بلا metadata ولا تواريخ، وground-truth.json
 // بمعرفات مرشحين محلولة من كتالوج النظام الفعلي (لا معرفات يدوية)، وmanifest.json
-// ببصمات SHA-256، وعينات تقارير الاختبار، وملف تجميد سلامة runtime.
+// ببصمات SHA-256 للـfixture والكتالوج، وعينات تقارير الاختبار، وملف تجميد سلامة runtime.
 // الاستخدام: node scripts/generate-analysis-benchmark-fixtures.mjs [outRoot]
 // outRoot الافتراضي: benchmark/ داخل المستودع. لا شبكة ولا نماذج إطلاقًا.
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildPdf } from "../tests/helpers/analysis-fixture-factory.mjs";
+import { buildBenchmarkPdf } from "./lib/analysis-benchmark-pdf.mjs";
 import { extractAnalysisDocument } from "./lib/analysis-documents.mjs";
 import { chunkAnalysisDocument } from "./lib/analysis-chunking.mjs";
 import { buildEvidenceCandidateCatalog } from "./lib/analysis-evidence-candidates.mjs";
@@ -21,6 +22,7 @@ import {
   benchmarkGroundTruthVersion,
   benchmarkVersion,
   buildReferenceSelection,
+  fingerprintCatalog,
   loadBenchmarkCase,
   resolveExpectationCandidateIds,
   validateBenchmarkGroundTruth,
@@ -30,6 +32,8 @@ import { evaluateBenchmarkRun } from "./lib/analysis-benchmark-evaluator.mjs";
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const sourceBenchmarkRoot = path.join(repoRoot, "benchmark");
 const outRoot = path.resolve(process.argv[2] || sourceBenchmarkRoot);
+// خط المنصة المضمن في كل fixture: DejaVu Sans مقلَّص محليًا (انظر benchmark/assets/fonts/FONT-SOURCE.md).
+const benchmarkFontPath = path.join(sourceBenchmarkRoot, "assets", "fonts", "dejavu-sans-arabic-subset.ttf");
 
 export const benchmarkCaseIds = ["m0a-clear", "m0a-tables", "m0a-ambiguous"];
 
@@ -84,7 +88,7 @@ function buildCase(caseId) {
   const spec = JSON.parse(readFileSync(path.join(caseDir, "fixture-spec.json"), "utf8"));
   validateSpec(spec, caseId);
 
-  const pdfBuffer = buildPdf(spec.pages);
+  const pdfBuffer = buildBenchmarkPdf(spec.pages, readFileSync(benchmarkFontPath));
   const fixtureSha256 = sha256(pdfBuffer);
   const document = extractAnalysisDocument({
     documentId: spec.documentId,
@@ -93,6 +97,7 @@ function buildCase(caseId) {
   });
   const chunks = chunkAnalysisDocument(document);
   const catalog = buildEvidenceCandidateCatalog({ document, chunks });
+  const catalogSha256 = fingerprintCatalog(catalog);
 
   // حل معرفات المرشحين من المقتطفات الموثقة — من كتالوج النظام فقط.
   const expectedFindings = spec.expectedFindings.map((expectation) => ({
@@ -111,13 +116,14 @@ function buildCase(caseId) {
     fixtureId: spec.fixtureId,
     documentId: spec.documentId,
     fixtureSha256,
+    catalogSha256,
     expectedFindings,
     forbiddenAssertions: spec.forbiddenAssertions,
   };
   const groundTruthErrors = validateBenchmarkGroundTruth(groundTruth, catalog);
   if (groundTruthErrors.length) throw specError(`ground-truth ${caseId} غير صالح: ${groundTruthErrors[0]}`);
 
-  return { spec, pdfBuffer, fixtureSha256, document, chunks, catalog, groundTruth, pageCount: spec.pages.length };
+  return { spec, pdfBuffer, fixtureSha256, catalogSha256, document, chunks, catalog, groundTruth, pageCount: spec.pages.length };
 }
 
 function buildSamples(clearCase) {
@@ -165,13 +171,14 @@ function main() {
   const manifest = {
     benchmarkVersion,
     generatedBy: "scripts/generate-analysis-benchmark-fixtures.mjs",
-    cases: builtCases.map(({ spec, fixtureSha256, pageCount }) => ({
+    cases: builtCases.map(({ spec, fixtureSha256, catalogSha256, pageCount }) => ({
       caseId: spec.caseId,
       fixtureId: spec.fixtureId,
       documentId: spec.documentId,
       title: spec.title,
       fixtureFile: `cases/${spec.caseId}/fixture.pdf`,
       fixtureSha256,
+      catalogSha256,
       pageCount,
       specFile: `cases/${spec.caseId}/fixture-spec.json`,
       groundTruthFile: `cases/${spec.caseId}/ground-truth.json`,
@@ -217,6 +224,7 @@ function main() {
       benchmarkCase: {
         caseId: built.spec.caseId,
         fixtureSha256: loaded.manifestEntry.fixtureSha256,
+        catalogSha256: loaded.manifestEntry.catalogSha256,
         document: loaded.document,
         chunks: loaded.chunks,
       },

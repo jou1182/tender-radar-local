@@ -3,7 +3,8 @@
   "caseId": "m0a-tables",
   "fixtureId": "TEST-M0A-002",
   "documentId": "bench-m0a-tables",
-  "fixtureSha256": "75cdee2296b9b43fde12969a26cba44507a5131be8a197da8fef4c3b8d9f28fe",
+  "fixtureSha256": "68530f1180d98b8fe1efbd3aa19de30d7cf89f1b37cd29ffadfe2644b51454fe",
+  "catalogSha256": "c63ea7f511d3d0be6c4d6dce08c8afa4387ff7ed2293a1f1d1ed58292a04158f",
   "expectedFindings": [
     {
       "expectedId": "exp-tables-boq",
@@ -16,7 +17,7 @@
       ],
       "availability": "explicit",
       "candidateIds": [
-        "cand-7a7cce7bb3353a917e1c48de"
+        "cand-18c87dfdc02db9ffd014feab"
       ]
     },
     {
@@ -30,7 +31,7 @@
       ],
       "availability": "explicit",
       "candidateIds": [
-        "cand-e35ab27cdef12d9f7686d777"
+        "cand-5e0874cc26a7ee9ed0b56637"
       ],
       "expectedPageNumber": 1
     },
@@ -45,7 +46,7 @@
       ],
       "availability": "explicit",
       "candidateIds": [
-        "cand-034072a7a4c4bbeb64cef9d4"
+        "cand-a49756e27a5f5a07aa1d0582"
       ],
       "expectedPageNumber": 1
     },
@@ -60,7 +61,7 @@
       ],
       "availability": "explicit",
       "candidateIds": [
-        "cand-639d4147fc558c82b5e56d88"
+        "cand-4ce3c4c01b9f9e2318a82d67"
       ],
       "expectedPageNumber": 2
     },
@@ -75,7 +76,7 @@
       ],
       "availability": "explicit",
       "candidateIds": [
-        "cand-7972ed3a4ff2e79c5fdb38e0"
+        "cand-f513c0e7ded44afdf40dc2da"
       ],
       "expectedPageNumber": 2
     },
@@ -90,7 +91,7 @@
       ],
       "availability": "explicit",
       "candidateIds": [
-        "cand-90d8a544a6d63454d5c7f85f"
+        "cand-c5a6508189f82f2165c3ccd6"
       ],
       "expectedPageNumber": 3
     },
@@ -105,7 +106,7 @@
       ],
       "availability": "explicit",
       "candidateIds": [
-        "cand-6526cee7eb73ef7269a481cd"
+        "cand-b3321e251f67ccc6c823dca0"
       ],
       "expectedPageNumber": 3
     },
@@ -120,7 +121,7 @@
       ],
       "availability": "explicit",
       "candidateIds": [
-        "cand-d454226972af40d167cdd240"
+        "cand-7111cee545ffad4fa005086b"
       ],
       "expectedPageNumber": 3
     }

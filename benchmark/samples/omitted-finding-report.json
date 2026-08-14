@@ -3,7 +3,7 @@
   "preliminaryDecision": "review",
   "confidence": "medium",
   "decisionEvidenceIds": [
-    "cand-1fa98e9f5df184bb82e424f3"
+    "cand-37770f82d3d41251cc5eeb04"
   ],
   "warnings": [
     "تقرير مرجعي مصطنع لأغراض المقارنة Offline فقط؛ ليس ناتج نموذج."
@@ -15,7 +15,7 @@
       "severity": "medium",
       "confidence": "high",
       "evidenceIds": [
-        "cand-1fa98e9f5df184bb82e424f3"
+        "cand-37770f82d3d41251cc5eeb04"
       ]
     }
   ],
@@ -26,7 +26,7 @@
       "severity": "medium",
       "confidence": "high",
       "evidenceIds": [
-        "cand-ddcaffb307d415961507b0b9"
+        "cand-279d5cab0a606fbd918ea676"
       ]
     }
   ],
@@ -37,7 +37,7 @@
       "severity": "medium",
       "confidence": "high",
       "evidenceIds": [
-        "cand-a8db9deeb4a3b0ea1a94c22f"
+        "cand-f3e33f0ebdd056c6f76634f4"
       ]
     }
   ],
@@ -48,7 +48,7 @@
       "severity": "medium",
       "confidence": "high",
       "evidenceIds": [
-        "cand-d8274f7f9bf05bdf28778d12"
+        "cand-15889d2440a04a21c0810738"
       ]
     }
   ],
@@ -59,7 +59,7 @@
       "severity": "medium",
       "confidence": "high",
       "evidenceIds": [
-        "cand-91be05584650f60317e22d9b"
+        "cand-9332bf6371ab38068d52ca9b"
       ]
     }
   ],
@@ -70,7 +70,7 @@
       "severity": "medium",
       "confidence": "high",
       "evidenceIds": [
-        "cand-2f8d20ef7494202e79fa68fc"
+        "cand-9d3bbc3dc19639fd41d57738"
       ]
     }
   ],
@@ -81,7 +81,7 @@
       "severity": "medium",
       "confidence": "high",
       "evidenceIds": [
-        "cand-afb79ca2df4f5d4bdbfc26d9"
+        "cand-84f47d4e6d0405b169a26e2e"
       ]
     }
   ],
@@ -92,7 +92,7 @@
       "severity": "medium",
       "confidence": "high",
       "evidenceIds": [
-        "cand-66e79266180ef6aae46c4f6c"
+        "cand-83945d1bad267eb509463297"
       ]
     }
   ],
@@ -104,7 +104,7 @@
       "severity": "medium",
       "confidence": "high",
       "evidenceIds": [
-        "cand-c35bf38191523746314b0683"
+        "cand-a0a4b9734206014a4e6191bc"
       ]
     }
   ],
@@ -115,7 +115,7 @@
       "severity": "high",
       "confidence": "high",
       "evidenceIds": [
-        "cand-2b5376aca09eb4e4c29f4f87"
+        "cand-83bd50316b97dc3bf85926d6"
       ]
     }
   ],
@@ -126,13 +126,13 @@
       "severity": "info",
       "confidence": "high",
       "evidenceIds": [
-        "cand-37b6e22525eb816808400fcc"
+        "cand-f8bd0af693bef81ce8439c1c"
       ]
     }
   ],
   "evidence": [
     {
-      "evidenceId": "cand-1fa98e9f5df184bb82e424f3",
+      "evidenceId": "cand-37770f82d3d41251cc5eeb04",
       "documentId": "bench-m0a-clear",
       "sourceType": "pdf",
       "pageNumber": 1,
@@ -140,7 +140,7 @@
       "chunkId": "chk-8499f9f75009d5b9"
     },
     {
-      "evidenceId": "cand-ddcaffb307d415961507b0b9",
+      "evidenceId": "cand-279d5cab0a606fbd918ea676",
       "documentId": "bench-m0a-clear",
       "sourceType": "pdf",
       "pageNumber": 1,
@@ -148,7 +148,7 @@
       "chunkId": "chk-8499f9f75009d5b9"
     },
     {
-      "evidenceId": "cand-a8db9deeb4a3b0ea1a94c22f",
+      "evidenceId": "cand-f3e33f0ebdd056c6f76634f4",
       "documentId": "bench-m0a-clear",
       "sourceType": "pdf",
       "pageNumber": 1,
@@ -156,7 +156,7 @@
       "chunkId": "chk-8499f9f75009d5b9"
     },
     {
-      "evidenceId": "cand-d8274f7f9bf05bdf28778d12",
+      "evidenceId": "cand-15889d2440a04a21c0810738",
       "documentId": "bench-m0a-clear",
       "sourceType": "pdf",
       "pageNumber": 1,
@@ -164,7 +164,7 @@
       "chunkId": "chk-8499f9f75009d5b9"
     },
     {
-      "evidenceId": "cand-91be05584650f60317e22d9b",
+      "evidenceId": "cand-9332bf6371ab38068d52ca9b",
       "documentId": "bench-m0a-clear",
       "sourceType": "pdf",
       "pageNumber": 1,
@@ -172,7 +172,7 @@
       "chunkId": "chk-8499f9f75009d5b9"
     },
     {
-      "evidenceId": "cand-2f8d20ef7494202e79fa68fc",
+      "evidenceId": "cand-9d3bbc3dc19639fd41d57738",
       "documentId": "bench-m0a-clear",
       "sourceType": "pdf",
       "pageNumber": 2,
@@ -180,7 +180,7 @@
       "chunkId": "chk-8499f9f75009d5b9"
     },
     {
-      "evidenceId": "cand-afb79ca2df4f5d4bdbfc26d9",
+      "evidenceId": "cand-84f47d4e6d0405b169a26e2e",
       "documentId": "bench-m0a-clear",
       "sourceType": "pdf",
       "pageNumber": 2,
@@ -188,7 +188,7 @@
       "chunkId": "chk-8499f9f75009d5b9"
     },
     {
-      "evidenceId": "cand-66e79266180ef6aae46c4f6c",
+      "evidenceId": "cand-83945d1bad267eb509463297",
       "documentId": "bench-m0a-clear",
       "sourceType": "pdf",
       "pageNumber": 2,
@@ -196,7 +196,7 @@
       "chunkId": "chk-8499f9f75009d5b9"
     },
     {
-      "evidenceId": "cand-c35bf38191523746314b0683",
+      "evidenceId": "cand-a0a4b9734206014a4e6191bc",
       "documentId": "bench-m0a-clear",
       "sourceType": "pdf",
       "pageNumber": 2,
@@ -204,7 +204,7 @@
       "chunkId": "chk-8499f9f75009d5b9"
     },
     {
-      "evidenceId": "cand-2b5376aca09eb4e4c29f4f87",
+      "evidenceId": "cand-83bd50316b97dc3bf85926d6",
       "documentId": "bench-m0a-clear",
       "sourceType": "pdf",
       "pageNumber": 2,
@@ -212,7 +212,7 @@
       "chunkId": "chk-8499f9f75009d5b9"
     },
     {
-      "evidenceId": "cand-37b6e22525eb816808400fcc",
+      "evidenceId": "cand-f8bd0af693bef81ce8439c1c",
       "documentId": "bench-m0a-clear",
       "sourceType": "pdf",
       "pageNumber": 2,

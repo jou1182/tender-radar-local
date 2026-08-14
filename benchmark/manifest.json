@@ -8,7 +8,8 @@
       "documentId": "bench-m0a-clear",
       "title": "وثيقة اصطناعية واضحة — معلومات صريحة من جميع الفئات",
       "fixtureFile": "cases/m0a-clear/fixture.pdf",
-      "fixtureSha256": "850ef975052fb5fcac2dd28b81017522e79fa14aefc3125004990e7efcc8079e",
+      "fixtureSha256": "5f382ec6232886ed9a6eae68fdc4a0eeac5dad83397d05f3a95bcc54f9d84f3e",
+      "catalogSha256": "02ba491c25b679da39b7d59b42db473c3350a4d394f0cb2698a6d91dbcb8f02b",
       "pageCount": 2,
       "specFile": "cases/m0a-clear/fixture-spec.json",
       "groundTruthFile": "cases/m0a-clear/ground-truth.json"
@@ -19,7 +20,8 @@
       "documentId": "bench-m0a-tables",
       "title": "وثيقة اصطناعية متعددة الصفحات بجدول كميات — موزعة بين النص والجدول",
       "fixtureFile": "cases/m0a-tables/fixture.pdf",
-      "fixtureSha256": "75cdee2296b9b43fde12969a26cba44507a5131be8a197da8fef4c3b8d9f28fe",
+      "fixtureSha256": "68530f1180d98b8fe1efbd3aa19de30d7cf89f1b37cd29ffadfe2644b51454fe",
+      "catalogSha256": "c63ea7f511d3d0be6c4d6dce08c8afa4387ff7ed2293a1f1d1ed58292a04158f",
       "pageCount": 3,
       "specFile": "cases/m0a-tables/fixture-spec.json",
       "groundTruthFile": "cases/m0a-tables/ground-truth.json"
@@ -30,7 +32,8 @@
       "documentId": "bench-m0a-ambiguous",
       "title": "وثيقة اصطناعية متعارضة وناقصة — يمنع اختيار قيمة تعسفية",
       "fixtureFile": "cases/m0a-ambiguous/fixture.pdf",
-      "fixtureSha256": "b0176edb2a8f1e091782fe3b143622fc136362ba3ffe47e8e21b5bd96aec0db0",
+      "fixtureSha256": "9cdc56fda0dc30bee7b9d9df468f25c8cf0ca7ff2e46957a7c920afdf2de9ea5",
+      "catalogSha256": "936001d7697d6996f7396545ef9e10d302b7bf8dcc331efb455ff284fdb33039",
       "pageCount": 2,
       "specFile": "cases/m0a-ambiguous/fixture-spec.json",
       "groundTruthFile": "cases/m0a-ambiguous/ground-truth.json"

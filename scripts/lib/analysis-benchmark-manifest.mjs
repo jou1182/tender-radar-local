@@ -2,6 +2,7 @@
 // كل شيء هنا محلي وحتمي: قراءة ملفات benchmark/ وإعادة بناء المستند والأجزاء
 // وكتالوج الأدلة من الـfixture نفسه. لا شبكة ولا نماذج ولا مزودون إطلاقًا،
 // ولا أي شرط يفضّل اسم نموذج؛ modelId يُعامل كسلسلة محايدة في كل المنصة.
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { extractAnalysisDocument } from "./analysis-documents.mjs";
@@ -31,11 +32,104 @@ function isNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+// ---------- بصمة كتالوج الأدلة: تسلسل canonical حتمي + SHA-256 ----------
+// تربط manifest وground-truth بالكتالوج الفعلي الناتج من الـfixture؛ أي تغيير
+// في مقتطف أو معرف أو ترتيب أو موقع يغيّر البصمة فيرفض المقيّم الكتالوج الأجنبي.
+function catalogFingerprintLine(candidate, index) {
+  const line = {
+    index,
+    candidateId: candidate.candidateId,
+    documentId: candidate.documentId,
+    sourceType: candidate.sourceType,
+    excerpt: candidate.excerpt,
+    chunkId: candidate.chunkId,
+  };
+  if (candidate.pageNumber !== undefined) line.pageNumber = candidate.pageNumber;
+  if (candidate.sheetName !== undefined) line.sheetName = candidate.sheetName;
+  if (candidate.cellRange !== undefined) line.cellRange = candidate.cellRange;
+  if (candidate.section !== undefined) line.section = candidate.section;
+  return JSON.stringify(line);
+}
+
+export function fingerprintCatalog(catalog) {
+  const candidates = catalog?.candidates;
+  if (!Array.isArray(candidates)) {
+    const error = new Error("فهرسة بصمة الكتالوج تتطلب candidates مصفوفة.");
+    error.code = "BENCHMARK_CATALOG_INVALID";
+    throw error;
+  }
+  const canonical = candidates.map((candidate, index) => catalogFingerprintLine(candidate, index)).join("\n");
+  return createHash("sha256").update(canonical, "utf8").digest("hex");
+}
+
+// ---------- أدوات الأرقام: تطبيع واستخراج ادعاءات رقمية canonical ----------
+// تُستخدم في بوابة تأسيس الأرقام: كل رقم/تاريخ/نسبة في أي finding يجب أن
+// يظهر في مقتطفات أدلة ذلك الـfinding نفسه بعد هذا التطبيع.
+const arabicIndicDigits = { "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4", "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9" };
+const extendedArabicIndicDigits = { "۰": "0", "۱": "1", "۲": "2", "۳": "3", "۴": "4", "۵": "5", "۶": "6", "۷": "7", "۸": "8", "۹": "9" };
+
+export function normalizeNumericText(value) {
+  let text = String(value || "");
+  text = text.replace(/[٠-٩]/g, (ch) => arabicIndicDigits[ch]);
+  text = text.replace(/[۰-۹]/g, (ch) => extendedArabicIndicDigits[ch]);
+  text = text.replace(/٬/g, ",");
+  // فواصل الآلاف فقط: رقم بين رقمين بثلاث خانات تالية.
+  text = text.replace(/(?<=\d),(?=\d{3}\b)/g, "");
+  text = text.replace(/٫/g, ".");
+  text = text.replace(/٪/g, "%");
+  return text;
+}
+
+// استخراج متسلسل مع إخفاء: التواريخ أولًا ثم الأوقات ثم النسب ثم الأرقام،
+// حتى لا تُلتقط أجزاء تاريخ كأرقام مستقلة. الحدود (?<![\w.%-]) / (?![\w%-])
+// تمنع التقاط أرقام داخل معرفات مثل m0a أو TEST-M0A-001.
+export function extractNumericClaims(value) {
+  let text = normalizeNumericText(value);
+  const claims = [];
+  const boundaryBefore = "(?<![\\w.%-])";
+  const boundaryAfter = "(?![\\w%-])";
+  const patterns = [
+    { kind: "date", re: /\d{4}-\d{1,2}-\d{1,2}/g },
+    { kind: "date", re: /\d{1,2}\/\d{1,2}\/\d{4}/g },
+    { kind: "time", re: /\d{1,2}:\d{2}/g },
+    { kind: "percent", re: /\d+(?:\.\d+)?%/g },
+    { kind: "number", re: /\d+(?:\.\d+)?/g },
+  ];
+  for (const { kind, re } of patterns) {
+    text = text.replace(new RegExp(`${boundaryBefore}${re.source}${boundaryAfter}`, "g"), (match) => {
+      if (kind === "percent") {
+        const numeric = match.slice(0, -1);
+        claims.push({ kind, raw: match, canonical: `${String(Number(numeric))}%` });
+      } else if (kind === "number") {
+        claims.push({ kind, raw: match, canonical: String(Number(match)) });
+      } else {
+        claims.push({ kind, raw: match, canonical: match });
+      }
+      return " ".repeat(match.length);
+    });
+  }
+  return claims;
+}
+
+// كلمات تجعل الجملة "واقعية" في الملخص والتحذيرات: تستلزم تأسيسًا نصيًا.
+export const narrativeFactualTriggers = Object.freeze([
+  "مدينة", "مبلغ", "مدة", "قيمة", "ريال", "نسبة", "موعد", "ضمان", "غرامة",
+  "كمية", "سعر", "مشروع", "عقد", "جهة", "متعاقد", "مقاول", "أهلية", "خبرة",
+  "تصنيف", "سجل",
+]);
+
+// علامات سياق تعارض/غياب تعفي الجملة من forbiddenAssertions: وصف التعارض
+// الموثق ليس ادعاءً محظورًا.
+export const conflictContextMarkers = Object.freeze([
+  "متعارض", "تعارض", "غير محدد", "لم تحدد", "لم تُحدد", "لم يُحسم", "لم تُحسم",
+  "دون حسم", "لا يمكن الجزم", "يحدد لاحقا", "غير مسجل", "غير واضح",
+]);
+
 // ---------- تحقق manifest (مطابق لـ benchmark-manifest.schema.json) ----------
 const manifestRootKeys = ["benchmarkVersion", "generatedBy", "cases"];
 const manifestCaseKeys = [
   "caseId", "fixtureId", "documentId", "title",
-  "fixtureFile", "fixtureSha256", "pageCount", "specFile", "groundTruthFile",
+  "fixtureFile", "fixtureSha256", "catalogSha256", "pageCount", "specFile", "groundTruthFile",
 ];
 
 export function validateBenchmarkManifest(manifest) {
@@ -72,6 +166,7 @@ export function validateBenchmarkManifest(manifest) {
     if (!isNonEmptyString(entry.title)) errors.push(`cases[${index}]: title مفقود.`);
     if (!isNonEmptyString(entry.fixtureFile)) errors.push(`cases[${index}]: fixtureFile مفقود.`);
     if (!isNonEmptyString(entry.fixtureSha256) || !/^[0-9a-f]{64}$/.test(entry.fixtureSha256)) errors.push(`cases[${index}]: fixtureSha256 غير صالح.`);
+    if (!isNonEmptyString(entry.catalogSha256) || !/^[0-9a-f]{64}$/.test(entry.catalogSha256)) errors.push(`cases[${index}]: catalogSha256 غير صالح.`);
     if (!Number.isInteger(entry.pageCount) || entry.pageCount < 1) errors.push(`cases[${index}]: pageCount غير صالح.`);
     if (!isNonEmptyString(entry.specFile)) errors.push(`cases[${index}]: specFile مفقود.`);
     if (!isNonEmptyString(entry.groundTruthFile)) errors.push(`cases[${index}]: groundTruthFile مفقود.`);
@@ -104,6 +199,14 @@ export function validateBenchmarkGroundTruth(groundTruth, catalog) {
   }
   if (isNonEmptyString(groundTruth.fixtureSha256) && !/^[0-9a-f]{64}$/.test(groundTruth.fixtureSha256)) {
     errors.push("ground-truth: fixtureSha256 غير صالح.");
+  }
+  if (!isNonEmptyString(groundTruth.catalogSha256) || !/^[0-9a-f]{64}$/.test(groundTruth.catalogSha256 || "")) {
+    errors.push("ground-truth: catalogSha256 مفقود أو غير صالح.");
+  } else if (catalog && fingerprintCatalog(catalog) !== groundTruth.catalogSha256) {
+    errors.push("ground-truth: catalogSha256 لا يطابق بصمة الكتالوج الفعلي.");
+  }
+  if (groundTruth.allowDerivedNumericClaims !== undefined && typeof groundTruth.allowDerivedNumericClaims !== "boolean") {
+    errors.push("ground-truth: allowDerivedNumericClaims يجب أن تكون منطقية عند وجودها.");
   }
   const catalogIds = new Set((catalog?.candidates || []).map((candidate) => candidate.candidateId));
   const expectations = groundTruth.expectedFindings;
@@ -232,6 +335,11 @@ export function buildReferenceSelection(groundTruth) {
       evidenceIds: [...expectation.candidateIds],
     });
     if (!decisionIds.length && expectation.candidateIds.length) decisionIds.push(expectation.candidateIds[0]);
+    // قيم التوقعات المتعارضة/المفقودة تُضاف إلى التحذيرات المرجعية حتى تكون
+    // أوصاف التعارض الموثقة (مثل "متعارضة: 90 يومًا و120 يومًا") مؤسسة نصيًا.
+    if (expectation.availability === "conflicting" || expectation.availability === "missing") {
+      selection.warnings.push(expectation.expectedValue);
+    }
   }
   selection.decisionEvidenceIds = decisionIds;
   return selection;

@@ -3,7 +3,8 @@
   "caseId": "m0a-ambiguous",
   "fixtureId": "TEST-M0A-003",
   "documentId": "bench-m0a-ambiguous",
-  "fixtureSha256": "b0176edb2a8f1e091782fe3b143622fc136362ba3ffe47e8e21b5bd96aec0db0",
+  "fixtureSha256": "9cdc56fda0dc30bee7b9d9df468f25c8cf0ca7ff2e46957a7c920afdf2de9ea5",
+  "catalogSha256": "936001d7697d6996f7396545ef9e10d302b7bf8dcc331efb455ff284fdb33039",
   "expectedFindings": [
     {
       "expectedId": "exp-ambiguous-duration-conflict",
@@ -17,8 +18,8 @@
       ],
       "availability": "conflicting",
       "candidateIds": [
-        "cand-957ce5720a32c1bd6904695e",
-        "cand-632db688ef29131c6a5f8241"
+        "cand-3aead103c4a9f0aa783e854d",
+        "cand-a3247040d65ffaedfbcc7274"
       ]
     },
     {
@@ -32,7 +33,7 @@
       ],
       "availability": "missing",
       "candidateIds": [
-        "cand-005b6e2489352d65a873def1"
+        "cand-f298ff3d407f02ba67c152d0"
       ]
     },
     {
@@ -46,7 +47,7 @@
       ],
       "availability": "missing",
       "candidateIds": [
-        "cand-754e15ffee3fc8fe36fe6dec"
+        "cand-16fdf902733940a5d050f018"
       ]
     },
     {
@@ -60,7 +61,7 @@
       ],
       "availability": "missing",
       "candidateIds": [
-        "cand-f60fed2d59ddef864a349b9a"
+        "cand-ec834a03679920b2ff6abb22"
       ]
     }
   ],

@@ -14,6 +14,10 @@ import {
   benchmarkAmbiguityCategories,
   benchmarkFactualCategories,
   benchmarkVersion,
+  conflictContextMarkers,
+  extractNumericClaims,
+  fingerprintCatalog,
+  narrativeFactualTriggers,
   normalizeSpaces,
   validateBenchmarkGroundTruth,
 } from "./analysis-benchmark-manifest.mjs";
@@ -84,6 +88,72 @@ function findingCoversExpectation(finding, expectation) {
   return termsOk && evidenceOk;
 }
 
+// ---------- تأسيس الأرقام: كل ادعاء رقمي/تاريخ/نسبة في finding واقعي ----------
+// يجب أن يوجد في مقتطفات أدلة ذلك الـfinding نفسه — لا يكفي دليل آخر في التقرير.
+function numericClaimsOfText(text) {
+  return new Set(extractNumericClaims(text).map((claim) => claim.canonical));
+}
+
+function findingEvidenceExcerpts(finding, evidenceItems) {
+  return (Array.isArray(finding.evidenceIds) ? finding.evidenceIds : [])
+    .map((id) => evidenceItems.find((item) => item?.evidenceId === id)?.excerpt || "")
+    .join(" ");
+}
+
+function ungroundedNumericClaim(rows, evidenceItems) {
+  for (const { field, finding } of rows) {
+    const statementClaims = extractNumericClaims(finding.statement);
+    if (!statementClaims.length) continue;
+    const evidenceClaims = numericClaimsOfText(findingEvidenceExcerpts(finding, evidenceItems));
+    const missing = statementClaims.find((claim) => !evidenceClaims.has(claim.canonical));
+    if (missing) return `${field}: "${missing.raw}" غير موجود في أدلة الـfinding نفسه.`;
+  }
+  return null;
+}
+
+// ---------- تدقيق السرد: جمل executiveSummary وwarnings ----------
+// التقسيم على النقطة والسطر الجديد وعلامة التعجب فقط؛ علامتا الاستفهام تُبقيان
+// داخل الجملة لأن سياق السؤال يعفي من forbiddenAssertions (السؤال عن قيمة
+// ليس ادعاءً بها).
+function splitNarrativeSentences(text) {
+  return String(text || "")
+    .split(/[.\n!]+/)
+    .map((sentence) => normalizeSpaces(sentence))
+    .filter((sentence) => sentence.length > 0);
+}
+
+function isFactualSentence(sentence) {
+  if (extractNumericClaims(sentence).length > 0) return true;
+  if (narrativeFactualTriggers.some((trigger) => sentence.includes(trigger))) return true;
+  // رقم داخل معرف أبجدي (m0a / TEST-M0A-001) لا يجعل الجملة واقعية — حدود
+  // الاستخراج الرقمي تستبعده عمدًا، فلا نلتف على ذلك هنا.
+  return false;
+}
+
+function narrativeSentenceIssue(sentence, corpusClaims, corpusTokens, forbidden) {
+  const sentenceClaims = extractNumericClaims(sentence);
+  const missingClaim = sentenceClaims.find((claim) => !corpusClaims.has(claim.canonical));
+  if (missingClaim) return `ادعاء رقمي غير مؤسس في السرد: "${missingClaim.raw}".`;
+  const hasConflictContext = conflictContextMarkers.some((marker) => sentence.includes(marker));
+  // سياق استفهامي (؟ أو ?): السؤال عن قيمة غير محددة ليس ادعاءً بها.
+  const hasQuestionContext = sentence.includes("؟") || sentence.includes("?");
+  if (!hasConflictContext && !hasQuestionContext) {
+    for (const assertion of forbidden) {
+      if (assertion.terms.every((term) => sentence.includes(normalizeSpaces(term)))) {
+        return `الجملة تطابق ادعاءً محظورًا (${assertion.assertionId}) دون سياق تعارض/نفي.`;
+      }
+    }
+  }
+  const tokens = significantTokens(sentence);
+  if (!isFactualSentence(sentence)) return null; // جملة محايدة
+  if (!tokens.size) return "جملة واقعية بلا كلمات دالة.";
+  const shared = [...tokens].filter((token) => corpusTokens.has(token));
+  if (shared.length < 2 || shared.length / tokens.size < 0.5) {
+    return `جملة واقعية ضعيفة التأسيس: ${shared.length}/${tokens.size} كلمات دالة مشتركة.`;
+  }
+  return null;
+}
+
 function round2(value) {
   return Math.round(value * 100) / 100;
 }
@@ -131,6 +201,18 @@ export function evaluateBenchmarkRun({ benchmarkCase, groundTruth, catalog, repo
     && candidates.every((candidate) => candidate.documentId === document.documentId);
   gate("inputCatalogMatchesFixture", catalogOk, null,
     "الكتالوج فارغ أو يخص مستندًا آخر غير مستند fixture الحالة.");
+
+  // بصمة الكتالوج الحتمية: تُعاد من الكتالوج المستلم وتُقارن بالمسجلة في
+  // manifest. تعديل excerpt أو candidateId أو الموقع أو الترتيب يكسرها حتى
+  // مع بقاء documentId نفسه.
+  let fingerprintOk = false;
+  try {
+    fingerprintOk = fingerprintCatalog(catalog) === benchmarkCase?.catalogSha256;
+  } catch {
+    fingerprintOk = false;
+  }
+  gate("inputCatalogFingerprintMatchesManifest", fingerprintOk, null,
+    "بصمة الكتالوج المستلم لا تطابق catalogSha256 المسجلة في manifest.");
 
   const groundTruthErrors = validateBenchmarkGroundTruth(groundTruth, catalog);
   gate("inputGroundTruthValid", groundTruthErrors.length === 0, null, groundTruthErrors[0]);
@@ -277,6 +359,50 @@ export function evaluateBenchmarkRun({ benchmarkCase, groundTruth, catalog, repo
     (detail) => evidenceErrors.push(`finding مختلق: لا يشارك أدلته أي محتوى دال: ${detail}`),
     ungroundedStatement);
 
+  // تأسيس الأرقام: كل ادعاء رقمي/تاريخ/نسبة في أي finding (كل الفئات الاثنتي
+  // عشرة — بما فيها الغموض والأسئلة) يجب أن يوجد في أدلة ذلك الـfinding نفسه.
+  // الاشتقاق الحسابي ممنوع افتراضيًا ولا يُسمح به إلا بترخيص صريح في
+  // ground-truth (allowDerivedNumericClaims).
+  const numericGroundingSkipped = groundTruth.allowDerivedNumericClaims === true;
+  const numericIssue = numericGroundingSkipped ? null : ungroundedNumericClaim(findingFieldsOf(report), evidenceItems);
+  gate("reportNumericClaimsGrounded", numericGroundingSkipped || !numericIssue,
+    (detail) => evidenceErrors.push(`ادعاء رقمي غير مؤسس: ${detail}`),
+    numericIssue);
+
+  // الادعاءات الواقعية غير المتوقعة: finding واقعي لا يغطي أي توقع موثق في أي
+  // فئة = ادعاء زائد غير موثق. (المطابقة one-to-one نفسها تُبنى في قسم
+  // الاحتساب على كل الفئات وتُستخدم هناك؛ هنا البوابة الصلبة فقط.)
+  const unexpectedFactual = factualRows.find(({ finding }) =>
+    !(groundTruth.expectedFindings || []).some((expectation) => findingCoversExpectation(finding, expectation)));
+  gate("reportNoUnexpectedFactualClaims", !unexpectedFactual,
+    (detail) => evidenceErrors.push(`finding واقعي زائد غير موثق في ground-truth: ${detail}`),
+    unexpectedFactual
+      ? `${unexpectedFactual.field}: "${String(unexpectedFactual.finding.statement || "").slice(0, 60)}…"`
+      : null);
+
+  // تدقيق السرد: corpus = مقتطفات أدلة التقرير + expectedValues الموثقة.
+  const narrativeCorpusText = [
+    ...evidenceItems.map((item) => item?.excerpt || ""),
+    ...(groundTruth.expectedFindings || []).map((expectation) => expectation.expectedValue || ""),
+  ].join(" ");
+  const narrativeCorpusClaims = numericClaimsOfText(narrativeCorpusText);
+  const narrativeCorpusTokens = significantTokens(narrativeCorpusText);
+  const forbidden = groundTruth.forbiddenAssertions || [];
+  let narrativeIssue = null;
+  for (const sentence of [
+    ...splitNarrativeSentences(report.executiveSummary),
+    ...(Array.isArray(report.warnings) ? report.warnings.flatMap(splitNarrativeSentences) : []),
+  ]) {
+    const issue = narrativeSentenceIssue(sentence, narrativeCorpusClaims, narrativeCorpusTokens, forbidden);
+    if (issue) {
+      narrativeIssue = `"${sentence.slice(0, 60)}…" — ${issue}`;
+      break;
+    }
+  }
+  gate("reportNarrativeClaimsGrounded", !narrativeIssue,
+    (detail) => ambiguityErrors.push(`ادعاء سردي غير مؤسس في الملخص/التحذيرات: ${detail}`),
+    narrativeIssue);
+
   if (hardGates.some((item) => !item.passed)) {
     return {
       benchmarkVersion,
@@ -299,11 +425,18 @@ export function evaluateBenchmarkRun({ benchmarkCase, groundTruth, catalog, repo
   // ---------- احتساب الجودة بعد اجتياز كل البوابات ----------
   const expectations = groundTruth.expectedFindings;
   const rows = findingFieldsOf(report);
+  // مطابقة one-to-one حتمية: لكل توقعٍ بترتيبه أول finding غير مستخدم في
+  // فئته يغطيه — لا يضخّم finding واحد الدرجة بتغطية أكثر من expectedId.
   const coveringFinding = new Map();
+  const usedForCoverage = new Set();
   for (const expectation of expectations) {
     const match = rows.find(({ field, finding }) => field === expectation.category
+      && !usedForCoverage.has(finding)
       && findingCoversExpectation(finding, expectation));
-    if (match) coveringFinding.set(expectation.expectedId, match.finding);
+    if (match) {
+      coveringFinding.set(expectation.expectedId, match.finding);
+      usedForCoverage.add(match.finding);
+    }
   }
 
   const missed = expectations

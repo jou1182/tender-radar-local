@@ -3,7 +3,8 @@
   "caseId": "m0a-clear",
   "fixtureId": "TEST-M0A-001",
   "documentId": "bench-m0a-clear",
-  "fixtureSha256": "850ef975052fb5fcac2dd28b81017522e79fa14aefc3125004990e7efcc8079e",
+  "fixtureSha256": "5f382ec6232886ed9a6eae68fdc4a0eeac5dad83397d05f3a95bcc54f9d84f3e",
+  "catalogSha256": "02ba491c25b679da39b7d59b42db473c3350a4d394f0cb2698a6d91dbcb8f02b",
   "expectedFindings": [
     {
       "expectedId": "exp-clear-scope",
@@ -17,7 +18,7 @@
       ],
       "availability": "explicit",
       "candidateIds": [
-        "cand-1fa98e9f5df184bb82e424f3"
+        "cand-37770f82d3d41251cc5eeb04"
       ]
     },
     {
@@ -32,7 +33,7 @@
       ],
       "availability": "explicit",
       "candidateIds": [
-        "cand-ddcaffb307d415961507b0b9"
+        "cand-279d5cab0a606fbd918ea676"
       ]
     },
     {
@@ -46,7 +47,7 @@
       ],
       "availability": "explicit",
       "candidateIds": [
-        "cand-a8db9deeb4a3b0ea1a94c22f"
+        "cand-f3e33f0ebdd056c6f76634f4"
       ]
     },
     {
@@ -60,7 +61,7 @@
       ],
       "availability": "explicit",
       "candidateIds": [
-        "cand-d8274f7f9bf05bdf28778d12"
+        "cand-15889d2440a04a21c0810738"
       ]
     },
     {
@@ -74,7 +75,7 @@
       ],
       "availability": "explicit",
       "candidateIds": [
-        "cand-91be05584650f60317e22d9b"
+        "cand-9332bf6371ab38068d52ca9b"
       ]
     },
     {
@@ -87,7 +88,7 @@
       ],
       "availability": "explicit",
       "candidateIds": [
-        "cand-2f8d20ef7494202e79fa68fc"
+        "cand-9d3bbc3dc19639fd41d57738"
       ]
     },
     {
@@ -101,7 +102,7 @@
       ],
       "availability": "explicit",
       "candidateIds": [
-        "cand-afb79ca2df4f5d4bdbfc26d9"
+        "cand-84f47d4e6d0405b169a26e2e"
       ]
     },
     {
@@ -115,7 +116,7 @@
       ],
       "availability": "explicit",
       "candidateIds": [
-        "cand-66e79266180ef6aae46c4f6c"
+        "cand-83945d1bad267eb509463297"
       ]
     },
     {
@@ -129,7 +130,7 @@
       ],
       "availability": "explicit",
       "candidateIds": [
-        "cand-c447c85df9aefcd896c6cd97"
+        "cand-b214e4ed47ccea42b3cef481"
       ]
     },
     {
@@ -143,7 +144,7 @@
       ],
       "availability": "explicit",
       "candidateIds": [
-        "cand-c35bf38191523746314b0683"
+        "cand-a0a4b9734206014a4e6191bc"
       ]
     },
     {
@@ -157,7 +158,7 @@
       ],
       "availability": "explicit",
       "candidateIds": [
-        "cand-2b5376aca09eb4e4c29f4f87"
+        "cand-83bd50316b97dc3bf85926d6"
       ]
     },
     {
@@ -170,7 +171,7 @@
       ],
       "availability": "explicit",
       "candidateIds": [
-        "cand-37b6e22525eb816808400fcc"
+        "cand-f8bd0af693bef81ce8439c1c"
       ]
     }
   ],
