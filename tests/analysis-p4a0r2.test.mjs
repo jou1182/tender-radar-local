@@ -15,6 +15,7 @@ import { chunkAnalysisDocument } from "../scripts/lib/analysis-chunking.mjs";
 import {
   analysisFindingFields,
   analysisPromptVersion,
+  analysisReportJsonSchema,
   analysisReportSchemaVersion,
   emptyAnalysisReport,
   normalizeReportEvidenceIds,
@@ -135,7 +136,8 @@ test("S3) the Ollama request body itself: JSON mode, source metadata, and full s
   await provider.analyze({ document, chunks });
 
   assert.deepEqual(seenUrls, ["http://127.0.0.1:11434/api/generate"], "generate is the only endpoint");
-  assert.equal(seenBody.format, "json", "JSON structured mode is enabled");
+  assert.equal(typeof seenBody.format, "object", "format is a schema object, not a plain string");
+  assert.deepEqual(seenBody.format, JSON.parse(JSON.stringify(analysisReportJsonSchema)), "format carries the analysis-report-v2 JSON schema (P4-A1C0)");
   assert.equal(seenBody.stream, false);
   const { prompt } = seenBody;
   assert.match(prompt, /decisionEvidenceIds/, "decision evidence is requested explicitly");

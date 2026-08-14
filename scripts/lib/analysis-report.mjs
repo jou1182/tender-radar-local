@@ -44,6 +44,75 @@ function isStringArray(value) {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
+// تجميد عميق محلي بسيط (P4-A1C0) — بلا dependency: يمنع أي تعديل وقت التشغيل
+// على مخطط JSON الممرر إلى Ollama.
+function deepFreeze(value) {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    for (const key of Object.keys(value)) deepFreeze(value[key]);
+    Object.freeze(value);
+  }
+  return value;
+}
+
+// JSON Schema محلي مطابق لعقد analysis-report-v2 (P4-A1C0): يُمرر إلى Ollama
+// داخل حقل format لفرض البنية من المصدر. لا يحول كائنًا إلى مصفوفة ولا يصحح
+// مخرجات النموذج؛ validateAnalysisReport يبقى الحاجز الإلزامي الثاني بعد الاستجابة.
+// كائن JSON خالص: قابل للتسلسل الكامل بـJSON.stringify دون functions أو undefined.
+export const analysisReportJsonSchema = deepFreeze({
+  type: "object",
+  additionalProperties: false,
+  required: [...analysisReportFields],
+  properties: {
+    executiveSummary: { type: "string", minLength: 1 },
+    ...Object.fromEntries(analysisFindingFields.map((field) => [field, { $ref: "#/$defs/findingList" }])),
+    preliminaryDecision: { enum: [...preliminaryDecisionValues] },
+    confidence: { enum: [...confidenceValues] },
+    // يسمح بالفراغ: المدقق يفرض عدم الفراغ فقط عند enter/review/exclude.
+    decisionEvidenceIds: { type: "array", items: { type: "string", minLength: 1 } },
+    warnings: { type: "array", items: { type: "string" } },
+    evidence: { type: "array", items: { $ref: "#/$defs/evidence" } },
+  },
+  $defs: {
+    // كل فئة من الفئات الاثنتي عشرة: مصفوفة findings قد تكون فارغة.
+    findingList: { type: "array", items: { $ref: "#/$defs/finding" } },
+    finding: {
+      type: "object",
+      additionalProperties: false,
+      required: ["category", "statement", "severity", "confidence", "evidenceIds"],
+      properties: {
+        category: { type: "string", minLength: 1 },
+        statement: { type: "string", minLength: 1 },
+        severity: { enum: [...findingSeverityValues] },
+        confidence: { enum: [...confidenceValues] },
+        evidenceIds: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } },
+      },
+    },
+    evidence: {
+      type: "object",
+      additionalProperties: false,
+      required: ["evidenceId", "documentId", "sourceType", "excerpt", "chunkId"],
+      properties: {
+        evidenceId: { type: "string", minLength: 1 },
+        documentId: { type: "string", minLength: 1 },
+        sourceType: { enum: ["pdf", "xlsx", "docx"] },
+        excerpt: { type: "string", minLength: 1, maxLength: 400 },
+        chunkId: { type: "string", minLength: 1 },
+        pageNumber: { type: "integer", minimum: 1 },
+        sheetName: { type: "string", minLength: 1 },
+        cellRange: { type: "string", minLength: 1 },
+        section: { type: "string", minLength: 1 },
+      },
+      // موقع واحد صالح على الأقل: صفحة، أو ورقة ونطاق معًا، أو قسم — بما لا يتعارض
+      // مع متطلبات verifyReportGrounding لكل نوع مستند.
+      anyOf: [
+        { required: ["pageNumber"] },
+        { required: ["sheetName", "cellRange"] },
+        { required: ["section"] },
+      ],
+    },
+  },
+});
+
 // يعيد قائمة أخطاء عربية؛ القائمة الفارغة تعني تقريرًا صالحًا.
 export function validateAnalysisReport(report) {
   const errors = [];

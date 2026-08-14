@@ -4,6 +4,7 @@
 // وبمهلة واضحة وبلا إعادة محاولة، ويفشل بأمان دون تسجيل نصوص حساسة.
 import {
   analysisPromptVersion,
+  analysisReportJsonSchema,
   analysisReportSchemaVersion,
   emptyAnalysisReport,
   validateAnalysisReport,
@@ -223,11 +224,12 @@ export function createOllamaProvider({ env = {}, fetchFn = globalThis.fetch } = 
       let response;
       try {
         // نقطة التوليد فقط؛ لا سحب نماذج ولا أي endpoint آخر، ومحاولة واحدة بلا إعادة.
-        // format: "json" يفعّل وضع JSON المنظم في Ollama.
+        // format يحمل JSON Schema المحلي المطابق لعقد analysis-report-v2 (P4-A1C0)
+        // لفرض البنية من المصدر؛ المدقق يبقى الحاجز الإلزامي الثاني بعد الاستجابة.
         response = await fetchFn(`${host}/api/generate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model: config.ollamaModel, prompt, stream: false, format: "json", options: { temperature: 0 } }),
+          body: JSON.stringify({ model: config.ollamaModel, prompt, stream: false, format: analysisReportJsonSchema, options: { temperature: 0 } }),
           signal: AbortSignal.timeout(config.timeoutMs),
         });
       } catch {
