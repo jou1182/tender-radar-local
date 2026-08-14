@@ -13,6 +13,8 @@ import {
   validateAnalysisReport,
 } from "../scripts/lib/analysis-report.mjs";
 import { createOllamaProvider } from "../scripts/lib/analysis-providers.mjs";
+import { buildEvidenceCandidateCatalog } from "../scripts/lib/analysis-evidence-candidates.mjs";
+import { buildModelSelectionSchema } from "../scripts/lib/analysis-model-selection.mjs";
 
 // حاجز الاتصال: أي محاولة fetch حقيقية تسقط الاختبار فورًا.
 const realFetch = globalThis.fetch;
@@ -20,8 +22,21 @@ globalThis.fetch = () => { throw new Error("REAL_NETWORK_FORBIDDEN: استخدم
 after(() => { globalThis.fetch = realFetch; });
 
 const ollamaEnv = { RADAR_AI_ENABLED: "true", RADAR_AI_PROVIDER: "ollama", OLLAMA_HOST: "http://127.0.0.1:11434" };
-const fakeDocument = { documentId: "doc-p4a1c0", documentType: "pdf", warnings: [] };
+// P4-A1D0: المستند يحتاج كتلة فعلية ليُبنى كتالوج المرشحين قبل استدعاء النموذج.
+const fakeDocument = {
+  documentId: "doc-p4a1c0",
+  documentType: "pdf",
+  warnings: [],
+  blocks: [{ blockId: "b1", kind: "page-text", text: "نص جزء اختبار ثابت.", source: { pageNumber: 1 } }],
+};
 const fakeChunks = [{ chunkId: "chk-1", text: "نص جزء اختبار ثابت.", blockIds: ["b1"], sources: [{ pageNumber: 1 }] }];
+
+// اختيار نموذج صحيح الشكل (P4-A1D0): كل حقول التقرير عدا evidence.
+function emptySelection() {
+  const selection = { ...emptyAnalysisReport() };
+  delete selection.evidence;
+  return selection;
+}
 
 // يحل مرجعًا محليًا من الشكل #/$defs/name داخل الجذر المعطى.
 function resolveRef(root, node) {
@@ -133,7 +148,7 @@ test("F) المخطط مجمد بالكامل ولا يتغير بمحاولة �
   assert.ok(!("injected" in analysisReportJsonSchema.properties), "لا حقن خصائص");
 });
 
-test("G) جسم طلب Ollama: format كائن schema وليس نصًا", async () => {
+test("G) جسم طلب Ollama: format مخطط اختيار ديناميكي وليس نصًا", async () => {
   let seenBody = null;
   const seenUrls = [];
   const provider = createOllamaProvider({
@@ -141,42 +156,48 @@ test("G) جسم طلب Ollama: format كائن schema وليس نصًا", async 
     fetchFn: async (url, options) => {
       seenUrls.push(url);
       seenBody = JSON.parse(options.body);
-      return { ok: true, status: 200, json: async () => ({ response: JSON.stringify(emptyAnalysisReport()) }) };
+      return { ok: true, status: 200, json: async () => ({ response: JSON.stringify(emptySelection()) }) };
     },
   });
   await provider.analyze({ document: fakeDocument, chunks: fakeChunks });
   assert.deepEqual(seenUrls, ["http://127.0.0.1:11434/api/generate"], "endpoint الوحيد /api/generate ولا /api/pull");
   assert.equal(typeof seenBody.format, "object", "format ليس string");
   assert.notEqual(seenBody.format, "json", "لم تعد القيمة النصية json");
-  assert.deepEqual(seenBody.format, JSON.parse(JSON.stringify(analysisReportJsonSchema)), "format يطابق analysisReportJsonSchema بنيويًا");
+  // P4-A1D0: format يحمل مخطط الاختيار الداخلي الديناميكي المعتمد على كتالوج المستند.
+  const catalog = buildEvidenceCandidateCatalog({ document: fakeDocument, chunks: fakeChunks });
+  assert.deepEqual(seenBody.format, JSON.parse(JSON.stringify(buildModelSelectionSchema(catalog.candidates))), "format يطابق مخطط الاختيار الديناميكي بنيويًا");
+  assert.ok(!("evidence" in seenBody.format.properties), "النموذج لا يرى حقل evidence إطلاقًا");
   assert.equal(seenBody.stream, false);
   assert.equal(seenBody.options.temperature, 0);
   assert.equal(seenBody.model, "qwen2.5:7b", "النموذج الافتراضي من الإعداد");
-  assert.match(seenBody.prompt, /analysis-report-v2/, "نص prompt لم يتغير");
+  assert.match(seenBody.prompt, /analysis-report-v2/, "صيغة التقرير canonical مذكورة في الـprompt");
 });
 
-test("H) استجابة صحيحة مطابقة تنجح وتبقى الإصدارات v2", async () => {
-  const validReport = {
-    ...emptyAnalysisReport(),
-    evidence: [{ evidenceId: "ev-1", documentId: "doc-p4a1c0", sourceType: "pdf", pageNumber: 1, excerpt: "نص مقتطف", chunkId: "chk-1" }],
-    decisionEvidenceIds: ["ev-1"],
+test("H) استجابة صحيحة مطابقة تنجح وتبقى صيغة التقرير v2", async () => {
+  const catalog = buildEvidenceCandidateCatalog({ document: fakeDocument, chunks: fakeChunks });
+  const candidateId = catalog.candidates[0].candidateId;
+  const validSelection = {
+    ...emptySelection(),
     preliminaryDecision: "review",
     confidence: "medium",
+    decisionEvidenceIds: [candidateId],
   };
   const provider = createOllamaProvider({
     env: ollamaEnv,
-    fetchFn: async () => ({ ok: true, status: 200, json: async () => ({ response: JSON.stringify(validReport) }) }),
+    fetchFn: async () => ({ ok: true, status: 200, json: async () => ({ response: JSON.stringify(validSelection) }) }),
   });
   const result = await provider.analyze({ document: fakeDocument, chunks: fakeChunks });
   const { _meta, ...report } = result;
-  assert.deepEqual(validateAnalysisReport(report), [], "التقرير الصحيح يجتاز المدقق الحاجز الثاني");
+  assert.deepEqual(validateAnalysisReport(report), [], "التقرير canonical المعاد بناؤه يجتاز المدقق الحاجز الثاني");
+  assert.equal(report.evidence.length, 1, "evidence بُنيت محليًا من الكتالوج");
+  assert.equal(report.evidence[0].excerpt, "نص جزء اختبار ثابت.", "excerpt حرفي من الكتالوج لا من النموذج");
   assert.ok(Number.isInteger(_meta.durationMs));
   assert.equal(analysisReportSchemaVersion, "analysis-report-v2");
-  assert.equal(analysisPromptVersion, "p4a-prompt-v2");
+  assert.equal(analysisPromptVersion, "p4a-prompt-v3");
 });
 
 test("I) استجابة مشوهة (شكل P4-A1B) تُرفض بـAI_OUTPUT_INVALID بلا TypeError وبلا إعادة", async () => {
-  const malformed = { ...emptyAnalysisReport(), scopeOfWork: { category: "scopeOfWork", statement: "كائن لا مصفوفة" } };
+  const malformed = { ...emptySelection(), scopeOfWork: { category: "scopeOfWork", statement: "كائن لا مصفوفة" } };
   let generateCalls = 0;
   const provider = createOllamaProvider({
     env: ollamaEnv,

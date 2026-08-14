@@ -15,13 +15,14 @@ import { chunkAnalysisDocument } from "../scripts/lib/analysis-chunking.mjs";
 import {
   analysisFindingFields,
   analysisPromptVersion,
-  analysisReportJsonSchema,
   analysisReportSchemaVersion,
   emptyAnalysisReport,
   normalizeReportEvidenceIds,
   validateAnalysisReport,
   verifyReportGrounding,
 } from "../scripts/lib/analysis-report.mjs";
+import { buildEvidenceCandidateCatalog } from "../scripts/lib/analysis-evidence-candidates.mjs";
+import { buildModelSelectionSchema } from "../scripts/lib/analysis-model-selection.mjs";
 import { createOllamaProvider } from "../scripts/lib/analysis-providers.mjs";
 import { createAnalysisEngine } from "../scripts/lib/analysis-engine.mjs";
 import { buildFixtureBuffers, buildZip } from "./helpers/analysis-fixture-factory.mjs";
@@ -81,7 +82,7 @@ function buildFlatePdf(pages) {
 
 test("S1) report schema and prompt versions are v2 with twelve finding categories", () => {
   assert.equal(analysisReportSchemaVersion, "analysis-report-v2");
-  assert.equal(analysisPromptVersion, "p4a-prompt-v2");
+  assert.equal(analysisPromptVersion, "p4a-prompt-v3");
   for (const field of ["scopeOfWork", "boqSummary", "criticalQuantities"]) {
     assert.ok(analysisFindingFields.includes(field), `${field} is an evidence-backed finding category`);
   }
@@ -116,43 +117,45 @@ test("S2) provider setup failure fails the job — never left extracting, never 
   }
 });
 
-test("S3) the Ollama request body itself: JSON mode, source metadata, and full shape instructions", async () => {
+test("S3) the Ollama request body itself: selection schema, source metadata, and full shape instructions", async () => {
   const document = extractAnalysisDocument({ documentId: "doc-req", fileName: "booklet-sample.pdf", buffer: fixtureBuffers["booklet-pdf"] });
   const chunks = chunkAnalysisDocument(document);
-  const firstLine = chunks[0].text.split("\n")[0];
-  const validReport = {
+  // P4-A1D0: الاستجابة الصحيحة اختيار بالمعرف فقط من كتالوج المرشحين الحتمي.
+  const catalog = buildEvidenceCandidateCatalog({ document, chunks });
+  const validSelection = {
     ...emptyAnalysisReport(),
-    evidence: [{ evidenceId: "ev-1", documentId: "doc-req", sourceType: "pdf", pageNumber: 1, excerpt: firstLine.slice(0, 30), chunkId: chunks[0].chunkId }],
-    decisionEvidenceIds: ["ev-1"],
     preliminaryDecision: "review",
     confidence: "medium",
+    decisionEvidenceIds: [catalog.candidates[0].candidateId],
   };
+  delete validSelection.evidence; // مخطط الاختيار الداخلي لا يحتوي evidence
   let seenBody = null;
   const seenUrls = [];
   const provider = createOllamaProvider({
     env: ollamaEnv,
-    fetchFn: async (url, options) => { seenUrls.push(url); seenBody = JSON.parse(options.body); return { ok: true, json: async () => ({ response: JSON.stringify(validReport) }) }; },
+    fetchFn: async (url, options) => { seenUrls.push(url); seenBody = JSON.parse(options.body); return { ok: true, json: async () => ({ response: JSON.stringify(validSelection) }) }; },
   });
   await provider.analyze({ document, chunks });
 
   assert.deepEqual(seenUrls, ["http://127.0.0.1:11434/api/generate"], "generate is the only endpoint");
   assert.equal(typeof seenBody.format, "object", "format is a schema object, not a plain string");
-  assert.deepEqual(seenBody.format, JSON.parse(JSON.stringify(analysisReportJsonSchema)), "format carries the analysis-report-v2 JSON schema (P4-A1C0)");
+  assert.deepEqual(seenBody.format, JSON.parse(JSON.stringify(buildModelSelectionSchema(catalog.candidates))), "format carries the dynamic model-selection schema (P4-A1D0)");
+  assert.ok(!("evidence" in seenBody.format.properties), "the model never sees an evidence field");
   assert.equal(seenBody.stream, false);
   const { prompt } = seenBody;
   assert.match(prompt, /decisionEvidenceIds/, "decision evidence is requested explicitly");
   assert.match(prompt, /evidenceIds/, "finding shape with evidenceIds is documented");
   assert.match(prompt, /category, statement, severity/, "full finding shape is documented");
-  assert.match(prompt, /حرفيًا/, "verbatim excerpt copying is requested");
-  assert.match(prompt, /analysis-report-v2/);
+  assert.match(prompt, /حرفيًا/, "the catalog is described as verbatim reference text");
+  assert.match(prompt, /analysis-report-v2/, "the canonical report version is named");
   assert.match(prompt, /معرف المستند: doc-req/);
   for (const field of analysisFindingFields) assert.ok(prompt.includes(field), `prompt names category ${field}`);
-  // كل جزء يرسل بيانات مصدره الفعلية معه.
-  const chunkHeaders = [...prompt.matchAll(/\[(chk-[0-9a-f]+)\] sourceType=(\w+) ; ([^\n]+)/g)];
-  assert.ok(chunkHeaders.length > 0, "chunks carry source metadata headers");
-  assert.ok(chunkHeaders.every((match) => match[2] === "pdf"));
-  assert.ok(chunkHeaders.some((match) => /pageNumber=1/.test(match[3])), "page numbers travel with chunks");
-  assert.ok(prompt.length < 9_000, "still only the necessary chunks are sent");
+  // كل مرشح يرسل بيانات مصدره الفعلية معه.
+  const catalogHeaders = [...prompt.matchAll(/\[(cand-[0-9a-f]{24})\] sourceType=(\w+); ([^\n]+)/g)];
+  assert.ok(catalogHeaders.length > 0, "candidates carry source metadata headers");
+  assert.ok(catalogHeaders.every((match) => match[2] === "pdf"));
+  assert.ok(catalogHeaders.some((match) => /pageNumber=1/.test(match[3])), "page numbers travel with candidates");
+  assert.ok(prompt.length < 9_000, "still only the bounded catalog is sent");
 });
 
 test("S4) /api/tags decides availability by the installed model — never pulls", async () => {

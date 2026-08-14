@@ -205,7 +205,13 @@ test("G) المزود بمحاكاة محلية: findings غير مصفوفة ت
     },
   });
   malformedCases += 1;
-  const document = { documentId: "doc-p4a1r", documentType: "pdf", warnings: [] };
+  // P4-A1D0: المستند يحتاج كتلة فعلية ليُبنى كتالوج مرشحين قبل استدعاء النموذج.
+  const document = {
+    documentId: "doc-p4a1r",
+    documentType: "pdf",
+    warnings: [],
+    blocks: [{ blockId: "b1", kind: "page-text", text: "نص جزء اختبار ثابت.", source: { pageNumber: 1 } }],
+  };
   const chunks = [{ chunkId: "chk-1", text: "نص جزء اختبار ثابت.", blockIds: ["b1"], sources: [{ pageNumber: 1 }] }];
   const error = await provider.analyze({ document, chunks }).then(() => null, (caught) => caught);
   assert.ok(error, "analyze يرفض المخرجات المشوهة");
@@ -264,9 +270,9 @@ test("H) المحرك بقاعدة مؤقتة: مهمة failed بـAI_OUTPUT_INV
   }
 });
 
-test("I) عدم التراجع: الثوابت والإصدارات لم تتغير", () => {
+test("I) عدم التراجع: الثوابت والإصدارات المعتمدة", () => {
   assert.equal(analysisReportSchemaVersion, "analysis-report-v2");
-  assert.equal(analysisPromptVersion, "p4a-prompt-v2");
+  assert.equal(analysisPromptVersion, "p4a-prompt-v3");
   assert.equal(analysisFindingFields.length, 12);
 });
 

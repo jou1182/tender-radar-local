@@ -4,11 +4,15 @@
 // وبمهلة واضحة وبلا إعادة محاولة، ويفشل بأمان دون تسجيل نصوص حساسة.
 import {
   analysisPromptVersion,
-  analysisReportJsonSchema,
   analysisReportSchemaVersion,
   emptyAnalysisReport,
-  validateAnalysisReport,
 } from "./analysis-report.mjs";
+import { buildEvidenceCandidateCatalog } from "./analysis-evidence-candidates.mjs";
+import {
+  buildModelSelectionPrompt,
+  buildModelSelectionSchema,
+  materializeCanonicalReport,
+} from "./analysis-model-selection.mjs";
 
 export const analysisProviderNames = ["stub", "ollama"];
 
@@ -188,48 +192,30 @@ export function createOllamaProvider({ env = {}, fetchFn = globalThis.fetch } = 
       if (!config.enabled) {
         throw providerError("AI_PROVIDER_DISABLED", "مزود Ollama معطل؛ فعّل RADAR_AI_ENABLED=true صراحة لاستخدامه.");
       }
-      // يرسل الأجزاء النصية الضرورية فقط — لا ملفات كاملة ولا مسارات ولا بيانات اعتماد.
-      const excerptBudget = 6_000;
-      let used = 0;
-      const selectedChunks = [];
-      for (const chunk of chunks) {
-        if (used >= excerptBudget) break;
-        const slice = chunk.text.slice(0, Math.max(0, excerptBudget - used));
-        used += slice.length;
-        // كل جزء يحمل بيانات مصدره الصالحة للاقتباس: النوع والصفحة أو الورقة/النطاق أو القسم.
-        const sourceText = (chunk.sources || []).map((source) => (
-          source.pageNumber !== undefined ? `pageNumber=${source.pageNumber}`
-            : source.sheetName ? `sheetName=${source.sheetName}, cellRange=${source.cellRange}`
-              : `section=${source.section}`
-        )).join(" ; ");
-        selectedChunks.push(`[${chunk.chunkId}] sourceType=${document.documentType} ; ${sourceText}\n${slice}`);
+      // كتالوج الأدلة الحتمي المحلي (P4-A1D0): مقتطفات حرفية من كتل المستند بمعرفات
+      // cand- ثابتة. النموذج يختار المعرفات فقط — لا يكتب excerpt ولا evidence.
+      const catalog = buildEvidenceCandidateCatalog({ document, chunks });
+      if (!catalog.candidates.length) {
+        // بلا مرشحين لا يُستدعى النموذج إطلاقًا: فشل آمن مشفر قبل أي اتصال.
+        throw providerError("AI_NO_EVIDENCE_CANDIDATES", "لا توجد مقتطفات صالحة للاقتباس في المستند؛ لا يُستدعى النموذج بلا مرشحين.");
       }
-      const prompt = [
-        "أنت محلل وثائق منافسات. أعد JSON فقط يطابق صيغة analysis-report-v2 بالحقول التالية:",
-        "executiveSummary: نص ملخص غير فارغ.",
-        "الفئات الاثنتا عشرة (كل بند فيها finding موثق): scopeOfWork, boqSummary, criticalQuantities,",
-        "eligibilityRequirements, requiredExperience, deadlines, bidBonds, guarantees, penalties,",
-        "contractualRisks, unclearItems, questionsForAuthority.",
-        "شكل كل finding: {category, statement, severity: info|low|medium|high|critical, confidence: low|medium|high, evidenceIds: [معرفات أدلة غير فارغة]}.",
-        "شكل كل evidence: {evidenceId, documentId, sourceType, chunkId, excerpt, pageNumber أو sheetName+cellRange أو section}.",
-        "انسخ excerpt حرفيًا من نص الجزء (chunk) المشار إليه، وانسخ قيم الموقع من ترويسة ذلك الجزء كما هي.",
-        "preliminaryDecision إحدى: enter, review, exclude, insufficient_data.",
-        "قرار enter أو review أو exclude يتطلب decisionEvidenceIds: مصفوفة غير فارغة من معرفات evidence موجودة فعلًا.",
-        "الحقول المتبقية: confidence: low|medium|high، decisionEvidenceIds، warnings: [نصوص]، evidence: [أدلة].",
-        `معرف المستند: ${document.documentId}. نوعه: ${document.documentType}. إصدار الصيغة: ${analysisReportSchemaVersion}.`,
-        ...selectedChunks,
-      ].join("\n");
+      // المخطط الداخلي الديناميكي: enum المعرفات من كتالوج هذا المستند فقط.
+      const selectionSchema = buildModelSelectionSchema(catalog.candidates);
+      // يرسل كتالوجًا نصيًا محدودًا (48 مرشحًا / 6000 حرف مقتطفات) — لا ملفات
+      // كاملة ولا مسارات ولا بيانات اعتماد.
+      const prompt = buildModelSelectionPrompt({ document, catalog });
 
       const startedAt = Date.now();
       let response;
       try {
         // نقطة التوليد فقط؛ لا سحب نماذج ولا أي endpoint آخر، ومحاولة واحدة بلا إعادة.
-        // format يحمل JSON Schema المحلي المطابق لعقد analysis-report-v2 (P4-A1C0)
-        // لفرض البنية من المصدر؛ المدقق يبقى الحاجز الإلزامي الثاني بعد الاستجابة.
+        // format يحمل مخطط الاختيار الداخلي analysis-model-selection-v1 (P4-A1D0)
+        // لفرض بنية الاختيار بالمعرف من المصدر؛ validateModelSelection يبقى الحاجز
+        // الإلزامي الثاني بعد الاستجابة.
         response = await fetchFn(`${host}/api/generate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model: config.ollamaModel, prompt, stream: false, format: analysisReportJsonSchema, options: { temperature: 0 } }),
+          body: JSON.stringify({ model: config.ollamaModel, prompt, stream: false, format: selectionSchema, options: { temperature: 0 } }),
           signal: AbortSignal.timeout(config.timeoutMs),
         });
       } catch {
@@ -238,23 +224,26 @@ export function createOllamaProvider({ env = {}, fetchFn = globalThis.fetch } = 
       if (!response.ok) {
         throw providerError("AI_PROVIDER_UNAVAILABLE", `استجابة Ollama غير ناجحة (${response.status})؛ تأكد من توفر النموذج محليًا.`);
       }
-      let parsed;
+      let selection;
       try {
         const body = await response.json();
         const text = String(body?.response || "");
         const jsonMatch = text.match(/\{[\s\S]*\}/);
-        parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+        selection = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
       } catch {
         throw providerError("AI_OUTPUT_INVALID", "مخرجات Ollama ليست JSON صالحًا.");
       }
-      const errors = validateAnalysisReport(parsed);
-      if (errors.length) {
-        const error = providerError("AI_OUTPUT_INVALID", `مخرجات Ollama غير مطابقة للصيغة: ${errors[0]}`);
-        error.details = errors;
-        throw error;
-      }
-      // المدة تُقاس هنا وتُعاد ضمن النتيجة للسجل، دون أي نص من الطلب أو الاستجابة.
-      return { ...parsed, _meta: { durationMs: Date.now() - startedAt } };
+      // إعادة بناء تقرير analysis-report-v2 canonical من الكتالوج المحلي حرفيًا.
+      // أي معرف مجهول أو مكرر أو بنية مشوهة تُرفض هنا بـAI_OUTPUT_INVALID.
+      const report = materializeCanonicalReport(selection, catalog);
+      // المدة وإحصاء الكتالوج تُعاد ضمن النتيجة للسجل، دون أي نص من الطلب أو الاستجابة.
+      return {
+        ...report,
+        _meta: {
+          durationMs: Date.now() - startedAt,
+          evidenceCandidates: { sent: catalog.candidates.length, excluded: catalog.excludedCount },
+        },
+      };
     },
   };
 }

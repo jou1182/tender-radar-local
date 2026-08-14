@@ -282,14 +282,21 @@ test("12-13) Ollama fails safe when disabled and rejects any non-loopback host",
   assert.equal(readAnalysisAiConfig({}).provider, "stub", "stub is the default provider");
 });
 
-test("14-15) Ollama sends only necessary text chunks to /api/generate, never pulls a model, and rejects invalid output", async () => {
+test("14-15) Ollama sends only the bounded candidate catalog to /api/generate, never pulls a model, and rejects invalid output", async () => {
   const document = extractAnalysisDocument({ documentId: "doc-ollama", fileName: "booklet-sample.pdf", buffer: fixtureBuffers["booklet-pdf"] });
   const chunks = chunkAnalysisDocument(document);
   const calls = [];
-  const validReport = { ...emptyAnalysisReport(), evidence: [{ evidenceId: "ev-1", documentId: "doc-ollama", sourceType: "pdf", pageNumber: 1, excerpt: "دليل", chunkId: chunks[0].chunkId }], decisionEvidenceIds: ["ev-1"], preliminaryDecision: "review" };
+  // P4-A1D0: الاستجابة الصحيحة الآن اختيار بالمعرف فقط — المعرف يُقرأ من كتالوج الـprompt.
   const fetchFn = async (url, options) => {
     calls.push({ url, body: JSON.parse(options.body) });
-    return { ok: true, json: async () => ({ response: JSON.stringify(validReport) }) };
+    const candidateId = calls[0].body.prompt.match(/\[(cand-[0-9a-f]{24})\]/)[1];
+    const selection = {
+      ...emptyAnalysisReport(),
+      preliminaryDecision: "review",
+      decisionEvidenceIds: [candidateId],
+    };
+    delete selection.evidence;
+    return { ok: true, json: async () => ({ response: JSON.stringify(selection) }) };
   };
   const provider = createOllamaProvider({
     env: { RADAR_AI_ENABLED: "true", RADAR_AI_PROVIDER: "ollama", OLLAMA_HOST: "http://127.0.0.1:11434", OLLAMA_MODEL: "qwen2.5:7b" },
@@ -302,7 +309,8 @@ test("14-15) Ollama sends only necessary text chunks to /api/generate, never pul
   assert.equal(calls[0].url, "http://127.0.0.1:11434/api/generate", "the generate endpoint is the only call");
   assert.ok(!calls.some((call) => call.url.includes("/api/pull")), "no model pull ever");
   assert.equal(calls[0].body.model, "qwen2.5:7b");
-  assert.ok(calls[0].body.prompt.length < 8_000, "only the necessary text chunks are sent, never the whole file");
+  assert.ok(!("evidence" in calls[0].body.format.properties), "the model schema is the internal selection schema");
+  assert.ok(calls[0].body.prompt.length < 8_000, "only the bounded candidate catalog is sent, never the whole file");
 
   const badFetch = async () => ({ ok: true, json: async () => ({ response: "ليس JSON" }) });
   const badProvider = createOllamaProvider({

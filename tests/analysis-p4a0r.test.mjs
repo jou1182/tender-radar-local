@@ -39,23 +39,20 @@ function engineWith(repository, env = {}, extra = {}) {
   return createAnalysisEngine({ repository, fixtureRoot, env, ...extra });
 }
 
-// مزود Ollama مزيف يبني تقريرًا مؤسسًا فعليًا من الـprompt نفسه (معرف المستند والأجزاء).
+// مزود Ollama مزيف يبني اختيارًا بالمعرف من كتالوج الـprompt نفسه (P4-A1D0).
 function groundedFakeFetch(calls) {
   return async (url, options) => {
     calls.push(url);
     const prompt = JSON.parse(options.body).prompt;
-    const documentId = prompt.match(/معرف المستند: ([^ ]+)\./)[1];
-    const chunkMatch = prompt.match(/\[(chk-[0-9a-f]+)\][^\n]*\n([\s\S]*)/);
-    const chunkId = chunkMatch[1];
-    const firstLine = chunkMatch[2].split("\n")[0];
-    const report = {
+    const candidateId = prompt.match(/\[(cand-[0-9a-f]{24})\]/)[1];
+    const selection = {
       ...emptyAnalysisReport(),
-      evidence: [{ evidenceId: "ev-1", documentId, sourceType: "pdf", pageNumber: 1, excerpt: firstLine.slice(0, 40), chunkId }],
-      decisionEvidenceIds: ["ev-1"],
       preliminaryDecision: "review",
       confidence: "medium",
+      decisionEvidenceIds: [candidateId],
     };
-    return { ok: true, json: async () => ({ response: JSON.stringify(report) }) };
+    delete selection.evidence; // مخطط الاختيار الداخلي لا يحتوي evidence (P4-A1D0)
+    return { ok: true, json: async () => ({ response: JSON.stringify(selection) }) };
   };
 }
 
@@ -121,6 +118,9 @@ test("R3) concurrent runs: the atomic claim lets exactly one runner reach the pr
 test("R4) grounding: fabricated excerpts, foreign documents, and unknown chunks fail the job", async () => {
   const { projectRoot, repository } = await tempRepository();
   try {
+    // P4-A1D0: النموذج لا يكتب evidence أصلًا — محاولة إرسال أدلة مختلقة (حقل evidence
+    // زائد ومعرفات غير مرشحة) تُرفض أبكر عند مدقق الاختيار بـAI_OUTPUT_INVALID،
+    // قبل أن تصل إلى grounding إطلاقًا. الحاجز الأمني نفسه باقٍ وأقوى.
     const fabricated = async () => ({
       ok: true,
       json: async () => ({
@@ -135,10 +135,11 @@ test("R4) grounding: fabricated excerpts, foreign documents, and unknown chunks 
     });
     const engine = engineWith(repository, ollamaEnv, { fetchFn: fabricated });
     const job = await engine.createJob({ fixtureId: "fixture-booklet-pdf" });
-    await assert.rejects(() => engine.runJob(job.id), (error) => error.code === "ANALYSIS_GROUNDING_FAILED");
+    await assert.rejects(() => engine.runJob(job.id), (error) => error.code === "AI_OUTPUT_INVALID");
     const failed = engine.getJob(job.id);
     assert.equal(failed.jobStatus, "failed");
-    assert.equal(failed.errorCode, "ANALYSIS_GROUNDING_FAILED");
+    assert.equal(failed.errorCode, "AI_OUTPUT_INVALID", "fabricated evidence is rejected at selection validation, before grounding");
+    assert.equal(failed.report, null, "no fabricated report is stored");
     assert.equal(failed.modelRuns[0].status, "failed");
   } finally {
     await cleanup(projectRoot, repository);
