@@ -1,0 +1,5 @@
+# حماية الملفات الثنائية من أي تحويل لنهايات الأسطر حتى تبقى البصمات ثابتة.
+*.pdf binary
+*.xlsx binary
+*.docx binary
+*.md text eol=lf

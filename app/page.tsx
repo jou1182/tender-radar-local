@@ -299,6 +299,15 @@ export default function Home() {
   const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
   const [automation, setAutomation] = useState<AutomationStatus>(defaultAutomation);
   const [isTestingAutomation, setIsTestingAutomation] = useState(false);
+  // P4-A0: مؤشر حالة محرك تحليل المستندات المحلي — قراءة حالة فقط، بلا أي زر تحليل لمستند حقيقي.
+  const [analysisHealth, setAnalysisHealth] = useState<{ reachable: boolean; provider: string; aiEnabled: boolean; model: string | null; status: string }>({ reachable: false, provider: "stub", aiEnabled: false, model: null, status: "" });
+  const analysisEngineLabel = !analysisHealth.reachable ? "غير متصل"
+    : analysisHealth.status === "available" ? "Ollama محلي"
+      : analysisHealth.status === "model-unavailable" ? "النموذج غير مثبت محليًا"
+        : analysisHealth.status === "configured-unverified" ? "Ollama محلي (غير مؤكد)"
+          : analysisHealth.status === "unavailable" ? "Ollama غير متاح"
+            : analysisHealth.status === "stub" ? "Stub للاختبار"
+              : "معطل";
 
   useEffect(() => {
     window.localStorage.removeItem("tender-radar-v3");
@@ -326,6 +335,9 @@ export default function Home() {
     fetch(`${syncServiceUrl}/catalog/activities`).then((response) => response.ok ? response.json() : Promise.reject()).then((payload: { activities?: ActivityCatalogItem[] }) => {
       setCatalog(payload.activities ?? []); setCatalogOnline(true);
     }).catch(() => { setCatalog([]); setCatalogOnline(false); });
+    fetch(`${syncServiceUrl}/analysis/health`).then((response) => response.ok ? response.json() : Promise.reject()).then((health: { provider?: string; aiEnabled?: boolean; model?: string | null; status?: string }) => {
+      setAnalysisHealth({ reachable: true, provider: health.provider ?? "stub", aiEnabled: Boolean(health.aiEnabled), model: health.model ?? null, status: health.status ?? "" });
+    }).catch(() => setAnalysisHealth({ reachable: false, provider: "stub", aiEnabled: false, model: null, status: "" }));
     fetch(`${syncServiceUrl}/search-profiles`).then((response) => response.ok ? response.json() : Promise.reject()).then((payload: { profiles?: SearchProfile[] }) => {
       const profiles = payload.profiles ?? [];
       setSearchProfiles(profiles);
@@ -676,6 +688,11 @@ export default function Home() {
     <section className={`automation-center ${automation.state}`} aria-label="أتمتة n8n المحلية">
       <div className="automation-head"><div><p className="eyebrow">المرحلة الأولى · أتمتة محلية</p><h2>n8n يستقبل ويسجّل التغييرات</h2><p>بيانات المنافسة الأساسية فقط؛ دون كلمات مرور أو ملفات أو ذكاء اصطناعي.</p></div><div className="automation-status"><span className={`helper-dot ${automation.online ? "online" : "offline"}`} /><b>{automation.online ? "n8n متصل" : automation.state === "error" ? "n8n يحتاج مراجعة" : "بانتظار الاختبار"}</b><small>{automation.workflow ?? "Radar Phase 1"}</small></div></div>
       <div className="automation-body"><div className="automation-alert"><b>{automation.state === "changes" ? "تم رصد تغييرات" : automation.state === "duplicate" ? "تم تجاهل تشغيل مكرر" : automation.online ? "الربط جاهز" : "حالة الربط"}</b><span>{automation.message}</span>{automation.lastSuccessAt && <small>آخر استلام ناجح: {new Date(automation.lastSuccessAt).toLocaleString("ar-SA", { dateStyle: "medium", timeStyle: "short" })}</small>}</div><div className="automation-counts"><article><strong>{automation.counts?.new ?? 0}</strong><span>جديدة</span></article><article><strong>{automation.counts?.changed ?? 0}</strong><span>متغيرة</span></article><article><strong>{automation.counts?.unchanged ?? 0}</strong><span>بلا تغيير</span></article></div><button type="button" onClick={() => void testAutomation()} disabled={isTestingAutomation}>{isTestingAutomation ? "جارٍ الاختبار..." : "اختبار ربط n8n"}</button></div>
+    </section>
+    <section className="analysis-engine-strip" aria-label="حالة محرك تحليل المستندات المحلي">
+      <span className={`helper-dot ${analysisHealth.reachable ? "online" : "offline"}`} />
+      <b>محرك تحليل المستندات المحلي: {analysisEngineLabel}</b>
+      <small>{analysisHealth.reachable ? (analysisHealth.model ? `النموذج المحلي: ${analysisHealth.model} · ` : "") + "fixtures اختبارية فقط — لا تحليل لمستند حقيقي في هذه المرحلة" : "خدمة التحليل غير متاحة — شغّل خدمة الرادار المحلية"}</small>
     </section>
     <section className="search-studio" aria-label="البحث المتقدم في المنافسات">
       <div className="search-studio-head">

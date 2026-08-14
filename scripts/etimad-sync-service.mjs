@@ -22,13 +22,16 @@ import {
 import { createDisabledProductionDownloadAdapter } from "./lib/attachment-adapters.mjs";
 import { cardFeeEvidence, mergeSyncFeeEvidence } from "./lib/fee-evidence.mjs";
 import { createLiveDownloadAdapter } from "./lib/live-attachment-acquisition.mjs";
+import { createAnalysisEngine } from "./lib/analysis-engine.mjs";
+import { createAnalysisApiHandler } from "./lib/analysis-api.mjs";
+import { readJsonBodyLimited as readJsonBody } from "./lib/http-body.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const privateDir = path.join(projectRoot, ".radar-data");
 const baselineFile = path.join(projectRoot, "scripts", "sync-baseline.json");
 const listUrl = "https://tenders.etimad.sa/Tender/AllSuppliersTenders?PageNumber=1";
 const port = Number(process.env.RADAR_SYNC_PORT || 4318);
-const serviceVersion = "p3b1b0-fee-integrity-1";
+const serviceVersion = "p4a-local-analysis-1";
 const localUiOrigins = new Set(["http://localhost:3000", "http://127.0.0.1:3000"]);
 const n8nWebhookUrl = process.env.N8N_RADAR_WEBHOOK_URL || "http://127.0.0.1:5678/webhook/radar-sync-5d354757-90d1-4dc3-b7f7-c93e4c50ecb1";
 const repository = await createRadarRepository({ projectRoot });
@@ -40,6 +43,13 @@ const downloadAdapter = createDisabledProductionDownloadAdapter();
 // محوّل P3-B1A الحي المحكوم: معطل افتراضيًا بيئيًا ومقيد بقائمة سماح واحدة ومفتاح إيقاف فوري.
 // لا يوجد driver حي في P3-B1A. حتى مع متغيرات التفعيل سيفشل قبل استهلاك الموافقة.
 const liveAcquisitionAdapter = createLiveDownloadAdapter({ repository, projectRoot, privateDir });
+// محرك التحليل المحلي P4-A0: fixtures مغلقة فقط، Stub افتراضي، وOllama المحلي لا يعمل إلا بتفعيل صريح.
+const analysisEngine = createAnalysisEngine({
+  repository,
+  fixtureRoot: path.join(projectRoot, "analysis-fixtures"),
+  env: process.env,
+});
+const handleAnalysisRequest = createAnalysisApiHandler({ engine: analysisEngine });
 
 let syncPromise;
 let state = { phase: "idle", region: null, checked: 0, message: "جاهز", progress: repository.getSyncProgress() };
@@ -492,12 +502,7 @@ function send(response, status, payload) {
   response.end(JSON.stringify(payload));
 }
 
-async function readJsonBody(request) {
-  const chunks = [];
-  for await (const chunk of request) chunks.push(chunk);
-  if (!chunks.length) return {};
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
-}
+// قراءة جسم JSON تتم عبر readJsonBody المستوردة من lib/http-body.mjs — حد 64 ك.ب إلزامي.
 
 const server = http.createServer(async (request, response) => {
   if (request.method === "OPTIONS") return send(response, 204, {});
@@ -691,9 +696,16 @@ const server = http.createServer(async (request, response) => {
       const result = await syncPromise;
       return send(response, 200, result);
     }
+    // P4-A0: نقاط التحليل المحلي — معزولة تمامًا عن مسارات المزامنة والتنزيل أعلاه.
+    if (pathname === "/analysis/health" || pathname === "/analysis/jobs" || pathname.startsWith("/analysis/jobs/")) {
+      const body = request.method === "POST" ? await readJsonBody(request) : {};
+      const handled = await handleAnalysisRequest({ method: request.method, pathname, body });
+      if (handled) return send(response, handled.status, handled.payload);
+    }
     return send(response, 404, { error: "NOT_FOUND" });
   } catch (error) {
-    const status = ["TENDER_NOT_FOUND", "APPROVAL_NOT_FOUND", "APPROVAL_INTENT_NOT_FOUND"].includes(error?.code) ? 404
+    const status = error?.code === "REQUEST_BODY_TOO_LARGE" ? 413
+      : ["TENDER_NOT_FOUND", "APPROVAL_NOT_FOUND", "APPROVAL_INTENT_NOT_FOUND"].includes(error?.code) ? 404
       : ["INVALID_PROFILE", "INVALID_AVAILABILITY", "INVALID_DOWNLOAD_REQUEST", "BATCH_LIMIT_EXCEEDED",
         "EXTENSION_NOT_ALLOWED", "FILE_NOT_LISTED", "AVAILABILITY_NOT_ALLOWED", "CONSENT_REQUIRED",
         "PURCHASE_CONFIRMATION_REQUIRED", "FILE_TOO_LARGE", "BATCH_TOO_LARGE",

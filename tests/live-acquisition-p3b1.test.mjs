@@ -565,7 +565,7 @@ test("live module and service wiring keep the safety invariants textually", asyn
   assert.match(service, /createLiveDownloadAdapter/);
   assert.match(service, /pathname === "\/approval-jobs\/live"/);
   assert.match(service, /HUMAN_CONFIRMATION_ORIGIN_REQUIRED/);
-  assert.match(service, /p3b1b0-fee-integrity-1/);
+  assert.match(service, /p4a-local-analysis-1/);
   assert.doesNotMatch(service, /consumeDownloadApproval/, "consumption stays inside the guarded module, never in the service");
   const jobRoute = service.slice(service.indexOf('pathname === "/approval-jobs"'), service.indexOf('pathname === "/approval-jobs"') + 2200);
   assert.doesNotMatch(jobRoute, /liveAcquisitionAdapter/, "the B0 route stays untouched; the live route is separate");

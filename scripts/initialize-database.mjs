@@ -3,8 +3,10 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { createRadarRepository } from "./lib/radar-repository.mjs";
 
-const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const baseline = JSON.parse(await readFile(path.join(projectRoot, "scripts", "sync-baseline.json"), "utf8"));
+const scriptRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+// RADAR_DB_INIT_ROOT يوجّه التهيئة إلى قاعدة مؤقتة مستقلة (للاختبارات)، دون لمس قاعدة المشروع.
+const projectRoot = process.env.RADAR_DB_INIT_ROOT ? path.resolve(process.env.RADAR_DB_INIT_ROOT) : scriptRoot;
+const baseline = JSON.parse(await readFile(path.join(scriptRoot, "scripts", "sync-baseline.json"), "utf8"));
 const repository = await createRadarRepository({ projectRoot });
 repository.seedBaseline(baseline);
 const snapshot = repository.getDashboardSnapshot();

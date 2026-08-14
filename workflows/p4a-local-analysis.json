@@ -1,0 +1,110 @@
+{
+  "name": "Radar P4-A Local Analysis",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "radar-analysis-job-7f1d2c4e",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "p4a-webhook-in",
+      "name": "استقبال analysisJobId",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "has-job-id",
+              "leftValue": "={{ $json.body.analysisJobId }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "p4a-validate-input",
+      "name": "التحقق من المدخل",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://127.0.0.1:4318/analysis/jobs/{{ encodeURIComponent($json.body.analysisJobId) }}/run",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Content-Type", "value": "application/json" }]
+        },
+        "options": { "timeout": 120000 }
+      },
+      "id": "p4a-run-job",
+      "name": "تشغيل مهمة التحليل محليًا",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, -120],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, jobStatus: $json.job?.jobStatus || 'completed', jobId: $json.job?.id || null }) }}"
+      },
+      "id": "p4a-respond-success",
+      "name": "تسجيل النجاح",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [660, -200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, error: $json.error?.code || 'ANALYSIS_FAILED', message: $json.error?.message || 'فشل تشغيل مهمة التحليل' }) }}"
+      },
+      "id": "p4a-respond-failure",
+      "name": "تسجيل الفشل",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [660, -40]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"ok\":false,\"error\":\"INVALID_INPUT\",\"message\":\"أرسل analysisJobId فقط في جسم الطلب.\"}"
+      },
+      "id": "p4a-respond-invalid",
+      "name": "رفض المدخل الناقص",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [440, 140]
+    }
+  ],
+  "connections": {
+    "استقبال analysisJobId": { "main": [[{ "node": "التحقق من المدخل", "type": "main", "index": 0 }]] },
+    "التحقق من المدخل": {
+      "main": [
+        [{ "node": "تشغيل مهمة التحليل محليًا", "type": "main", "index": 0 }],
+        [{ "node": "رفض المدخل الناقص", "type": "main", "index": 0 }]
+      ]
+    },
+    "تشغيل مهمة التحليل محليًا": {
+      "main": [
+        [{ "node": "تسجيل النجاح", "type": "main", "index": 0 }],
+        [{ "node": "تسجيل الفشل", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "pinData": {},
+  "tags": []
+}

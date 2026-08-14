@@ -80,7 +80,7 @@ function consume(repository, approval, options = {}) {
   return repository.consumeDownloadApproval(approval.id, { manifest: approval.scope, ...options });
 }
 
-test("Schema v6 migration preserves v4 tenders, details, attachments, and legacy approvals", async () => {
+test("Schema v7 migration preserves v4 tenders, details, attachments, and legacy approvals", async () => {
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), "radar-v4-"));
   let repository;
   try {
@@ -128,7 +128,7 @@ test("Schema v6 migration preserves v4 tenders, details, attachments, and legacy
     legacy.close();
 
     repository = await createRadarRepository({ projectRoot });
-    assert.equal(repository.schemaVersion, 6);
+    assert.equal(repository.schemaVersion, 7);
     const stored = repository.getTender("260000000500");
     assert.equal(stored.title, "منافسة من v4");
     assert.equal(stored.feeVerification, "unknown");

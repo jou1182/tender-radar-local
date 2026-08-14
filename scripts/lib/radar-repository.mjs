@@ -16,7 +16,7 @@ import {
 } from "./download-gate.mjs";
 import { assertDownloadFeeGate, cardFeeEvidence, detailFeeEvidence, mergeSyncFeeEvidence } from "./fee-evidence.mjs";
 
-const migrationVersion = 6;
+const migrationVersion = 7;
 const trackedTenderFields = ["title", "agency", "fee", "region", "deadline", "publishedAt", "platformStatus", "activity", "etimadUrl"];
 
 function safeJson(value, fallback) {
@@ -347,6 +347,77 @@ export async function createRadarRepository({ projectRoot }) {
       message TEXT NOT NULL
     );
 
+    -- P4-A0: جداول تحليل المستندات المحلية — مستقلة تمامًا عن مسارات المزامنة والتنزيل.
+    -- لا تُحفظ هنا أي نصوص نماذج أو أسرار أو بيانات اعتماد؛ النتائج المنظمة فقط.
+    CREATE TABLE IF NOT EXISTS analysis_documents (
+      id TEXT PRIMARY KEY,
+      tender_reference TEXT NOT NULL DEFAULT '',
+      document_type TEXT NOT NULL CHECK (document_type IN ('pdf', 'xlsx', 'docx')),
+      original_file_name TEXT NOT NULL,
+      local_stored_name TEXT NOT NULL,
+      checksum TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL CHECK (size_bytes > 0),
+      source_kind TEXT NOT NULL DEFAULT 'fixture' CHECK (source_kind IN ('fixture')),
+      fixture_id TEXT NOT NULL DEFAULT '',
+      registered_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS analysis_jobs (
+      id TEXT PRIMARY KEY,
+      tender_reference TEXT NOT NULL DEFAULT '',
+      document_id TEXT NOT NULL REFERENCES analysis_documents(id),
+      job_status TEXT NOT NULL DEFAULT 'queued' CHECK (job_status IN ('queued', 'extracting', 'analyzing', 'completed', 'failed', 'cancelled')),
+      provider TEXT NOT NULL CHECK (provider IN ('stub', 'ollama')),
+      model TEXT,
+      prompt_version TEXT NOT NULL,
+      output_schema_version TEXT NOT NULL,
+      report_json TEXT,
+      created_at TEXT NOT NULL,
+      started_at TEXT,
+      finished_at TEXT,
+      error_code TEXT,
+      error_message TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS analysis_findings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id TEXT NOT NULL REFERENCES analysis_jobs(id) ON DELETE CASCADE,
+      category TEXT NOT NULL,
+      statement TEXT NOT NULL,
+      severity TEXT NOT NULL,
+      confidence TEXT NOT NULL,
+      evidence_ids_json TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS analysis_evidence (
+      id TEXT PRIMARY KEY,
+      job_id TEXT NOT NULL REFERENCES analysis_jobs(id) ON DELETE CASCADE,
+      document_id TEXT NOT NULL REFERENCES analysis_documents(id),
+      source_type TEXT NOT NULL,
+      page_number INTEGER,
+      sheet_name TEXT,
+      cell_range TEXT,
+      section TEXT,
+      excerpt TEXT NOT NULL,
+      chunk_id TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS model_runs (
+      id TEXT PRIMARY KEY,
+      job_id TEXT NOT NULL REFERENCES analysis_jobs(id) ON DELETE CASCADE,
+      provider TEXT NOT NULL,
+      model TEXT,
+      status TEXT NOT NULL CHECK (status IN ('succeeded', 'failed')),
+      duration_ms INTEGER NOT NULL DEFAULT 0,
+      prompt_version TEXT NOT NULL,
+      output_schema_version TEXT NOT NULL,
+      error_code TEXT,
+      created_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_tenders_last_seen ON tenders(last_seen_at DESC);
     CREATE INDEX IF NOT EXISTS idx_tenders_active ON tenders(active, deadline);
     CREATE INDEX IF NOT EXISTS idx_changes_reference ON tender_changes(tender_reference, observed_at DESC);
@@ -632,6 +703,54 @@ export async function createRadarRepository({ projectRoot }) {
       UPDATE approval_intents SET status = 'confirmed', confirmed_at = ?
       WHERE id = ? AND status = 'pending' AND expires_at > ?
     `),
+    // P4-A0: عبارات تحليل المستندات المحلية.
+    insertAnalysisDocument: database.prepare(`
+      INSERT INTO analysis_documents (
+        id, tender_reference, document_type, original_file_name, local_stored_name,
+        checksum, mime_type, size_bytes, source_kind, fixture_id, registered_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'fixture', ?, ?)
+    `),
+    getAnalysisDocument: database.prepare("SELECT * FROM analysis_documents WHERE id = ?"),
+    insertAnalysisJob: database.prepare(`
+      INSERT INTO analysis_jobs (
+        id, tender_reference, document_id, job_status, provider, model,
+        prompt_version, output_schema_version, created_at
+      ) VALUES (?, ?, ?, 'queued', ?, ?, ?, ?, ?)
+    `),
+    getAnalysisJob: database.prepare("SELECT * FROM analysis_jobs WHERE id = ?"),
+    // استيلاء ذري: ينجح مرة واحدة فقط لمهمة queued؛ المتسابق الثاني يحصل على changes=0.
+    claimAnalysisJob: database.prepare(`
+      UPDATE analysis_jobs SET job_status = 'extracting', started_at = COALESCE(?, started_at)
+      WHERE id = ? AND job_status = 'queued'
+    `),
+    updateAnalysisJobStatus: database.prepare(`
+      UPDATE analysis_jobs SET
+        job_status = ?,
+        started_at = COALESCE(?, started_at),
+        finished_at = COALESCE(?, finished_at),
+        error_code = ?,
+        error_message = ?
+      WHERE id = ?
+    `),
+    completeAnalysisJob: database.prepare(`
+      UPDATE analysis_jobs SET job_status = 'completed', report_json = ?, finished_at = ?, error_code = NULL, error_message = NULL
+      WHERE id = ?
+    `),
+    insertAnalysisFinding: database.prepare(`
+      INSERT INTO analysis_findings (job_id, category, statement, severity, confidence, evidence_ids_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `),
+    listAnalysisFindings: database.prepare("SELECT * FROM analysis_findings WHERE job_id = ? ORDER BY id"),
+    insertAnalysisEvidence: database.prepare(`
+      INSERT INTO analysis_evidence (id, job_id, document_id, source_type, page_number, sheet_name, cell_range, section, excerpt, chunk_id, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `),
+    listAnalysisEvidence: database.prepare("SELECT * FROM analysis_evidence WHERE job_id = ? ORDER BY rowid"),
+    insertModelRun: database.prepare(`
+      INSERT INTO model_runs (id, job_id, provider, model, status, duration_ms, prompt_version, output_schema_version, error_code, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `),
+    listModelRuns: database.prepare("SELECT * FROM model_runs WHERE job_id = ? ORDER BY created_at, rowid"),
   };
 
   function transaction(work) {
@@ -1329,6 +1448,133 @@ export async function createRadarRepository({ projectRoot }) {
     }
   }
 
+  // ---------- P4-A0: تحليل المستندات المحلي ----------
+  function registerAnalysisDocument({ id, tenderReference, documentType, originalFileName, localStoredName, checksum, mimeType, sizeBytes, fixtureId, now }) {
+    const nowIso = now instanceof Date ? now.toISOString() : String(now || new Date().toISOString());
+    statements.insertAnalysisDocument.run(
+      id, tenderReference || "", documentType, originalFileName, localStoredName,
+      checksum, mimeType, Number(sizeBytes), fixtureId || "", nowIso,
+    );
+    return statements.getAnalysisDocument.get(id);
+  }
+
+  function rowToAnalysisDocument(row) {
+    if (!row) return null;
+    return {
+      id: row.id,
+      tenderReference: row.tender_reference,
+      documentType: row.document_type,
+      originalFileName: row.original_file_name,
+      localStoredName: row.local_stored_name,
+      checksum: row.checksum,
+      mimeType: row.mime_type,
+      sizeBytes: Number(row.size_bytes),
+      sourceKind: row.source_kind,
+      fixtureId: row.fixture_id,
+      registeredAt: row.registered_at,
+    };
+  }
+
+  function createAnalysisJob({ id, documentId, tenderReference, provider, model, promptVersion, outputSchemaVersion, now }) {
+    const nowIso = now instanceof Date ? now.toISOString() : String(now || new Date().toISOString());
+    statements.insertAnalysisJob.run(id, tenderReference || "", documentId, provider, model || null, promptVersion, outputSchemaVersion, nowIso);
+    return getAnalysisJob(id);
+  }
+
+  function rowToAnalysisJob(row) {
+    if (!row) return null;
+    return {
+      id: row.id,
+      tenderReference: row.tender_reference,
+      documentId: row.document_id,
+      jobStatus: row.job_status,
+      provider: row.provider,
+      model: row.model || null,
+      promptVersion: row.prompt_version,
+      outputSchemaVersion: row.output_schema_version,
+      createdAt: row.created_at,
+      startedAt: row.started_at || null,
+      finishedAt: row.finished_at || null,
+      errorCode: row.error_code || null,
+      errorMessage: row.error_message || null,
+      report: safeJson(row.report_json, null),
+    };
+  }
+
+  function getAnalysisJob(id) {
+    const row = statements.getAnalysisJob.get(id);
+    if (!row) return null;
+    const job = rowToAnalysisJob(row);
+    job.document = rowToAnalysisDocument(statements.getAnalysisDocument.get(job.documentId));
+    job.findings = statements.listAnalysisFindings.all(job.id).map((finding) => ({
+      category: finding.category,
+      statement: finding.statement,
+      severity: finding.severity,
+      confidence: finding.confidence,
+      evidenceIds: safeJson(finding.evidence_ids_json, []),
+    }));
+    job.modelRuns = statements.listModelRuns.all(job.id).map((run) => ({
+      provider: run.provider,
+      model: run.model || null,
+      status: run.status,
+      durationMs: Number(run.duration_ms),
+      promptVersion: run.prompt_version,
+      outputSchemaVersion: run.output_schema_version,
+      errorCode: run.error_code || null,
+      createdAt: run.created_at,
+    }));
+    return job;
+  }
+
+  function updateAnalysisJobStatus(id, { jobStatus, startedAt, finishedAt, errorCode = null, errorMessage = null }) {
+    statements.updateAnalysisJobStatus.run(jobStatus, startedAt || null, finishedAt || null, errorCode, errorMessage, id);
+    return getAnalysisJob(id);
+  }
+
+  // استيلاء ذري على مهمة queued: يعيد true للفائز الوحيد فقط.
+  function claimAnalysisJob(id, startedAt) {
+    const result = statements.claimAnalysisJob.run(String(startedAt || new Date().toISOString()), id);
+    return result.changes === 1;
+  }
+
+  // حفظ النتيجة والأدلة والتشغيل في معاملة واحدة: لا تقرير ناجز بلا أدلة مطابقة.
+  function saveAnalysisResult(jobId, { report, modelRun, now }) {
+    const nowIso = String(now || new Date().toISOString());
+    transaction(() => {
+      for (const item of report.evidence) {
+        statements.insertAnalysisEvidence.run(
+          item.evidenceId, jobId, item.documentId, item.sourceType,
+          item.pageNumber ?? null, item.sheetName ?? null, item.cellRange ?? null, item.section ?? null,
+          item.excerpt, item.chunkId, nowIso,
+        );
+      }
+      // الفئات الاثنتا عشرة كلها findings موثقة بأدلة (P4-A0R2) — لا نصوص حرة بلا دليل.
+      for (const field of ["scopeOfWork", "boqSummary", "criticalQuantities", "eligibilityRequirements", "requiredExperience", "deadlines", "bidBonds", "guarantees", "penalties", "contractualRisks", "unclearItems", "questionsForAuthority"]) {
+        for (const finding of report[field]) {
+          statements.insertAnalysisFinding.run(
+            jobId, finding.category, finding.statement, finding.severity, finding.confidence,
+            JSON.stringify(finding.evidenceIds), nowIso,
+          );
+        }
+      }
+      statements.completeAnalysisJob.run(JSON.stringify(report), nowIso, jobId);
+      statements.insertModelRun.run(
+        `mrun-${crypto.randomUUID()}`, jobId, modelRun.provider, modelRun.model || null, modelRun.status,
+        Number(modelRun.durationMs) || 0, modelRun.promptVersion, modelRun.outputSchemaVersion,
+        modelRun.errorCode || null, nowIso,
+      );
+    });
+    return getAnalysisJob(jobId);
+  }
+
+  function recordModelRun(jobId, { provider, model, status, durationMs, promptVersion, outputSchemaVersion, errorCode, now }) {
+    statements.insertModelRun.run(
+      `mrun-${crypto.randomUUID()}`, jobId, provider, model || null, status,
+      Number(durationMs) || 0, promptVersion, outputSchemaVersion, errorCode || null,
+      String(now || new Date().toISOString()),
+    );
+  }
+
   return {
     databasePath,
     schemaVersion: migrationVersion,
@@ -1370,6 +1616,13 @@ export async function createRadarRepository({ projectRoot }) {
     loadState,
     saveState,
     recordAutomationStatus,
+    registerAnalysisDocument,
+    createAnalysisJob,
+    getAnalysisJob,
+    updateAnalysisJobStatus,
+    claimAnalysisJob,
+    saveAnalysisResult,
+    recordModelRun,
     close: () => database.close(),
   };
 }

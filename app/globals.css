@@ -67,6 +67,9 @@ h1,h2 { margin:0; letter-spacing:-.03em; } h1 { font-size:clamp(2rem,4vw,3.35rem
 @keyframes syncPulse { 70%,100% { box-shadow:0 0 0 10px transparent; } }
 
 .automation-center { margin:0 0 25px; overflow:hidden; border:1px solid #cde3da; border-radius:16px; background:white; box-shadow:0 10px 28px #164f3c0a; }
+.analysis-engine-strip { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 25px; padding:10px 16px; border:1px dashed #cde3da; border-radius:12px; background:#fbfefd; font-size:.8rem; }
+.analysis-engine-strip b { font-size:.84rem; }
+.analysis-engine-strip small { color:var(--muted); }
 .automation-center.changes { border-color:#6fbea3; }
 .automation-center.error { border-color:#e3c07b; }
 .automation-head { display:flex; align-items:center; justify-content:space-between; gap:22px; padding:19px 22px; background:linear-gradient(100deg,#f2faf6,#fbfefd); }
