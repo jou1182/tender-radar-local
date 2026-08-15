@@ -493,13 +493,13 @@ test("22) الاختبارات لا تفتح قاعدة التشغيل ولا ت
 
 test("23) أداة التحقق مستقلة: تُنفذ من داخل الحزمة بعد إخفاء المصدر وتنجح، والعبث بها يفشل", async (t) => {
   const { bundleDir, repoDir, base } = await arrangeBundle(t);
-  
+
   // 1. نقل الحزمة وحدها إلى مجلد مستقل وإخفاء مستودع المصدر
   const isolatedDir = path.join(base, "isolated");
   await mkdir(isolatedDir);
   const newBundleDir = path.join(isolatedDir, "bundle");
   await rename(bundleDir, newBundleDir);
-  
+
   const hiddenRepoDir = path.join(base, "hidden-repo");
   await rename(repoDir, hiddenRepoDir);
 
@@ -507,7 +507,7 @@ test("23) أداة التحقق مستقلة: تُنفذ من داخل الحز�
   const nodeCmd = process.platform === "win32" ? "node.exe" : "node";
   const verifyPath = path.join(newBundleDir, "tools", "verify-recovery-bundle.mjs");
   const runVerify = (dir) => spawnSync(nodeCmd, [verifyPath, "."], { cwd: dir, encoding: "utf8" });
-  
+
   // 3. نجاح التحقق دون أي وصول إلى ملفات worktree
   const okRun = runVerify(newBundleDir);
   assert.equal(okRun.status, 0, `التحقق المستقل ينجح:\n${okRun.stdout}\n${okRun.stderr}`);
@@ -526,4 +526,52 @@ test("24) اختبارات تمنع رجوع القيم القديمة (P4-A1D0M
   assert.notEqual(state.nextPlannedPhase, "P4-M0");
   assert.notEqual(state.testBaselines.functionalBaseline.passed, 143);
   assert.notEqual(state.testBaselines.continuityPackage.passed, 155);
+});
+
+test("25) ملف أدوات التحقق recovery-secrets.mjs يخضع لفحص المحتوى الصارم ولا يملك استثناءً مطلقًا", async (t) => {
+  const { bundleDir } = await arrangeBundle(t);
+  const secretsPath = path.join(bundleDir, "tools", "lib", "recovery-secrets.mjs");
+  const original = await readFile(secretsPath, "utf8");
+
+  // 1. الحزمة السليمة تمر
+  let verification = await verifyRecoveryBundle({ bundleDir });
+  assert.equal(verification.ok, true, "الحزمة السليمة تمر (وتشمل recovery-secrets.mjs دون استثناء للمحتوى)");
+
+  // 2. حقن سر (api_key) في الأداة نفسها
+  await writeFile(secretsPath, original + '\nconst test_api_key = "sk-12345678901234567890";\n');
+  await rehashBundle(bundleDir); // إعادة حساب manifest و SHA256SUMS
+
+  await assert.rejects(verifyRecoveryBundle({ bundleDir }), (error) => {
+    assert.equal(error.stage, "secrets-gate");
+    assert.match(error.message, /tools[\\/]lib[\\/]recovery-secrets\.mjs/);
+    assert.match(error.message, /secret-content/);
+    assert.doesNotMatch(error.message, /sk-12345678901234567890/, "لا يطبع قيمة السر");
+    return true;
+  });
+
+  // 3. حقن مسار شخصي في الأداة نفسها
+  await writeFile(secretsPath, original + '\n// مسار وهمي C:\\Users\\MySecretUser\\Documents\n');
+  await rehashBundle(bundleDir);
+
+  await assert.rejects(verifyRecoveryBundle({ bundleDir }), (error) => {
+    assert.equal(error.stage, "secrets-gate");
+    assert.match(error.message, /tools[\\/]lib[\\/]recovery-secrets\.mjs/);
+    assert.match(error.message, /personal-path/);
+    assert.doesNotMatch(error.message, /MySecretUser/, "لا يطبع اسم المستخدم الشخصي");
+    return true;
+  });
+});
+
+test("26) ملف آخر باسم يحتوي على كلمة secret يُرفض بالاسم", async (t) => {
+  const { bundleDir } = await arrangeBundle(t);
+
+  await writeFile(path.join(bundleDir, "my-secret.txt"), "hello");
+  await rehashBundle(bundleDir);
+
+  await assert.rejects(verifyRecoveryBundle({ bundleDir }), (error) => {
+    assert.equal(error.stage, "secrets-gate");
+    assert.match(error.message, /forbidden-name/);
+    assert.match(error.message, /my-secret\.txt/);
+    return true;
+  });
 });

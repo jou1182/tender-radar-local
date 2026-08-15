@@ -61,7 +61,7 @@ export function isInside(parent, child) {
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
-const textExtensions = new Set([".md", ".json", ".txt"]);
+const textExtensions = new Set([".md", ".json", ".txt", ".mjs"]);
 
 // ملفات الحزمة النصية التي تخضع لفحص المحتوى (repo.bundle وdatabase.sqlite
 // ثنائية ولا تُفحص كنص — القرار موثق في docs/continuity/RECOVERY_BUNDLE.md).
