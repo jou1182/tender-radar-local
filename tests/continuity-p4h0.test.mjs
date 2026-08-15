@@ -63,7 +63,7 @@ test("3) القيم الأساسية في CURRENT_STATE.json صحيحة (بني�
   assert.equal(state.testBaselines.functionalBaseline.passed, 219);
   assert.equal(state.testBaselines.functionalBaseline.failed, 0);
   assert.equal(state.testBaselines.functionalBaseline.commit, "2677e0099ef95bd6077e785f60a18fb43e7723e1");
-  assert.equal(state.testBaselines.continuityPackage.passed, 249);
+  assert.equal(state.testBaselines.continuityPackage.passed, 251);
   assert.equal(state.testBaselines.continuityPackage.failed, 0);
   assert.equal(state.testBaselines.continuityPackage.phase, "P4-H1B");
   assert.equal(state.analysisReportSchemaVersion, "analysis-report-v2");
@@ -229,11 +229,19 @@ test("11) الوثائق تسجل القيود الحاكمة: fixtures فقط �
 
 test("12) السجل يوثق المراحل وحالاتها دون نسخ تقارير كاملة", () => {
   const ledger = readPackageFile("docs/continuity/PHASE_LEDGER.md");
-  for (const phase of ["P0", "P1", "P2", "P3-A", "P3-B0", "P3-B1A", "P3-B1B0", "P4-A0", "P4-A1R", "P4-A1C0", "P4-A1D0", "P4-H0", "P4-H1A", "P4-H1AR", "P4-H1AR2", "P4-H1B"]) {
+  for (const phase of ["P0", "P1", "P2", "P3-A", "P3-B0", "P3-B1A", "P3-B1B0", "P4-A0", "P4-A1R", "P4-A1C0", "P4-A1D0", "P4-H0", "P4-H0R", "P4-H0R2", "P4-H1A", "P4-H1AR", "P4-H1AR2", "P4-H1AR2M", "P4-H1AR2MR", "P4-H1B"]) {
     assert.ok(ledger.includes(phase), `السجل يذكر ${phase}`);
   }
   assert.match(ledger, /5428aee/, "commit P4-A1D0 موثق");
+  assert.match(ledger, /90b6246/, "commit P4-H0 موثق");
+  assert.match(ledger, /5f7bd49/, "commit P4-H0R موثق");
+  assert.match(ledger, /47478c8/, "commit P4-H0R2 موثق");
+  assert.match(ledger, /c548e83/, "commit P4-H1A موثق");
+  assert.match(ledger, /71c5031/, "commit P4-H1AR موثق");
+  assert.match(ledger, /7878e2d/, "commit P4-H1AR2 موثق");
+  assert.match(ledger, /aa8f50d/, "commit P4-H1AR2M موثق");
   assert.match(ledger, /9484612/, "commit P4-H1AR2MRM موثق");
+  assert.match(ledger, /انحراف اختباري مباشر/, "توثيق الانحراف الإجرائي لـ aa8f50d موثق");
   assert.match(ledger, /fast-forward/, "سياسة الدمج موثقة");
   assert.match(ledger, /paused/, "حالة التوقف مستخدمة");
   // حالة P3-B1B المصححة (P4-H0R): توقف آمن معتمد وليست approved عادية.
@@ -256,8 +264,11 @@ test("13) منع رجوع قيم وحالات الاستمرارية وحزمة 
 
   // التأكد من عدم وجود الأعداد القديمة 143/155 في وثيقة التسليم
   const handoff = readPackageFile("docs/continuity/PROJECT_HANDOFF.md");
+  assert.ok(!handoff.includes("143 ناجحة"), "وثيقة التسليم يجب ألا تحتوي على الأعداد القديمة 143 ناجحة");
   assert.ok(!handoff.includes("155 ناجحة"), "وثيقة التسليم يجب ألا تحتوي على الأعداد القديمة 155 ناجحة");
-  assert.match(handoff, /249 ناجحة/, "وثيقة التسليم يجب أن تسجل عدد الاختبارات الحديث 249 ناجحة");
+  assert.ok(!handoff.includes("249 ناجحة"), "وثيقة التسليم يجب ألا تحتوي على الأعداد القديمة 249 ناجحة");
+  assert.match(handoff, /219 ناجحًا/, "وثيقة التسليم يجب أن تسجل الأساس الوظيفي 219 ناجحًا");
+  assert.match(handoff, /251 ناجحًا/, "وثيقة التسليم يجب أن تسجل الاستمرارية 251 ناجحًا");
 
   // التأكد من إزالة الادعاء بأن P4-M0 ككل لم تبدأ (لأن M0A انتهت)
   assert.ok(!handoff.includes("P4‑M0/P4‑M1"), "لا خلط بين P4-M0 كاملة و P4-M0B");
