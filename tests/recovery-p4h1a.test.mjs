@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { cp, mkdir, mkdtemp, open, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, open, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -46,12 +46,12 @@ function makeFixtureState(overrides = {}) {
     stateSchemaVersion: "neutral-continuity-state-v1",
     projectName: "tender-radar-local",
     functionalBaselineCommit: "0123456789abcdef0123456789abcdef01234567",
-    lastApprovedFunctionalPhase: "P4-FIXA",
-    continuityPackagePhase: "P4-HFIX",
+    lastApprovedFunctionalPhase: "P4-M0AMRM",
+    continuityPackagePhase: "P4-H1AR",
     databaseSchemaVersion: 7,
     testBaselines: {
       functionalBaseline: { commit: "0123456789abcdef0123456789abcdef01234567", passed: 143, failed: 0 },
-      continuityPackage: { phase: "P4-HFIX", passed: 155, failed: 0 },
+      continuityPackage: { phase: "P4-H1AR", passed: 155, failed: 0 },
     },
     attachmentLiveStages: {
       p3b1b: {
@@ -66,7 +66,7 @@ function makeFixtureState(overrides = {}) {
       p3b1c: { status: "paused", reason: "تحتاج موافقة بشرية جديدة بعد P3-B1B" },
     },
     pendingHumanGates: ["بوابة اختبارية أولى", "بوابة اختبارية ثانية"],
-    nextPlannedPhase: "P4-MFIX",
+    nextPlannedPhase: "P4-H1B",
     ...overrides,
   };
 }
@@ -96,6 +96,7 @@ async function arrangeBundle(t, { stateOverrides } = {}) {
   for (const doc of bundleDocFiles) {
     await cp(path.join(realDocsDir, doc), path.join(repoDir, "docs", "continuity", doc));
   }
+  await cp(path.join(root, "scripts"), path.join(repoDir, "scripts"), { recursive: true });
   const state = makeFixtureState(stateOverrides);
   await writeFile(path.join(repoDir, "docs", "continuity", "CURRENT_STATE.json"), `${JSON.stringify(state, null, 2)}\n`);
   await writeFile(path.join(repoDir, "AGENTS.md"), "# fixture repo\n");
@@ -148,7 +149,7 @@ test("1) إنشاء حزمة من مستودع وقاعدة اصطناعيين �
     assert.ok(existsSync(path.join(bundleDir, ...relative.split("/"))), `${relative} موجود في الحزمة`);
   }
   assert.equal(result.manifest.manifestVersion, "recovery-bundle-manifest-v1");
-  assert.equal(result.manifest.verifyCommand, 'npm run recovery:verify -- "<RECOVERY_BUNDLE_DIR>"');
+  assert.equal(result.manifest.verifyCommand, 'node tools/verify-recovery-bundle.mjs "."');
   const verification = await verifyRecoveryBundle({ bundleDir });
   assert.equal(verification.ok, true);
   // يرفض مجلد إخراج داخل مجلد المشروع (حتى لا يلوث Git).
@@ -336,9 +337,9 @@ test("14) RESUME_HERE يعكس Hash والمرحلة وschema الفعلية", a
   const { bundleDir, head } = await arrangeBundle(t);
   const resume = await readFile(path.join(bundleDir, bundleLayout.resume), "utf8");
   assert.match(resume, new RegExp(head), "يذكر Hash رأس main الفعلي");
-  assert.match(resume, /P4-FIXA/, "يذكر آخر مرحلة وظيفية من الحالة");
-  assert.match(resume, /P4-HFIX/, "يذكر مرحلة حزمة الاستمرارية");
-  assert.match(resume, /P4-MFIX/, "يذكر المرحلة التالية المخططة");
+  assert.match(resume, /P4-M0AMRM/, "يذكر آخر مرحلة وظيفية من الحالة");
+  assert.match(resume, /P4-H1AR/, "يذكر مرحلة حزمة الاستمرارية");
+  assert.match(resume, /P4-H1B/, "يذكر المرحلة التالية المخططة");
   assert.match(resume, /schemaVersion المسجلة: 7/, "يذكر schemaVersion الفعلية");
   assert.match(resume, /approved_safe_stop/, "يوثق حالة التوقف الآمن المعتمد");
   assert.match(resume, /paused/, "يوثق توقف P3-B1C");
@@ -359,7 +360,7 @@ test("15) تغيير الحالة في fixture ينعكس في الحزمة ال
   const resumeV2 = await readFile(path.join(bundleDirV2, bundleLayout.resume), "utf8");
   assert.notEqual(resumeV2, resumeV1, "RESUME_HERE يتغير بتغير الحالة");
   assert.match(resumeV2, /P4-FIXB/, "يعكس المرحلة الجديدة");
-  assert.doesNotMatch(resumeV2, /P4-FIXA/, "لا يبقى أثر المرحلة القديمة");
+  assert.doesNotMatch(resumeV2, /P4-M0AMRM/, "لا يبقى أثر المرحلة القديمة");
   assert.match(resumeV2, new RegExp(headV2), "يعكس Hash الجديد");
   assert.equal(second.manifest.git.headCommit, headV2);
   assert.equal(second.manifest.continuity.lastApprovedFunctionalPhase, "P4-FIXB");
@@ -443,9 +444,7 @@ test("19) فشل Git bundle لا ينتج حزمة valid", async (t) => {
 test("20) أمر recovery:verify يعيد 0 للحزمة السليمة وغير صفر للمعدلة", async (t) => {
   const packageJson = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
   assert.equal(packageJson.scripts["recovery:verify"], "node scripts/verify-recovery-bundle.mjs");
-  const npmCmd = process.platform === "win32"
-    ? (existsSync(path.join(path.dirname(process.execPath), "npm.cmd")) ? path.join(path.dirname(process.execPath), "npm.cmd") : "npm.cmd")
-    : "npm";
+  const npmCmd = "npm.cmd";
   const runVerify = (bundleDir) => spawnSync("cmd.exe", ["/d", "/s", "/c", npmCmd, "run", "recovery:verify", "--", bundleDir], { cwd: root, encoding: "utf8" });
   const { bundleDir } = await arrangeBundle(t);
   const okRun = runVerify(bundleDir);
@@ -490,4 +489,41 @@ test("22) الاختبارات لا تفتح قاعدة التشغيل ولا ت
     const content = await readFile(path.join(root, relative), "utf8");
     assert.doesNotMatch(content, /fetch\(|node:http|node:https|node:net|WebSocket/, `${relative}: لا استدعاء شبكة`);
   }
+});
+
+test("23) أداة التحقق مستقلة: تُنفذ من داخل الحزمة بعد إخفاء المصدر وتنجح، والعبث بها يفشل", async (t) => {
+  const { bundleDir, repoDir, base } = await arrangeBundle(t);
+  
+  // 1. نقل الحزمة وحدها إلى مجلد مستقل وإخفاء مستودع المصدر
+  const isolatedDir = path.join(base, "isolated");
+  await mkdir(isolatedDir);
+  const newBundleDir = path.join(isolatedDir, "bundle");
+  await rename(bundleDir, newBundleDir);
+  
+  const hiddenRepoDir = path.join(base, "hidden-repo");
+  await rename(repoDir, hiddenRepoDir);
+
+  // 2. تشغيل أداة التحقق من داخل الحزمة وبـ cwd خارج المشروع
+  const nodeCmd = process.platform === "win32" ? "node.exe" : "node";
+  const verifyPath = path.join(newBundleDir, "tools", "verify-recovery-bundle.mjs");
+  const runVerify = (dir) => spawnSync(nodeCmd, [verifyPath, "."], { cwd: dir, encoding: "utf8" });
+  
+  // 3. نجاح التحقق دون أي وصول إلى ملفات worktree
+  const okRun = runVerify(newBundleDir);
+  assert.equal(okRun.status, 0, `التحقق المستقل ينجح:\n${okRun.stdout}\n${okRun.stderr}`);
+
+  // 4. العبث بأداة التحقق نفسها يفشل SHA-256
+  await flipByte(verifyPath);
+  const badRunVerify = runVerify(newBundleDir);
+  assert.notEqual(badRunVerify.status, 0, "العبث بأداة التحقق يفشل");
+  assert.match(badRunVerify.stdout || badRunVerify.stderr, /verify-recovery-bundle\.mjs/);
+});
+
+test("24) اختبارات تمنع رجوع القيم القديمة (P4-A1D0M, P4-H0, nextPlannedPhase=P4-M0, 143/155)", async () => {
+  const state = JSON.parse(await readFile(path.join(root, "docs", "continuity", "CURRENT_STATE.json"), "utf8"));
+  assert.notEqual(state.lastApprovedFunctionalPhase, "P4-A1D0M");
+  assert.notEqual(state.continuityPackagePhase, "P4-H0");
+  assert.notEqual(state.nextPlannedPhase, "P4-M0");
+  assert.notEqual(state.testBaselines.functionalBaseline.passed, 143);
+  assert.notEqual(state.testBaselines.continuityPackage.passed, 155);
 });

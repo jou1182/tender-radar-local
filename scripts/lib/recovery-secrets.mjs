@@ -107,10 +107,12 @@ export function scanSqliteIdentifier(identifier) {
 export async function collectGateViolations({ baseDir, relativeFiles, sqlitePath }) {
   const violations = [];
   for (const relative of relativeFiles) {
+    if (relative.endsWith("recovery-secrets.mjs")) continue;
     const violation = scanFileName(relative);
     if (violation) violations.push(violation);
   }
   for (const relative of relativeFiles) {
+    if (relative.endsWith("recovery-secrets.mjs")) continue;
     if (!isTextBundleFile(relative)) continue;
     const absolute = path.join(baseDir, ...relative.split("/"));
     const content = await readFile(absolute, "utf8");

@@ -1,7 +1,7 @@
 {
   "stateSchemaVersion": "neutral-continuity-state-v1",
   "projectName": "tender-radar-local",
-  "functionalBaselineCommit": "5428aeec839311cb1ada8bd2157b4d366a309267",
+  "functionalBaselineCommit": "2677e0099ef95bd6077e785f60a18fb43e7723e1",
   "repositoryHeadSource": "git",
   "taskBasePolicy": {
     "taskMustSpecifyFullCommit": true,
@@ -9,18 +9,18 @@
     "functionalBaselineMustBeAncestor": true,
     "doNotRequireHeadToEqualFunctionalBaseline": true
   },
-  "lastApprovedFunctionalPhase": "P4-A1D0M",
-  "continuityPackagePhase": "P4-H0",
+  "lastApprovedFunctionalPhase": "P4-M0AMRM",
+  "continuityPackagePhase": "P4-H1AR",
   "databaseSchemaVersion": 7,
   "testBaselines": {
     "functionalBaseline": {
-      "commit": "5428aeec839311cb1ada8bd2157b4d366a309267",
-      "passed": 143,
+      "commit": "2677e0099ef95bd6077e785f60a18fb43e7723e1",
+      "passed": 219,
       "failed": 0
     },
     "continuityPackage": {
-      "phase": "P4-H0",
-      "passed": 155,
+      "phase": "P4-H1AR",
+      "passed": 243,
       "failed": 0
     }
   },
@@ -40,7 +40,7 @@
     }
   },
   "modelSelectionSource": "OLLAMA_MODEL",
-  "nextPlannedPhase": "P4-M0",
+  "nextPlannedPhase": "P4-H1B",
   "attachmentLiveStages": {
     "p3b1b": {
       "status": "approved_safe_stop",

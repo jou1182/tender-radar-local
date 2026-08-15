@@ -8,7 +8,7 @@ import { verifyRecoveryBundle } from "./lib/recovery-verify.mjs";
 async function main() {
   const target = process.argv[2];
   if (!target) {
-    console.error("الاستخدام: npm run recovery:verify -- \"<RECOVERY_BUNDLE_DIR>\"");
+    console.error("الاستخدام: node tools/verify-recovery-bundle.mjs \"<RECOVERY_BUNDLE_DIR>\"");
     process.exitCode = 2;
     return;
   }

@@ -48,7 +48,7 @@ test("3) القيم الأساسية في CURRENT_STATE.json صحيحة (بني�
   assert.ok(!("approvedTestBaseline" in state), "لا approvedTestBaseline");
   assert.ok(!("lastApprovedPhase" in state), "لا lastApprovedPhase");
   // دلالة الأساس المصححة.
-  assert.equal(state.functionalBaselineCommit, "5428aeec839311cb1ada8bd2157b4d366a309267", "الأساس الوظيفي المعتمد");
+  assert.equal(state.functionalBaselineCommit, "2677e0099ef95bd6077e785f60a18fb43e7723e1", "الأساس الوظيفي المعتمد");
   assert.equal(state.repositoryHeadSource, "git", "رأس المستودع يُقرأ من Git");
   assert.deepEqual(state.taskBasePolicy, {
     taskMustSpecifyFullCommit: true,
@@ -56,22 +56,22 @@ test("3) القيم الأساسية في CURRENT_STATE.json صحيحة (بني�
     functionalBaselineMustBeAncestor: true,
     doNotRequireHeadToEqualFunctionalBaseline: true,
   }, "سياسة أساس المهمة بالقيم الأربع");
-  assert.equal(state.lastApprovedFunctionalPhase, "P4-A1D0M");
-  assert.equal(state.continuityPackagePhase, "P4-H0");
+  assert.equal(state.lastApprovedFunctionalPhase, "P4-M0AMRM");
+  assert.equal(state.continuityPackagePhase, "P4-H1AR");
   assert.equal(state.databaseSchemaVersion, 7, "schemaVersion 7");
   // أعداد الاختبارات: بنية واضحة تفصل الأساس الوظيفي عن الحزمة.
-  assert.equal(state.testBaselines.functionalBaseline.passed, 143, "143 عند الأساس الوظيفي");
+  assert.equal(state.testBaselines.functionalBaseline.passed, 219);
   assert.equal(state.testBaselines.functionalBaseline.failed, 0);
-  assert.equal(state.testBaselines.functionalBaseline.commit, "5428aeec839311cb1ada8bd2157b4d366a309267");
-  assert.equal(state.testBaselines.continuityPackage.passed, 155, "155 لحزمة P4-H0");
+  assert.equal(state.testBaselines.functionalBaseline.commit, "2677e0099ef95bd6077e785f60a18fb43e7723e1");
+  assert.equal(state.testBaselines.continuityPackage.passed, 243);
   assert.equal(state.testBaselines.continuityPackage.failed, 0);
-  assert.equal(state.testBaselines.continuityPackage.phase, "P4-H0");
+  assert.equal(state.testBaselines.continuityPackage.phase, "P4-H1AR");
   assert.equal(state.analysisReportSchemaVersion, "analysis-report-v2");
   assert.equal(state.analysisPromptVersion, "p4a-prompt-v3");
   assert.equal(state.modelSelectionSchemaVersion, "analysis-model-selection-v1");
   assert.equal(state.liveAiEnabledByDefault, false, "الذكاء الحي معطل افتراضيًا");
   assert.equal(state.currentDefaultProvider, "stub");
-  assert.equal(state.nextPlannedPhase, "P4-M0");
+  assert.equal(state.nextPlannedPhase, "P4-H1B");
   assert.ok(Array.isArray(state.pendingHumanGates) && state.pendingHumanGates.length > 0);
   assert.ok(Array.isArray(state.knownRisks) && state.knownRisks.length > 0);
   assert.ok(Array.isArray(state.authoritativeDocuments) && state.authoritativeDocuments.length === 10);

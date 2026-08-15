@@ -137,6 +137,7 @@ export async function createRecoveryBundle({ projectRoot, sqlitePath, outputDir,
     // staging مجاور لمجلد الإخراج (خارج مجلد المشروع بالضرورة).
     stagingDir = path.join(path.dirname(resolvedOutput), `.recovery-staging-${process.pid}-${Date.now()}`);
     await mkdir(path.join(stagingDir, "docs"), { recursive: true });
+    await mkdir(path.join(stagingDir, "tools", "lib"), { recursive: true });
 
     // Git bundle لفرع main وتاريخه فقط — لا ملفات غير متتبعة.
     try {
@@ -182,6 +183,13 @@ export async function createRecoveryBundle({ projectRoot, sqlitePath, outputDir,
       await copyFileAtomic(source, path.join(stagingDir, ...relative.split("/")));
     }
 
+    // نسخ أدوات التحقق لتكون مستقلة داخل الحزمة.
+    await copyFileAtomic(path.join(resolvedRoot, "scripts", "verify-recovery-bundle.mjs"), path.join(stagingDir, "tools", "verify-recovery-bundle.mjs"));
+    const toolsLibs = ["recovery-verify.mjs", "recovery-files.mjs", "recovery-state.mjs", "recovery-secrets.mjs", "recovery-bundle.mjs", "recovery-resume.mjs"];
+    for (const lib of toolsLibs) {
+      await copyFileAtomic(path.join(resolvedRoot, "scripts", "lib", lib), path.join(stagingDir, "tools", "lib", lib));
+    }
+
     // بوابة الأسرار والمسارات الشخصية قبل توليد البيان الختامي.
     const stagedFiles = await listFilesRecursively(stagingDir);
     try {
@@ -217,7 +225,7 @@ export async function createRecoveryBundle({ projectRoot, sqlitePath, outputDir,
         supervisorPrompt: bundleLayout.supervisorPrompt,
       },
       files,
-      verifyCommand: "npm run recovery:verify -- \"<RECOVERY_BUNDLE_DIR>\"",
+      verifyCommand: "node tools/verify-recovery-bundle.mjs \".\"",
     };
     await writeFileAtomic(path.join(stagingDir, bundleLayout.manifest), `${JSON.stringify(manifest, null, 2)}\n`);
 
