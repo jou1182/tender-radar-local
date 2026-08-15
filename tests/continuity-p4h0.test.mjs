@@ -57,7 +57,7 @@ test("3) القيم الأساسية في CURRENT_STATE.json صحيحة (بني�
     doNotRequireHeadToEqualFunctionalBaseline: true,
   }, "سياسة أساس المهمة بالقيم الأربع");
   assert.equal(state.lastApprovedFunctionalPhase, "P4-M0AMRM");
-  assert.equal(state.continuityPackagePhase, "P4-H1AR2MR");
+  assert.equal(state.continuityPackagePhase, "P4-H1B");
   assert.equal(state.databaseSchemaVersion, 7, "schemaVersion 7");
   // أعداد الاختبارات: بنية واضحة تفصل الأساس الوظيفي عن الحزمة.
   assert.equal(state.testBaselines.functionalBaseline.passed, 219);
@@ -65,13 +65,13 @@ test("3) القيم الأساسية في CURRENT_STATE.json صحيحة (بني�
   assert.equal(state.testBaselines.functionalBaseline.commit, "2677e0099ef95bd6077e785f60a18fb43e7723e1");
   assert.equal(state.testBaselines.continuityPackage.passed, 249);
   assert.equal(state.testBaselines.continuityPackage.failed, 0);
-  assert.equal(state.testBaselines.continuityPackage.phase, "P4-H1AR2MR");
+  assert.equal(state.testBaselines.continuityPackage.phase, "P4-H1B");
   assert.equal(state.analysisReportSchemaVersion, "analysis-report-v2");
   assert.equal(state.analysisPromptVersion, "p4a-prompt-v3");
   assert.equal(state.modelSelectionSchemaVersion, "analysis-model-selection-v1");
   assert.equal(state.liveAiEnabledByDefault, false, "الذكاء الحي معطل افتراضيًا");
   assert.equal(state.currentDefaultProvider, "stub");
-  assert.equal(state.nextPlannedPhase, "P4-H1B");
+  assert.equal(state.nextPlannedPhase, "P4-M0B");
   assert.ok(Array.isArray(state.pendingHumanGates) && state.pendingHumanGates.length > 0);
   assert.ok(Array.isArray(state.knownRisks) && state.knownRisks.length > 0);
   assert.ok(Array.isArray(state.authoritativeDocuments) && state.authoritativeDocuments.length === 10);
@@ -229,14 +229,57 @@ test("11) الوثائق تسجل القيود الحاكمة: fixtures فقط �
 
 test("12) السجل يوثق المراحل وحالاتها دون نسخ تقارير كاملة", () => {
   const ledger = readPackageFile("docs/continuity/PHASE_LEDGER.md");
-  for (const phase of ["P0", "P1", "P2", "P3-A", "P3-B0", "P3-B1A", "P3-B1B0", "P4-A0", "P4-A1R", "P4-A1C0", "P4-A1D0"]) {
+  for (const phase of ["P0", "P1", "P2", "P3-A", "P3-B0", "P3-B1A", "P3-B1B0", "P4-A0", "P4-A1R", "P4-A1C0", "P4-A1D0", "P4-H0", "P4-H1A", "P4-H1AR", "P4-H1AR2", "P4-H1B"]) {
     assert.ok(ledger.includes(phase), `السجل يذكر ${phase}`);
   }
   assert.match(ledger, /5428aee/, "commit P4-A1D0 موثق");
+  assert.match(ledger, /9484612/, "commit P4-H1AR2MRM موثق");
   assert.match(ledger, /fast-forward/, "سياسة الدمج موثقة");
   assert.match(ledger, /paused/, "حالة التوقف مستخدمة");
   // حالة P3-B1B المصححة (P4-H0R): توقف آمن معتمد وليست approved عادية.
   assert.match(ledger, /approved_safe_stop/, "حالة approved_safe_stop في أسطورة الحالات");
   assert.match(ledger, /P3-B1B[^\n]*approved_safe_stop/, "سطر P3-B1B بحالة التوقف الآمن المعتمد");
   assert.doesNotMatch(ledger, /\| P3-B1B \|[^|\n]*\| approved \|/, "P3-B1B ليست approved عادية");
+});
+
+test("13) منع رجوع قيم وحالات الاستمرارية وحزمة التعافي السابقة", () => {
+  const state = JSON.parse(readPackageFile("docs/continuity/CURRENT_STATE.json"));
+
+  // التأكد من عدم الرجوع للمراحل القديمة
+  const packagePhaseOrder = ["P4-H0", "P4-H1A", "P4-H1AR", "P4-H1AR2", "P4-H1B"];
+  const currentPackageIdx = packagePhaseOrder.indexOf(state.continuityPackagePhase);
+  assert.ok(currentPackageIdx >= packagePhaseOrder.indexOf("P4-H1B"), `continuityPackagePhase يجب أن تكون P4-H1B أو أحدث: ${state.continuityPackagePhase}`);
+
+  const plannedPhaseOrder = ["P4-H1B", "P4-M0B", "P4-M1"];
+  const nextPlannedIdx = plannedPhaseOrder.indexOf(state.nextPlannedPhase);
+  assert.ok(nextPlannedIdx >= plannedPhaseOrder.indexOf("P4-M0B"), `nextPlannedPhase يجب أن تكون P4-M0B أو أحدث: ${state.nextPlannedPhase}`);
+
+  // التأكد من عدم وجود الأعداد القديمة 143/155 في وثيقة التسليم
+  const handoff = readPackageFile("docs/continuity/PROJECT_HANDOFF.md");
+  assert.ok(!handoff.includes("155 ناجحة"), "وثيقة التسليم يجب ألا تحتوي على الأعداد القديمة 155 ناجحة");
+  assert.match(handoff, /249 ناجحة/, "وثيقة التسليم يجب أن تسجل عدد الاختبارات الحديث 249 ناجحة");
+
+  // التأكد من إزالة الادعاء بأن P4-M0 ككل لم تبدأ (لأن M0A انتهت)
+  assert.ok(!handoff.includes("P4‑M0/P4‑M1"), "لا خلط بين P4-M0 كاملة و P4-M0B");
+  assert.match(handoff, /مقارنة النموذجين المحليين.*مخططة في P4‑M0B/, "التسليم يجب أن يحدد M0B كخطوة تالية");
+
+  // التأكد من ذكر حزمة التعافي الذاتية ورسائل البدلاء
+  assert.match(handoff, /حزمة التعافي الذاتية أصبحت جاهزة ومختبرة ومكتملة تمامًا/, "ذكر جاهزية حزمة التعافي");
+  assert.match(handoff, /رسائل البدلاء المحايدة/, "ذكر رسائل البدلاء المحايدة في التسليم");
+});
+
+test("14) التحقق من عزل المسارات الشخصية والأسماء المخصصة للوكلاء", () => {
+  const handoff = readPackageFile("docs/continuity/PROJECT_HANDOFF.md");
+  const state = readPackageFile("docs/continuity/CURRENT_STATE.json");
+  const next = readPackageFile("docs/continuity/NEXT_PHASES.md");
+
+  // فحص عدم وجود أي مسارات شخصية مطلقة لويندوز أو هوم
+  for (const docContent of [handoff, state, next]) {
+    assert.ok(!docContent.includes("C:\\Users\\"), "لا مسارات مطلق لويندوز");
+    assert.ok(!docContent.includes("/home/"), "لا مسارات مطلق لهوم لينكس");
+  }
+
+  // عدم فرض أسماء مزودي ذكاء بعينهم كأدوار إلزامية
+  assert.ok(!handoff.includes("Gemini المنفذ"), "لا فرض للوكلاء في أدوار التسليم الإلزامية");
+  assert.ok(!handoff.includes("Codex المشرف"), "لا فرض للمشرف المسمى في أدوار التسليم الإلزامية");
 });

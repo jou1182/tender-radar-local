@@ -10,7 +10,7 @@
     "doNotRequireHeadToEqualFunctionalBaseline": true
   },
   "lastApprovedFunctionalPhase": "P4-M0AMRM",
-  "continuityPackagePhase": "P4-H1AR2MR",
+  "continuityPackagePhase": "P4-H1B",
   "databaseSchemaVersion": 7,
   "testBaselines": {
     "functionalBaseline": {
@@ -19,7 +19,7 @@
       "failed": 0
     },
     "continuityPackage": {
-      "phase": "P4-H1AR2MR",
+      "phase": "P4-H1B",
       "passed": 249,
       "failed": 0
     }
@@ -40,7 +40,7 @@
     }
   },
   "modelSelectionSource": "OLLAMA_MODEL",
-  "nextPlannedPhase": "P4-H1B",
+  "nextPlannedPhase": "P4-M0B",
   "attachmentLiveStages": {
     "p3b1b": {
       "status": "approved_safe_stop",
