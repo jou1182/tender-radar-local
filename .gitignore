@@ -40,3 +40,7 @@ yarn-error.log*
 /work/
 /.radar-data/
 *.tsbuildinfo
+
+# recovery bundle local outputs (P4-H1A — الأدوات ترفض الكتابة داخل المشروع أصلًا)
+/recovery-bundle-out/
+/.recovery-staging-*/
