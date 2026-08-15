@@ -3,3 +3,9 @@
 *.xlsx binary
 *.docx binary
 *.md text eol=lf
+
+# P4-M0AMR — قواعد ضيقة للملفات النصية المولدة داخل benchmark فقط:
+# تثبيت LF في checkouts المستقبلية حتى لا تتأثر حتمية إعادة التوليد بسياسة
+# autocrlf لأي جهاز. لا تطال القواعد أي ملف ثنائي (PDF/XLSX/DOCX أعلاه).
+benchmark/**/*.json text eol=lf
+benchmark/**/*.txt text eol=lf

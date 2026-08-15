@@ -6,6 +6,7 @@
 // الأرقام والادعاءات غير المتوقعة والسرد.
 // P4-M0AR2: تأسيس حتمي لكل كلمة دالة في findings والسرد (بلا نسب تشابه)،
 // وبصمة كتالوج canonical بثلاثة عشر حقلًا تشمل blockId/startOffset/endOffset.
+// P4-M0AMR: حتمية EOL — مقارنة نصوص benchmark بعد تطبيع نهايات الأسطر فقط.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -20,6 +21,7 @@ import { buildEvidenceCandidateCatalog } from "../scripts/lib/analysis-evidence-
 import { materializeCanonicalReport } from "../scripts/lib/analysis-model-selection.mjs";
 import { analysisFindingFields } from "../scripts/lib/analysis-report.mjs";
 import { extractBenchmarkPdfLogicalText } from "../scripts/lib/analysis-benchmark-pdf.mjs";
+import { canonicalBenchmarkText } from "./helpers/benchmark-canonical-text.mjs";
 import {
   benchmarkFixtureMarker,
   benchmarkVersion,
@@ -190,14 +192,20 @@ test("4) ثبات SHA-256 والمخرجات عند إعادة التوليد ا
     for (const caseId of caseIds) {
       const regenerated = readFileSync(path.join(tempOut, "cases", caseId, "fixture.pdf"));
       assert.equal(sha256(regenerated), loadedCases[caseId].manifestEntry.fixtureSha256, `${caseId}: بصمة ثابتة`);
+      // P4-M0AMR: المقارنة النصية بعد تطبيع نهايات الأسطر فقط (CRLF/CR ← LF)
+      // — تبقى حساسة لأي اختلاف محتوى حقيقي وتُعزل عن سياسة checkout.
       const regeneratedTruth = readFileSync(path.join(tempOut, "cases", caseId, "ground-truth.json"), "utf8");
       const committedTruth = readFileSync(path.join(benchmarkRoot, "cases", caseId, "ground-truth.json"), "utf8");
-      assert.equal(regeneratedTruth, committedTruth, `${caseId}: ground-truth حتمي (ومعه catalogSha256)`);
+      assert.equal(
+        canonicalBenchmarkText(regeneratedTruth),
+        canonicalBenchmarkText(committedTruth),
+        `${caseId}: ground-truth حتمي (ومعه catalogSha256) بعد تطبيع EOL فقط`,
+      );
     }
     assert.equal(
-      readFileSync(path.join(tempOut, "manifest.json"), "utf8"),
-      readFileSync(path.join(benchmarkRoot, "manifest.json"), "utf8"),
-      "manifest.json حتمي",
+      canonicalBenchmarkText(readFileSync(path.join(tempOut, "manifest.json"), "utf8")),
+      canonicalBenchmarkText(readFileSync(path.join(benchmarkRoot, "manifest.json"), "utf8")),
+      "manifest.json حتمي بعد تطبيع EOL فقط",
     );
   } finally {
     rmSync(tempOut, { recursive: true, force: true });
@@ -922,5 +930,56 @@ test("61) catalogSha256 الثلاثة مقفلة على قيم P4-M0AR2 الم�
     assert.equal(loadedCases[caseId].manifestEntry.catalogSha256, locked[caseId], `${caseId}: manifest`);
     assert.equal(fingerprintCatalog(loadedCases[caseId].catalog), locked[caseId], `${caseId}: بصمة الكتالوج الحي`);
     assert.equal(loadedCases[caseId].groundTruth.catalogSha256, locked[caseId], `${caseId}: ground-truth`);
+  }
+});
+
+// ---------- P4-M0AMR: حتمية EOL — التطبيع الوحيد المسموح هو نهايات الأسطر ----------
+
+test("62) تكافؤ EOL فقط: LF/CRLF/CR المنفرد يتساوى بعد canonicalBenchmarkText", () => {
+  const lf = "{\n  \"caseId\": \"m0a-clear\",\n  \"النص\": \"مدة التنفيذ 90 يومًا\"\n}\n";
+  const crlf = lf.replace(/\n/g, "\r\n");
+  const loneCr = lf.replace(/\n/g, "\r");
+  // مرجع LF مقابل ناتج LF.
+  assert.equal(canonicalBenchmarkText(lf), canonicalBenchmarkText(lf));
+  // مرجع CRLF مقابل النتيجة نفسها بـLF، والعكس.
+  assert.equal(canonicalBenchmarkText(crlf), canonicalBenchmarkText(lf));
+  assert.equal(canonicalBenchmarkText(lf), canonicalBenchmarkText(crlf));
+  // CR منفرد مقابل LF المكافئ (السياسة تدعم CR المنفرد صراحة).
+  assert.equal(canonicalBenchmarkText(loneCr), canonicalBenchmarkText(lf));
+  // الـnewline النهائي محفوظ: لا trim ولا إضافة ولا حذف.
+  assert.notEqual(canonicalBenchmarkText(lf), canonicalBenchmarkText(lf.trimEnd()));
+});
+
+test("63) أي اختلاف محتوى حقيقي يفشل رغم تطبيع EOL", () => {
+  const base = "{\r\n  \"caseId\": \"m0a-clear\",\r\n  \"catalogSha256\": \"501d12660fa2bd333e4c902b6520840151b582ea7cbf48d395a52e11448bfd43\",\r\n  \"النص\": \"مدة التنفيذ 90 يومًا\"\r\n}\r\n";
+  const sameAsLf = base.replace(/\r\n/g, "\n");
+  assert.equal(canonicalBenchmarkText(base), canonicalBenchmarkText(sameAsLf), "ضبط: النصان متكافئان فعلًا");
+
+  const mutations = {
+    "تغيير حرف عربي واحد": base.replace("مدة", "مده"),
+    "تغيير رقم واحد": base.replace("90", "91"),
+    "إضافة مسافة داخل سطر": base.replace("مدة التنفيذ", "مدة  التنفيذ"),
+    "حذف مسافة داخل سطر": base.replace("مدة التنفيذ", "مدةالتنفيذ"),
+    "إضافة حقل JSON": base.replace("}\r\n", ",\r\n  \"extra\": 1\r\n}\r\n"),
+    "حذف حقل JSON": base.replace("  \"النص\": \"مدة التنفيذ 90 يومًا\"\r\n", ""),
+    "تغيير قيمة catalogSha256": base.replace("501d1266", "501d1267"),
+  };
+  for (const [label, mutated] of Object.entries(mutations)) {
+    assert.notEqual(canonicalBenchmarkText(base), canonicalBenchmarkText(mutated), label);
+  }
+});
+
+test("64) إعادة التوليد تنجح حتى مع محاكاة checkout بـCRLF", () => {
+  // محاكاة checkout بسياسة autocrlf=true: نسخة CRLF من الملف الملتزم به يجب
+  // أن تتساوى canonical مع الملتزم به نفسه — أي أن اختبار 4 محصّن ضد سياسة
+  // checkout أيًا كانت.
+  for (const caseId of caseIds) {
+    const committed = readFileSync(path.join(benchmarkRoot, "cases", caseId, "ground-truth.json"), "utf8");
+    const simulatedCrlfCheckout = canonicalBenchmarkText(committed).replace(/\n/g, "\r\n");
+    assert.equal(
+      canonicalBenchmarkText(simulatedCrlfCheckout),
+      canonicalBenchmarkText(committed),
+      `${caseId}: تطبيع EOL يعزل سياسة checkout`,
+    );
   }
 });
