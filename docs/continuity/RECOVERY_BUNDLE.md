@@ -6,7 +6,7 @@
 
 ## الغرض
 
-حزمة التعافي مجلد محايد مكتمل ذاتيًا يكفي لاستعادة المشروع على وكيل بديل دون
+حزمة التعافي مجلد محايد مكتفٍ بذاته يكفي لاستعادة المشروع على وكيل بديل دون
 أي اعتماد على سجل محادثة أو وكيل أو مزود بعينه. الأدوار المشار إليها هي
 EXECUTOR وSUPERVISOR فقط.
 
@@ -22,6 +22,13 @@ EXECUTOR وSUPERVISOR فقط.
 | `docs/RECOVERY_BUNDLE.md` | هذا الدليل |
 | `docs/REPLACEMENT_EXECUTOR_PROMPT.md` | رسالة المنفّذ البديل المحايدة |
 | `docs/REPLACEMENT_SUPERVISOR_PROMPT.md` | رسالة المشرف البديلة المحايدة |
+| `tools/verify-recovery-bundle.mjs` | أداة التحقق الذاتي المستقلة — نقطة الدخول |
+| `tools/lib/recovery-bundle.mjs` | منطق الحزمة المُستورَد من الأداة |
+| `tools/lib/recovery-files.mjs` | أدوات الملفات المساعدة |
+| `tools/lib/recovery-resume.mjs` | توليد RESUME_HERE |
+| `tools/lib/recovery-secrets.mjs` | بوابة الأسرار والمسارات الشخصية |
+| `tools/lib/recovery-state.mjs` | قراءة حالة SQLite |
+| `tools/lib/recovery-verify.mjs` | منطق التحقق الكامل |
 
 لا تُضمَّن ملفات Git غير المتتبعة تلقائيًا، ولا أسرار، ولا `node_modules`، ولا
 ملفات تعريف المتصفح، ولا المرفقات أو التنزيلات.
@@ -42,13 +49,21 @@ node scripts/create-recovery-bundle.mjs \
 - عند أي فشل يُترك مجلد الإخراج حاملًا علامة `BUNDLE_FAILED.txt` فقط، ولا
   يُنتج manifest ولا يمكن أن يمر في التحقق.
 
-## التحقق بأمر واحد
+## التحقق بأمر واحد (مستقل ذاتيًا)
 
 ```
-npm run recovery:verify -- "<RECOVERY_BUNDLE_DIR>"
+node tools/verify-recovery-bundle.mjs "."
 ```
 
-يعيد exit code صفرًا عند السلامة وغير صفر عند أي فشل. الفحوص بالترتيب:
+نفّذ هذا الأمر من **داخل جذر الحزمة** (أي المجلد الذي يحتوي `manifest.json`).
+
+- **لا يحتاج** `npm install` ولا `node_modules` ولا المستودع الأصلي.
+- يعتمد على Node.js فقط (يتطلب `node:sqlite` المتوفر في Node.js 22.5+).
+- **Git مطلوب** لاحقًا لفحص `repo.bundle` والاستعادة منه؛ وليس مطلوبًا لخطوات
+  التحقق الأولى (SHA‑256، manifest، البوابة الأمنية).
+- يعيد exit code صفرًا عند السلامة وغير صفر عند أي فشل.
+
+الفحوص بالترتيب:
 
 1. غياب علامة الفشل ووجود manifest سليم البنية.
 2. تطابق بصمات SHA‑256 لكل ملف مسجل (قبل فتح أي ملف تنفيذي أو قاعدة بيانات).
@@ -88,7 +103,7 @@ npm run recovery:verify -- "<RECOVERY_BUNDLE_DIR>"
     "supervisorPrompt": "docs/REPLACEMENT_SUPERVISOR_PROMPT.md"
   },
   "files": [{ "path": "<relative>", "sha256": "<64-hex>", "bytes": 0 }],
-  "verifyCommand": "npm run recovery:verify -- \"<RECOVERY_BUNDLE_DIR>\""
+  "verifyCommand": "node tools/verify-recovery-bundle.mjs \".\""
 }
 ```
 
@@ -106,8 +121,9 @@ npm run recovery:verify -- "<RECOVERY_BUNDLE_DIR>"
 
 ## بوابة الأسرار والمسارات الشخصية
 
-تُفحص أسماء الملفات، والمحتوى النصي للملفات النصية، وأسماء جداول وأعمدة
-SQLite. القائمة الممنوعة (تطابق جزئي، بلا حساسية لحالة الأحرف اللاتينية):
+تُفحص أسماء الملفات، والمحتوى النصي للملفات النصية (بما فيها ملفات `.mjs`
+الموجودة في `tools`), وأسماء جداول وأعمدة SQLite. القائمة الممنوعة (تطابق
+جزئي، بلا حساسية لحالة الأحرف اللاتينية):
 
 `password`, `passwd`, `secret`, `token`, `cookie`, `session`, `credential`,
 `otp`, `api_key`, `apikey`

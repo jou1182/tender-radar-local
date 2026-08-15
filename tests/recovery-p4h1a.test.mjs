@@ -576,3 +576,70 @@ test("26) ملف آخر باسم يحتوي على كلمة secret يُرفض ب
     return true;
   });
 });
+
+const SELF_CONTAINED_VERIFY_CMD = 'node tools/verify-recovery-bundle.mjs "."';
+
+test("27) الدليل المصدر يحتوي أمر التحقق الذاتي ولا يحتوي الأمر القديم", async () => {
+  const guide = await readFile(path.join(realDocsDir, "RECOVERY_BUNDLE.md"), "utf8");
+  assert.ok(
+    guide.includes(SELF_CONTAINED_VERIFY_CMD),
+    `الدليل يجب أن يذكر أمر التحقق الذاتي: ${SELF_CONTAINED_VERIFY_CMD}`,
+  );
+  assert.ok(
+    !guide.includes("npm run recovery:verify"),
+    "الدليل يجب ألا يذكر الأمر القديم npm run recovery:verify",
+  );
+});
+
+test("28) manifest الحزمة المولدة يحتوي أمر التحقق الذاتي حرفيًا", async (t) => {
+  const { bundleDir } = await arrangeBundle(t);
+  const manifest = JSON.parse(await readFile(path.join(bundleDir, "manifest.json"), "utf8"));
+  assert.equal(
+    manifest.verifyCommand,
+    SELF_CONTAINED_VERIFY_CMD,
+    "manifest.verifyCommand يجب أن يساوي الأمر الذاتي حرفيًا",
+  );
+  assert.ok(
+    !manifest.verifyCommand.includes("npm run recovery:verify"),
+    "manifest.verifyCommand يجب ألا يحتوي الأمر القديم",
+  );
+});
+
+test("29) RESUME_HERE يحتوي أمر التحقق الذاتي", async (t) => {
+  const { bundleDir } = await arrangeBundle(t);
+  const resume = await readFile(path.join(bundleDir, bundleLayout.resume), "utf8");
+  assert.ok(
+    resume.includes(SELF_CONTAINED_VERIFY_CMD),
+    "RESUME_HERE يجب أن يحتوي أمر التحقق الذاتي",
+  );
+});
+
+test("30) أدوات tools موجودة في الحزمة ومسجلة في manifest وSHA256SUMS", async (t) => {
+  const { bundleDir } = await arrangeBundle(t);
+  const manifest = JSON.parse(await readFile(path.join(bundleDir, "manifest.json"), "utf8"));
+  const sums = await readFile(path.join(bundleDir, "SHA256SUMS"), "utf8");
+  const expectedTools = [
+    "tools/verify-recovery-bundle.mjs",
+    "tools/lib/recovery-bundle.mjs",
+    "tools/lib/recovery-files.mjs",
+    "tools/lib/recovery-resume.mjs",
+    "tools/lib/recovery-secrets.mjs",
+    "tools/lib/recovery-state.mjs",
+    "tools/lib/recovery-verify.mjs",
+  ];
+  for (const toolPath of expectedTools) {
+    // موجود في manifest.files
+    assert.ok(
+      manifest.files.some((f) => f.path === toolPath),
+      `${toolPath} مسجل في manifest.files`,
+    );
+    // موجود في SHA256SUMS
+    assert.ok(
+      sums.includes(toolPath),
+      `${toolPath} مسجل في SHA256SUMS`,
+    );
+    // موجود فعليًا في الحزمة
+    const { size } = await stat(path.join(bundleDir, ...toolPath.split("/")));
+    assert.ok(size > 0, `${toolPath} موجود ولا يساوي صفرًا`);
+  }
+});

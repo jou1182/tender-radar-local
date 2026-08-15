@@ -57,15 +57,15 @@ test("3) القيم الأساسية في CURRENT_STATE.json صحيحة (بني�
     doNotRequireHeadToEqualFunctionalBaseline: true,
   }, "سياسة أساس المهمة بالقيم الأربع");
   assert.equal(state.lastApprovedFunctionalPhase, "P4-M0AMRM");
-  assert.equal(state.continuityPackagePhase, "P4-H1AR2");
+  assert.equal(state.continuityPackagePhase, "P4-H1AR2MR");
   assert.equal(state.databaseSchemaVersion, 7, "schemaVersion 7");
   // أعداد الاختبارات: بنية واضحة تفصل الأساس الوظيفي عن الحزمة.
   assert.equal(state.testBaselines.functionalBaseline.passed, 219);
   assert.equal(state.testBaselines.functionalBaseline.failed, 0);
   assert.equal(state.testBaselines.functionalBaseline.commit, "2677e0099ef95bd6077e785f60a18fb43e7723e1");
-  assert.equal(state.testBaselines.continuityPackage.passed, 245);
+  assert.equal(state.testBaselines.continuityPackage.passed, 249);
   assert.equal(state.testBaselines.continuityPackage.failed, 0);
-  assert.equal(state.testBaselines.continuityPackage.phase, "P4-H1AR2");
+  assert.equal(state.testBaselines.continuityPackage.phase, "P4-H1AR2MR");
   assert.equal(state.analysisReportSchemaVersion, "analysis-report-v2");
   assert.equal(state.analysisPromptVersion, "p4a-prompt-v3");
   assert.equal(state.modelSelectionSchemaVersion, "analysis-model-selection-v1");

@@ -10,7 +10,7 @@
     "doNotRequireHeadToEqualFunctionalBaseline": true
   },
   "lastApprovedFunctionalPhase": "P4-M0AMRM",
-  "continuityPackagePhase": "P4-H1AR2",
+  "continuityPackagePhase": "P4-H1AR2MR",
   "databaseSchemaVersion": 7,
   "testBaselines": {
     "functionalBaseline": {
@@ -19,8 +19,8 @@
       "failed": 0
     },
     "continuityPackage": {
-      "phase": "P4-H1AR2",
-      "passed": 245,
+      "phase": "P4-H1AR2MR",
+      "passed": 249,
       "failed": 0
     }
   },
