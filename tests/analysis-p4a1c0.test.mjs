@@ -16,7 +16,7 @@ import {
 } from "../scripts/lib/analysis-report.mjs";
 import { createOllamaProvider } from "../scripts/lib/analysis-providers.mjs";
 import { buildEvidenceCandidateCatalog } from "../scripts/lib/analysis-evidence-candidates.mjs";
-import { buildModelSelectionSchema } from "../scripts/lib/analysis-model-selection.mjs";
+import { buildModelSelectionPrompt, buildModelSelectionSchema } from "../scripts/lib/analysis-model-selection.mjs";
 
 // حاجز الاتصال: أي محاولة fetch حقيقية تسقط الاختبار فورًا.
 const realFetch = globalThis.fetch;
@@ -372,4 +372,24 @@ test("Q) P4-M0B2A: runtime-freeze محدَّث وبصمة analysis-providers ت�
   const freeze = JSON.parse(readFileSync(new URL("../benchmark/runtime-freeze.json", import.meta.url), "utf8"));
   const actual = createHash("sha256").update(readFileSync(new URL("../scripts/lib/analysis-providers.mjs", import.meta.url))).digest("hex");
   assert.equal(actual, freeze.files["scripts/lib/analysis-providers.mjs"], "بصمة providers في runtime-freeze تطابق الملف بعد think:false");
+});
+
+test("R) P4-M0B4: التعليمات الجديدة ضد التنويهات والتعارضات موجودة حرفيًا في الـprompt الناتج", () => {
+  const catalog = buildEvidenceCandidateCatalog({ document: fakeDocument, chunks: fakeChunks });
+  assert.ok(catalog.candidates.length > 0, "كتالوج مرشحين متاح لبناء الـprompt");
+  const prompt = buildModelSelectionPrompt({ document: fakeDocument, catalog });
+  assert.ok(
+    prompt.includes("أي مقتطف يبدو تنويهًا أو علامة تحذيرية تفيد أن الوثيقة بيانات اختبار اصطناعية أو ليست منافسة حقيقية — يُستبعد تمامًا من أي finding واقعي؛ لا يُعامل كشرط أهلية أو حقيقة من الوثيقة."),
+    "تعليمة استبعاد التنويهات موجودة حرفيًا",
+  );
+  assert.ok(
+    prompt.includes("إن وُجدت قيمتان متعارضتان صراحةً لنفس الحقيقة (نفس البند، مدة أو تاريخ أو مبلغ مختلف) بين مقتطفات مختلفة — يُمنع اختيار أحدهما وحسم التعارض؛ يجب توجيه هذه الحالة إلى unclearItems أو questionsForAuthority فقط."),
+    "تعليمة التعارضات موجودة حرفيًا",
+  );
+});
+
+test("S) P4-M0B4: runtime-freeze محدَّث وبصمة analysis-model-selection تطابق الملف الفعلي", () => {
+  const freeze = JSON.parse(readFileSync(new URL("../benchmark/runtime-freeze.json", import.meta.url), "utf8"));
+  const actual = createHash("sha256").update(readFileSync(new URL("../scripts/lib/analysis-model-selection.mjs", import.meta.url))).digest("hex");
+  assert.equal(actual, freeze.files["scripts/lib/analysis-model-selection.mjs"], "بصمة model-selection في runtime-freeze تطابق الملف بعد إضافة تعليمات P4-M0B4");
 });
