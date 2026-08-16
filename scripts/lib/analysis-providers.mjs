@@ -212,10 +212,13 @@ export function createOllamaProvider({ env = {}, fetchFn = globalThis.fetch } = 
         // format يحمل مخطط الاختيار الداخلي analysis-model-selection-v2 (P4-M0BR0)
         // لفرض بنية الاختيار بالمعرف من المصدر؛ validateModelSelection يبقى الحاجز
         // الإلزامي الثاني بعد الاستجابة.
+        // P4-M0B2A: think:false يُعطِّل حقل التفكير في النماذج الداعمة (مثل qwen3.8)
+        // كي تبقى مخرجات الاختيار في response الرسمي؛ لا يُقرأ حقل thinking إطلاقًا
+        // ولا يوجد أي fallback منه، والـformat يبقى كائن JSON Schema المعتمد.
         response = await fetchFn(`${host}/api/generate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model: config.ollamaModel, prompt, stream: false, format: selectionSchema, options: { temperature: 0 } }),
+          body: JSON.stringify({ model: config.ollamaModel, prompt, stream: false, format: selectionSchema, options: { temperature: 0 }, think: false }),
           signal: AbortSignal.timeout(config.timeoutMs),
         });
       } catch {
