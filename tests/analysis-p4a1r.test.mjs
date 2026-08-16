@@ -272,7 +272,7 @@ test("H) المحرك بقاعدة مؤقتة: مهمة failed بـAI_OUTPUT_INV
 
 test("I) عدم التراجع: الثوابت والإصدارات المعتمدة", () => {
   assert.equal(analysisReportSchemaVersion, "analysis-report-v2");
-  assert.equal(analysisPromptVersion, "p4a-prompt-v3");
+  assert.equal(analysisPromptVersion, "p4a-prompt-v4");
   assert.equal(analysisFindingFields.length, 12);
 });
 

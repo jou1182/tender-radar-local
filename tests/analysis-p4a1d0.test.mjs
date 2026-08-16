@@ -1,7 +1,10 @@
-// اختبارات P4-A1D0: كتالوج أدلة حرفية حتمي واختيار الأدلة بالمعرف فقط.
-// النموذج لا يكتب excerpt ولا evidence؛ البرنامج يستخرج المرشحين محليًا ويعيد
-// بناء تقرير analysis-report-v2 canonical. محاكاة محلية فقط: بلا Ollama حي،
-// بلا شبكة، بلا Chrome أو اعتماد، وبلا مستندات حقيقية.
+// اختبارات P4-A1D0 المحدثة لـ P4-M0BR0: كتالوج أدلة حرفية حتمي واختيار الأدلة بالمعرف فقط.
+// النموذج لا يكتب excerpt ولا statement ولا summary ولا warnings إطلاقًا؛
+// البرنامج يستخرج المرشحين محليًا ويعيد بناء التقرير canonical حتميًا بالكامل.
+// P4-M0BR0: إغلاق النصوص الواقعية الحرة — المخطط الداخلي v2 بلا أي حقل نصي،
+// والملخص يُبنى حرفيًا من بنود الأدلة المجتازة، وبلا بنود يفشل الاختيار بأمان
+// (AI_NO_GROUNDED_SELECTION) بدل أي fallback غير مؤسس.
+// محاكاة محلية فقط: بلا Ollama حي، بلا شبكة، بلا Chrome أو اعتماد، وبلا مستندات حقيقية.
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
@@ -30,7 +33,6 @@ import {
   buildModelSelectionPrompt,
   buildModelSelectionSchema,
   materializeCanonicalReport,
-  modelSelectionFields,
   modelSelectionSchemaVersion,
   validateModelSelection,
 } from "../scripts/lib/analysis-model-selection.mjs";
@@ -75,16 +77,13 @@ const fixtureSet = [
 
 function emptySelection() {
   return {
-    executiveSummary: "ملخص اختبار.",
     ...Object.fromEntries(analysisFindingFields.map((field) => [field, []])),
     preliminaryDecision: "insufficient_data",
     confidence: "low",
     decisionEvidenceIds: [],
-    warnings: [],
   };
 }
 
-// يحل مرجعًا محليًا من الشكل #/$defs/name داخل الجذر المعطى.
 function resolveRef(root, node) {
   if (node && typeof node === "object" && typeof node.$ref === "string") {
     return root.$defs[node.$ref.replace("#/$defs/", "")];
@@ -125,7 +124,7 @@ test("A) استخراج المرشحين من PDF وXLSX وDOCX: حرفية وم
   }
 });
 
-test("B) الحتمية: تشغيلان متطابقان، وتغيير حرف أو موقع يغير المعرف", () => {
+test("B) الحتمية: تشغيلان متطابقان، وتغيير حرف أو موقع أو إزاحة يغير المعرف", () => {
   const { document, chunks } = fixtureDocument("booklet-pdf", "booklet-sample.pdf", "doc-det");
   const first = buildEvidenceCandidateCatalog({ document, chunks });
   const second = buildEvidenceCandidateCatalog({ document, chunks });
@@ -145,11 +144,13 @@ test("B) الحتمية: تشغيلان متطابقان، وتغيير حرف �
   const firstBlockIds = (catalog) => catalog.candidates.filter((c) => c.blockId === first.candidates[0].blockId).map((c) => c.candidateId);
   assert.notDeepEqual(firstBlockIds(changedLocationCatalog), firstBlockIds(first), "تغيير الموقع يغير المعرف");
 
-  // دالة المعرف نفسها حتمية وحساسة لكل مدخل.
+  // دالة المعرف نفسها حتمية وحساسة لكل مدخل: النص والموقع والإزاحات.
   const base = { checksum: "c", documentId: "d", blockId: "b", chunkId: "k", source: { pageNumber: 1 }, startOffset: 0, endOffset: 5, excerpt: "نص تجريبي" };
   assert.equal(createEvidenceCandidateId(base), createEvidenceCandidateId({ ...base }));
   assert.notEqual(createEvidenceCandidateId(base), createEvidenceCandidateId({ ...base, excerpt: "نص آخر" }));
   assert.notEqual(createEvidenceCandidateId(base), createEvidenceCandidateId({ ...base, startOffset: 1 }));
+  assert.notEqual(createEvidenceCandidateId(base), createEvidenceCandidateId({ ...base, endOffset: 6 }));
+  assert.notEqual(createEvidenceCandidateId(base), createEvidenceCandidateId({ ...base, source: { pageNumber: 2 } }));
 });
 
 test("C) الحدود: 48 مرشحًا و6000 حرف كحد أقصى، قص حتمي، وwarning بعدد المستبعد", () => {
@@ -187,17 +188,18 @@ test("C) الحدود: 48 مرشحًا و6000 حرف كحد أقصى، قص حت
   assert.ok(longCatalog.candidates.length < longCatalog.generatedCount);
 });
 
-test("D) المخطط الداخلي: بلا evidence، فئات arrays، enum من المعرفات، additionalProperties=false", () => {
-  const { document, chunks } = fixtureDocument("booklet-pdf", "booklet-sample.pdf", "doc-schema");
+test("D) schema v2: مخطط الاختيار الداخلي مغلق تماماً ولا يسمح بأي نص واقعي حر", () => {
+  const { document, chunks } = fixtureDocument("booklet-pdf", "booklet-sample.pdf", "doc-d");
   const catalog = buildEvidenceCandidateCatalog({ document, chunks });
-  const schema = buildModelSelectionSchema(catalog.candidates);
   const allowedIds = catalog.candidates.map((c) => c.candidateId);
+  const schema = buildModelSelectionSchema(catalog.candidates);
 
   assert.equal(schema.type, "object");
-  assert.equal(schema.additionalProperties, false, "الجذر مغلق");
-  assert.ok(!("evidence" in schema.properties), "لا evidence في المخطط الداخلي");
-  assert.deepEqual([...schema.required].sort(), [...modelSelectionFields].sort(), "كل الحقول الداخلية مطلوبة");
-  assert.equal(schema.required.length, 17, "18 حقل تقرير ناقص evidence");
+  assert.equal(schema.additionalProperties, false, "additionalProperties مغلق عند الجذر");
+  assert.equal(schema.required.length, 15, "15 حقل في v2 (12 فئة + 3 حقول قرار/يقين)");
+  assert.ok(!schema.properties.executiveSummary, "executiveSummary ممنوع في المخطط الداخلي");
+  assert.ok(!schema.properties.warnings, "warnings ممنوع في المخطط الداخلي");
+
   assert.equal(analysisFindingFields.length, 12);
   for (const field of analysisFindingFields) {
     const list = resolveRef(schema, schema.properties[field]);
@@ -205,38 +207,40 @@ test("D) المخطط الداخلي: بلا evidence، فئات arrays، enum �
     const finding = resolveRef(schema, list.items);
     assert.equal(finding, schema.$defs.selectionFinding);
   }
+
   const finding = schema.$defs.selectionFinding;
-  assert.equal(finding.additionalProperties, false);
+  assert.equal(finding.additionalProperties, false, "additionalProperties مغلق عند الفئة");
+  assert.ok(!finding.properties.statement, "statement ممنوع في الفئة");
+  assert.ok(!finding.properties.category, "category غير مطلوبة داخل الفئة");
   assert.equal(finding.properties.evidenceIds.type, "array");
   assert.equal(finding.properties.evidenceIds.minItems, 1);
   assert.deepEqual(finding.properties.evidenceIds.items.enum, allowedIds, "evidenceIds enum من معرفات المرشحين");
   assert.deepEqual(schema.properties.decisionEvidenceIds.items.enum, allowedIds, "decisionEvidenceIds enum من القائمة نفسها");
   assert.ok(!allowedIds.includes("cand-unknown"), "معرف مجهول ليس ضمن enum");
-  // تسلسل JSON كامل وتجميد.
+
   assert.deepEqual(JSON.parse(JSON.stringify(schema)), schema, "قابل للتسلسل الكامل");
   assert.ok(Object.isFrozen(schema) && Object.isFrozen(schema.$defs.selectionFinding), "المخطط مجمد");
-  assert.equal(modelSelectionSchemaVersion, "analysis-model-selection-v1");
+  assert.equal(modelSelectionSchemaVersion, "analysis-model-selection-v2");
 });
 
-test("E) prompt v3: اختيار بالمعرف فقط، بلا طلب excerpt، ضمن الميزانية، بلا مسارات", () => {
-  assert.equal(analysisPromptVersion, "p4a-prompt-v3", "إصدار prompt الجديد");
+test("E) prompt v4: اختيار بالمعرف فقط، بلا نصوص، ضمن الميزانية وبلا مسارات", () => {
+  assert.equal(analysisPromptVersion, "p4a-prompt-v4", "إصدار prompt الجديد");
   assert.equal(analysisReportSchemaVersion, "analysis-report-v2", "صيغة التقرير canonical باقية");
   const { document, chunks } = fixtureDocument("booklet-pdf", "booklet-sample.pdf", "doc-prompt");
   const catalog = buildEvidenceCandidateCatalog({ document, chunks });
   const prompt = buildModelSelectionPrompt({ document, catalog });
 
   for (const candidate of catalog.candidates) assert.ok(prompt.includes(candidate.candidateId), "المعرف معروض");
-  assert.match(prompt, /اختيار معرفات الأدلة|اختر واحدًا أو أكثر/, "يطلب الاختيار فقط");
+  assert.match(prompt, /تصنيف وتوزيع معرفات الأدلة|اختر واحدًا أو أكثر/, "يطلب الاختيار فقط");
   assert.match(prompt, /ممنوع منعًا باتًا/, "يمنع كتابة الأدلة صراحة");
-  assert.match(prompt, /لا يقبل evidence|أو إرجاع evidence objects/, "يمنع evidence objects");
+  assert.match(prompt, /لا تكتب أي نص أو statement/, "يمنع النصوص صراحة");
   assert.match(prompt, /مرجع للقراءة فقط/, "المقتطفات مرجع قراءة فقط");
   assert.match(prompt, /insufficient_data/, "يسمح بـinsufficient_data عند غياب الأدلة");
   assert.match(prompt, /decisionEvidenceIds/, "يطلب أدلة القرار");
   assert.doesNotMatch(prompt, /انسخ excerpt|اكتب excerpt/, "لا يطلب كتابة مقتطف إطلاقًا");
-  // الميزانية: مجموع المقتطفات المرسلة ضمن 6000 حرف (مضبوط في الكتالوج).
+
   assert.ok(catalog.totalExcerptChars <= 6_000, "ميزانية المقتطفات مطبقة");
   assert.ok(prompt.length < 9_000, "الـprompt الكلي محدود");
-  // لا مسارات ملفات ولا أسماء ملفات.
   assert.ok(!prompt.includes(document.fileName || "booklet-sample.pdf"), "لا أسماء ملفات");
   assert.ok(!prompt.includes(fixtureRoot), "لا مسارات ملفات");
 });
@@ -247,7 +251,7 @@ test("F) materialization: تقرير canonical v2 بأدلة محلية حرفي
   const [first, second] = catalog.candidates;
   const selection = {
     ...emptySelection(),
-    scopeOfWork: [{ category: "scopeOfWork", statement: "نطاق العمل من الكراسة.", severity: "info", confidence: "medium", evidenceIds: [first.candidateId, second.candidateId] }],
+    scopeOfWork: [{ severity: "info", confidence: "medium", evidenceIds: [first.candidateId, second.candidateId] }],
     preliminaryDecision: "review",
     confidence: "medium",
     decisionEvidenceIds: [first.candidateId],
@@ -274,17 +278,15 @@ test("G) معرف مجهول: AI_OUTPUT_INVALID في الوحدة والمزود
   const catalog = buildEvidenceCandidateCatalog({ document, chunks });
   const selection = {
     ...emptySelection(),
-    scopeOfWork: [{ category: "scopeOfWork", statement: "بند بدليل مختلق.", severity: "info", confidence: "medium", evidenceIds: ["cand-000000000000000000000000"] }],
+    scopeOfWork: [{ severity: "info", confidence: "medium", evidenceIds: ["cand-000000000000000000000000"] }],
     preliminaryDecision: "review",
     decisionEvidenceIds: ["cand-000000000000000000000000"],
   };
-  // وحدة المخطط: رفض مباشر يذكر المعرف المجهول.
   const errors = validateModelSelection(selection, catalog.candidates);
   assert.ok(errors.some((line) => line.includes("cand-000000000000000000000000") && line.includes("مجهول")), "المعرف المجهول مرفوض باسمه");
   assert.throws(() => materializeCanonicalReport(selection, catalog), (error) => error.code === "AI_OUTPUT_INVALID" && !(error instanceof TypeError));
   assert.throws(() => materializeEvidenceFromCandidates(["cand-ffffffffffffffffffffffff"], catalog), (error) => error.code === "AI_OUTPUT_INVALID");
 
-  // المزود بمحاكاة: استجابة بمعرف مجهول تُرفض وتسجل مرة واحدة.
   let generateCalls = 0;
   const provider = createOllamaProvider({
     env: ollamaEnv,
@@ -301,22 +303,26 @@ test("G) معرف مجهول: AI_OUTPUT_INVALID في الوحدة والمزود
   assert.equal(generateCalls, 1, "لا إعادة محاولة");
 });
 
-test("H) استجابات مشوهة: كائن بدل مصفوفة وIDs غير مصفوفة ومكررة وقرار بلا أدلة — كلها مرفوضة بلا TypeError", () => {
+test("H) استجابات مشوهة: كائن بدل مصفوفة وIDs غير مصفوفة ومكررة وقرار بلا أدلة وحقول نصية زائدة — كلها مرفوضة بلا TypeError", () => {
   const { document, chunks } = fixtureDocument("booklet-pdf", "booklet-sample.pdf", "doc-malformed");
   const catalog = buildEvidenceCandidateCatalog({ document, chunks });
   const id = catalog.candidates[0].candidateId;
   const cases = [
-    ["كائن بدل مصفوفة فئة", { ...emptySelection(), scopeOfWork: { category: "scopeOfWork", statement: "كائن لا مصفوفة" } }, /scopeOfWork/],
-    ["evidenceIds كنص", { ...emptySelection(), scopeOfWork: [{ category: "scopeOfWork", statement: "بند", severity: "info", confidence: "low", evidenceIds: id }] }, /evidenceIds/],
+    ["كائن بدل مصفوفة فئة", { ...emptySelection(), scopeOfWork: { severity: "info", confidence: "low", evidenceIds: [id] } }, /scopeOfWork/],
+    ["evidenceIds كنص", { ...emptySelection(), scopeOfWork: [{ severity: "info", confidence: "low", evidenceIds: id }] }, /evidenceIds/],
     ["IDs مكررة داخل finding", {
       ...emptySelection(),
-      scopeOfWork: [{ category: "scopeOfWork", statement: "بند", severity: "info", confidence: "low", evidenceIds: [id, id] }],
+      scopeOfWork: [{ severity: "info", confidence: "low", evidenceIds: [id, id] }],
       preliminaryDecision: "review",
       decisionEvidenceIds: [id],
     }, /مكرر/],
     ["قرار نهائي بلا decisionEvidenceIds", { ...emptySelection(), preliminaryDecision: "enter" }, /decisionEvidenceIds/],
     ["معرف قرار مكرر", { ...emptySelection(), preliminaryDecision: "review", decisionEvidenceIds: [id, id] }, /مكرر/],
     ["حقل evidence زائد", { ...emptySelection(), evidence: [] }, /evidence/],
+    ["حقل statement زائد داخل الفئة", { ...emptySelection(), scopeOfWork: [{ statement: "نص واقعي حر", severity: "info", confidence: "low", evidenceIds: [id] }] }, /statement|حقل غير مسموح/],
+    ["حقل category زائد داخل الفئة", { ...emptySelection(), scopeOfWork: [{ category: "scopeOfWork", severity: "info", confidence: "low", evidenceIds: [id] }] }, /category|حقل غير مسموح/],
+    ["حقل executiveSummary زائد بالجذر", { ...emptySelection(), executiveSummary: "ملخص حر" }, /executiveSummary|حقل غير مسموح/],
+    ["حقل warnings زائد بالجذر", { ...emptySelection(), warnings: ["تحذير حر"] }, /warnings|حقل غير مسموح/],
     ["قيمة كلية ليست كائنًا", null, /كائن JSON/],
     ["مصفوفة كلية", [], /كائن JSON/],
   ];
@@ -333,21 +339,22 @@ test("H) استجابات مشوهة: كائن بدل مصفوفة وIDs غير 
   }
 });
 
-test("I) المحرك بـfetchFn وهمي: مهمة completed وتقرير محفوظ وfindings/evidence وmodel_run succeeded واحد", async () => {
+test("I) المحرك بـfetchFn وهمي: مهمة completed وتقرير محفوظ وfindings/evidence وmodel_run succeeded واحد بـ p4a-prompt-v4", async () => {
   const { projectRoot, repository } = await tempRepository();
   try {
     let generateCalls = 0;
-    // مزود وهمي يبني اختيارًا صحيحًا من كتالوج الـprompt نفسه (أول معرفين معروضين).
     const selectingFetch = async (url, options) => {
       generateCalls += 1;
       assert.ok(url.endsWith("/api/generate"), "نقطة التوليد فقط");
       const { prompt, format } = JSON.parse(options.body);
       assert.ok(!("evidence" in format.properties), "format هو مخطط الاختيار الداخلي بلا evidence");
+      assert.ok(!("executiveSummary" in format.properties), "format هو مخطط الاختيار الداخلي بلا executiveSummary");
+      assert.ok(!("warnings" in format.properties), "format هو مخطط الاختيار الداخلي بلا warnings");
       const ids = [...prompt.matchAll(/\[(cand-[0-9a-f]{24})\]/g)].map((match) => match[1]);
       assert.ok(ids.length > 0, "الكتالوج معروض في الـprompt");
       const selection = {
         ...emptySelection(),
-        scopeOfWork: [{ category: "scopeOfWork", statement: "نطاق عمل مقروء من الكتالوج.", severity: "info", confidence: "medium", evidenceIds: [ids[0], ids[1] || ids[0]] }],
+        scopeOfWork: [{ severity: "info", confidence: "medium", evidenceIds: [ids[0], ids[1] || ids[0]] }],
         preliminaryDecision: "review",
         confidence: "medium",
         decisionEvidenceIds: [ids[0]],
@@ -364,9 +371,8 @@ test("I) المحرك بـfetchFn وهمي: مهمة completed وتقرير مح
     assert.ok(done.findings.length >= 1, "findings محفوظة");
     assert.equal(done.modelRuns.length, 1, "model_run واحد");
     assert.equal(done.modelRuns[0].status, "succeeded");
-    assert.equal(done.modelRuns[0].promptVersion, "p4a-prompt-v3");
+    assert.equal(done.modelRuns[0].promptVersion, "p4a-prompt-v4");
     assert.equal(done.modelRuns[0].outputSchemaVersion, "analysis-report-v2");
-    // اكتمال المهمة يعني مروره عبر validateAnalysisReport وnormalize وgrounding.
     assert.deepEqual(validateAnalysisReport(done.report), [], "التقرير المحفوظ صالح");
     const evidenceIds = new Set(done.report.evidence.map((item) => item.evidenceId));
     for (const finding of done.findings) {
@@ -385,7 +391,7 @@ test("J) فشل آمن: معرف مجهول عبر المحرك — failed بل�
       generateCalls += 1;
       const selection = {
         ...emptySelection(),
-        scopeOfWork: [{ category: "scopeOfWork", statement: "بند بدليل مجهول.", severity: "info", confidence: "low", evidenceIds: ["cand-eeeeeeeeeeeeeeeeeeeeeeee"] }],
+        scopeOfWork: [{ severity: "info", confidence: "low", evidenceIds: ["cand-eeeeeeeeeeeeeeeeeeeeeeee"] }],
         preliminaryDecision: "review",
         decisionEvidenceIds: ["cand-eeeeeeeeeeeeeeeeeeeeeeee"],
       };
@@ -423,6 +429,7 @@ test("K) حاجز grounding: تلاعب محلي بعد materialization يُرف
   const id = catalog.candidates[0].candidateId;
   const selection = {
     ...emptySelection(),
+    scopeOfWork: [{ severity: "info", confidence: "medium", evidenceIds: [id] }],
     preliminaryDecision: "review",
     confidence: "medium",
     decisionEvidenceIds: [id],
@@ -432,7 +439,6 @@ test("K) حاجز grounding: تلاعب محلي بعد materialization يُرف
   // مقتطف معدّل بحرف واحد يسقط.
   const tamperedExcerpt = { ...report, evidence: [{ ...report.evidence[0], excerpt: `${report.evidence[0].excerpt} مضاف` }] };
   assert.throws(() => verifyReportGrounding(tamperedExcerpt, document, chunks), (error) => error.code === "ANALYSIS_GROUNDING_FAILED");
-  // موقع معدّل يسقط.
   const tamperedLocation = { ...report, evidence: [{ ...report.evidence[0], pageNumber: 99 }] };
   assert.throws(() => verifyReportGrounding(tamperedLocation, document, chunks), (error) => error.code === "ANALYSIS_GROUNDING_FAILED");
   // chunk معدّل يسقط.
@@ -464,10 +470,191 @@ test("L) بلا مرشحين: لا استدعاء للنموذج إطلاقًا 
   assert.equal(fetchCalls, 0, "النموذج لا يُستدعى بلا مرشحين");
 });
 
-test("M) عدم التراجع: الثوابت والإصدارات المعتمدة", () => {
+test("M) عدم التراجع: الثوابت والإصدارات المعتمدة في v2", () => {
   assert.equal(analysisReportSchemaVersion, "analysis-report-v2");
-  assert.equal(analysisPromptVersion, "p4a-prompt-v3");
-  assert.equal(modelSelectionSchemaVersion, "analysis-model-selection-v1");
+  assert.equal(analysisPromptVersion, "p4a-prompt-v4");
+  assert.equal(modelSelectionSchemaVersion, "analysis-model-selection-v2");
   assert.equal(analysisFindingFields.length, 12);
   assert.deepEqual(evidenceCandidateLimits, { maxCandidates: 48, maxTotalExcerptChars: 6_000, maxExcerptChars: 400, minExcerptChars: 8 });
+});
+
+test("N) P4-M0BR0: معرف واحد ينتج statement حرفيًا وملخصًا مؤسسًا حتميًا", () => {
+  const { document, chunks } = fixtureDocument("booklet-pdf", "booklet-sample.pdf", "doc-mat-detailed");
+  const catalog = buildEvidenceCandidateCatalog({ document, chunks });
+  const [first, second] = catalog.candidates;
+
+  // 1. اختيار معرف واحد ينتج statement مطابقاً حرفياً للدليل.
+  const selectionSingle = {
+    ...emptySelection(),
+    scopeOfWork: [{ severity: "info", confidence: "medium", evidenceIds: [first.candidateId] }],
+    preliminaryDecision: "review",
+    decisionEvidenceIds: [first.candidateId],
+  };
+  const reportSingle = materializeCanonicalReport(selectionSingle, catalog);
+  assert.equal(reportSingle.scopeOfWork[0].statement, first.excerpt, "الدليل الفردي مطابق حرفياً");
+
+  // 2. اختيار عدة معرفات ينتج نصاً حتمياً من مقاطع متصلة (concatenated excerpts) دون زيادة.
+  const selectionMulti = {
+    ...emptySelection(),
+    scopeOfWork: [{ severity: "info", confidence: "medium", evidenceIds: [first.candidateId, second.candidateId] }],
+    preliminaryDecision: "review",
+    decisionEvidenceIds: [first.candidateId],
+  };
+  const reportMulti = materializeCanonicalReport(selectionMulti, catalog);
+  assert.equal(reportMulti.scopeOfWork[0].statement, `${first.excerpt}؛ ${second.excerpt}`, "الدليل المتعدد مدمج بفاصل حتمي");
+
+  // 3. الملخص حتمي ومؤسس بالكامل: كل كلمة فيه من مقتطفات الأدلة المختارة نفسها.
+  const wordsInSummary = reportMulti.executiveSummary
+    .split(/\s+/)
+    .map(w => w.replace(/[؛،:?؟.()[\]]/g, "").trim())
+    .filter(w => w.length > 0);
+  const corpus = new Set(
+    `${first.excerpt} ${second.excerpt}`
+      .split(/\s+/)
+      .map(w => w.replace(/[؛،:?؟.()[\]]/g, "").trim())
+      .filter(w => w.length > 0)
+  );
+  for (const word of wordsInSummary) {
+    assert.ok(corpus.has(word), `الملخص يحتوي كلمة غير موجودة في مقتطفات الأدلة المختارة: ${word}`);
+  }
+  // لا كلمة «مبدئي» ولا «حسم» ولا أي كلمة من خارج الأدلة — لا fallback.
+  assert.ok(!reportMulti.executiveSummary.includes("مبدئي"), "لا ملخص مبدئي غير مؤسس");
+  assert.ok(!reportMulti.executiveSummary.includes("دون حسم"), "لا عبارة fallback");
+  // warnings فارغة دائمًا: لا تحذيرات تشغيلية غير مؤسسة.
+  assert.deepEqual(reportMulti.warnings, [], "warnings فارغة — لا تحذيرات غير مؤسسة");
+
+  // 4. التقرير يجتاز validateAnalysisReport وverifyReportGrounding.
+  assert.deepEqual(validateAnalysisReport(reportMulti), [], "التقرير متعدد الأدلة صالح بنيوياً");
+  assert.equal(verifyReportGrounding(reportMulti, document, chunks), true, "التقرير متعدد الأدلة مجتاز للـ grounding");
+  // والملخص نفسه مؤسس: مساوٍ حرفيًا لبنود findings (مقتطفات الأدلة) نفسها.
+  const allFindingStatements = analysisFindingFields.flatMap((field) =>
+    reportMulti[field].map((finding) => finding.statement));
+  assert.ok(
+    reportMulti.executiveSummary.split("؛ ").every((piece) => allFindingStatements.some((statement) => statement.includes(piece))),
+    "الملخص مبني حصراً من بنود findings نفسها",
+  );
+});
+
+test("O) P4-M0BR0: تغطية الفئات الاثنتي عشرة وحتمية الملخص الكامل", () => {
+  const { document, chunks } = fixtureDocument("booklet-pdf", "booklet-sample.pdf", "doc-mat-all");
+  const catalog = buildEvidenceCandidateCatalog({ document, chunks });
+  const first = catalog.candidates[0];
+  const selectionAll = {
+    preliminaryDecision: "review",
+    confidence: "medium",
+    decisionEvidenceIds: [first.candidateId],
+    ...Object.fromEntries(analysisFindingFields.map((field) => [
+      field,
+      [{ severity: "info", confidence: "medium", evidenceIds: [first.candidateId] }]
+    ]))
+  };
+  const reportAll = materializeCanonicalReport(selectionAll, catalog);
+  for (const field of analysisFindingFields) {
+    assert.equal(reportAll[field].length, 1, `الفئة ${field} مادية بنجاح`);
+    assert.equal(reportAll[field][0].statement, first.excerpt, `الفئة ${field} statement حرفي`);
+  }
+  // الملخص الكامل: البند نفسه مكررًا عبر الفئات يُدمج مرة واحدة (Set) حتميًا.
+  assert.equal(reportAll.executiveSummary, first.excerpt, "الملخص الكامل = البند الحرفي الوحيد (تكرار مُدمج)");
+  assert.deepEqual(validateAnalysisReport(reportAll), [], "التقرير الكامل صالح");
+  assert.equal(verifyReportGrounding(reportAll, document, chunks), true, "التقرير الكامل مجتاز للـ grounding");
+});
+
+test("P) P4-M0BR0: لا laundering ولا نصوص حرة — أمثلة Qwen تُرفض فورًا", () => {
+  const { document, chunks } = fixtureDocument("booklet-pdf", "booklet-sample.pdf", "doc-qwen");
+  const catalog = buildEvidenceCandidateCatalog({ document, chunks });
+  const first = catalog.candidates[0];
+
+  // أمثلة Qwen الفاشلة نصيًا: كلمات واقعية حرة غير موجودة في corpus الأدلة.
+  const qwenExamples = [
+    { label: "statement زائد", mutate: (sel) => ({ ...sel, scopeOfWork: [{ statement: "يتعلق المشروع بتنفيذ أعمال صيانة لمبنى تدريبي في مدينة افتراضية", severity: "info", confidence: "low", evidenceIds: [first.candidateId] }] }) },
+    { label: "executiveSummary زائد", mutate: (sel) => ({ ...sel, executiveSummary: "المستند يحتوي على معلومات صيانة مبنى تدريبي ويجب تحديد قيمة الضمان الابتدائي" }) },
+    { label: "warnings زائدة", mutate: (sel) => ({ ...sel, warnings: ["يجب تحديد قيمة الضمان الابتدائي"] }) },
+    { label: "category زائدة داخل الفئة", mutate: (sel) => ({ ...sel, scopeOfWork: [{ category: "scopeOfWork", severity: "info", confidence: "low", evidenceIds: [first.candidateId] }] }) },
+    { label: "excerpt زائدة داخل الفئة", mutate: (sel) => ({ ...sel, scopeOfWork: [{ excerpt: "مقتطف منسوخ", severity: "info", confidence: "low", evidenceIds: [first.candidateId] }] }) },
+    { label: "evidence objects زائدة", mutate: (sel) => ({ ...sel, evidence: [{ evidenceId: "ev-1", documentId: "d", sourceType: "pdf", excerpt: "مختلق", chunkId: "c" }] }) },
+    { label: "حقل متداخل زائد", mutate: (sel) => ({ ...sel, scopeOfWork: [{ severity: "info", confidence: "low", evidenceIds: [first.candidateId], nested: { extra: true } }] }) },
+  ];
+  for (const { label, mutate } of qwenExamples) {
+    const base = {
+      ...emptySelection(),
+      preliminaryDecision: "review",
+      decisionEvidenceIds: [first.candidateId],
+    };
+    const tampered = mutate(base);
+    const errors = validateModelSelection(tampered, catalog.candidates);
+    assert.ok(Array.isArray(errors) && errors.length > 0, `${label}: مرفوض من المدقق`);
+    assert.throws(
+      () => materializeCanonicalReport(tampered, catalog),
+      (err) => err.code === "AI_OUTPUT_INVALID" && !(err instanceof TypeError),
+      `${label}: materialize يرفض بـAI_OUTPUT_INVALID`,
+    );
+  }
+
+  // أمثلة Qwen الحرة صراحةً لا تدخل التقرير canonical أبدًا.
+  for (const freeText of ["يتعلق المشروع", "المستند يحتوي", "يجب تحديد"]) {
+    const tampered = {
+      ...emptySelection(),
+      preliminaryDecision: "review",
+      decisionEvidenceIds: [first.candidateId],
+      executiveSummary: `${freeText} نص حر`,
+    };
+    assert.throws(
+      () => materializeCanonicalReport(tampered, catalog),
+      (err) => err.code === "AI_OUTPUT_INVALID",
+      `النص الحر «${freeText}» مرفوض`,
+    );
+  }
+});
+
+test("Q) P4-M0BR0: معرف مجهول أو مكرر يرفض، وبلا بنود مختارة يفشل الاختيار بأمان", () => {
+  const { document, chunks } = fixtureDocument("booklet-pdf", "booklet-sample.pdf", "doc-no-selection");
+  const catalog = buildEvidenceCandidateCatalog({ document, chunks });
+  const first = catalog.candidates[0];
+
+  // candidateId مجهول يرفض.
+  const unknown = {
+    ...emptySelection(),
+    scopeOfWork: [{ severity: "info", confidence: "low", evidenceIds: ["cand-000000000000000000000000"] }],
+    preliminaryDecision: "review",
+    decisionEvidenceIds: [first.candidateId],
+  };
+  assert.throws(() => materializeCanonicalReport(unknown, catalog), (err) => err.code === "AI_OUTPUT_INVALID");
+
+  // candidateId مكرر داخل finding يرفض.
+  const duplicated = {
+    ...emptySelection(),
+    scopeOfWork: [{ severity: "info", confidence: "low", evidenceIds: [first.candidateId, first.candidateId] }],
+    preliminaryDecision: "review",
+    decisionEvidenceIds: [first.candidateId],
+  };
+  assert.throws(() => materializeCanonicalReport(duplicated, catalog), (err) => err.code === "AI_OUTPUT_INVALID");
+
+  // بلا بنود مختارة (كل الفئات فارغة) وinsufficient_data: لا fallback — فشل آمن مشفر.
+  const noSelection = {
+    ...emptySelection(),
+    preliminaryDecision: "insufficient_data",
+    confidence: "low",
+    decisionEvidenceIds: [],
+  };
+  assert.throws(
+    () => materializeCanonicalReport(noSelection, catalog),
+    (err) => err.code === "AI_NO_GROUNDED_SELECTION" && !(err instanceof TypeError),
+    "بلا بنود مؤسسة لا يُحفظ أي ملخص غير مؤسس",
+  );
+  // والمزود يمرر الكود نفسه ولا يُنتج تقريرًا.
+  let generateCalls = 0;
+  const provider = createOllamaProvider({
+    env: ollamaEnv,
+    fetchFn: async () => {
+      generateCalls += 1;
+      return { ok: true, status: 200, json: async () => ({ response: JSON.stringify(noSelection) }) };
+    },
+  });
+  return provider.analyze({ document, chunks }).then(
+    () => { throw new Error("يجب أن يفشل"); },
+    (error) => {
+      assert.equal(error.code, "AI_NO_GROUNDED_SELECTION", "المزود يفشل بأمان بنفس الكود");
+      assert.equal(generateCalls, 1, "محاولة واحدة");
+    },
+  );
 });

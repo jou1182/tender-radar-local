@@ -4,7 +4,7 @@
 // وقرار enter/review/exclude يتطلب decisionEvidenceIds صريحة ومؤسسة.
 export const analysisReportSchemaVersion = "analysis-report-v2";
 // v3 (P4-A1D0): عقد التفاعل تغيّر — النموذج يختار معرفات مرشحين فقط ولا يكتب evidence.
-export const analysisPromptVersion = "p4a-prompt-v3";
+export const analysisPromptVersion = "p4a-prompt-v4";
 
 export const preliminaryDecisionValues = ["enter", "review", "exclude", "insufficient_data"];
 export const findingSeverityValues = ["info", "low", "medium", "high", "critical"];

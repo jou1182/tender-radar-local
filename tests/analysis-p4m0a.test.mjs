@@ -18,7 +18,6 @@ import { inflateSync } from "node:zlib";
 import test, { after } from "node:test";
 import { chunkAnalysisDocument } from "../scripts/lib/analysis-chunking.mjs";
 import { buildEvidenceCandidateCatalog } from "../scripts/lib/analysis-evidence-candidates.mjs";
-import { materializeCanonicalReport } from "../scripts/lib/analysis-model-selection.mjs";
 import { analysisFindingFields } from "../scripts/lib/analysis-report.mjs";
 import { extractBenchmarkPdfLogicalText } from "../scripts/lib/analysis-benchmark-pdf.mjs";
 import { canonicalBenchmarkText } from "./helpers/benchmark-canonical-text.mjs";
@@ -30,6 +29,7 @@ import {
   fingerprintCatalog,
   loadBenchmarkCase,
   loadBenchmarkManifest,
+  materializeReferenceReport,
   normalizeNumericText,
   validateBenchmarkGroundTruth,
 } from "../scripts/lib/analysis-benchmark-manifest.mjs";
@@ -77,7 +77,7 @@ function evaluateLoaded(caseId, report, { modelId = "model-a", telemetry, fixtur
 
 function referenceReport(caseId) {
   const loaded = loadedCases[caseId];
-  return materializeCanonicalReport(buildReferenceSelection(loaded.groundTruth), loaded.catalog);
+  return materializeReferenceReport(buildReferenceSelection(loaded.groundTruth), loaded.catalog);
 }
 
 function readSample(name) {
@@ -350,17 +350,16 @@ test("16) حقول JSON إضافية ممنوعة ⇒ SAFE_REJECTION", () => {
 
 test("17) الحالة المتعارضة: اختيار قيمة تعسفية ⇒ SAFETY_FAILURE", () => {
   const loaded = loadedCases["m0a-ambiguous"];
-  const selection = buildReferenceSelection(loaded.groundTruth);
+  const report = materializeReferenceReport(buildReferenceSelection(loaded.groundTruth), loaded.catalog);
   const duration90 = loaded.catalog.candidates.find((candidate) => candidate.excerpt.includes("90 يومًا"));
   assert.ok(duration90, "مرشح مدة 90 موجود في الكتالوج");
-  selection.deadlines.push({
+  report.deadlines.push({
     category: "deadlines",
-    statement: "مدة التنفيذ: 90 يومًا من تاريخ التسليم الابتدائي للموقع",
+    statement: duration90.excerpt,
     severity: "medium",
     confidence: "high",
     evidenceIds: [duration90.candidateId],
   });
-  const report = materializeCanonicalReport(selection, loaded.catalog);
   const result = evaluateLoaded("m0a-ambiguous", report);
   assert.equal(result.classification, "SAFETY_FAILURE");
   assert.equal(gateOf(result, "reportNoForbiddenAssertions").passed, false);
@@ -588,18 +587,17 @@ test("32) finding واقعي زائد غير موثق في ground-truth ⇒ SAFE
 
 test("33) finding واحد لا يغطي توقعين: الثاني يسجل missed والدرجة تنخفض", () => {
   const loaded = loadedCases["m0a-clear"];
-  const selection = buildReferenceSelection(loaded.groundTruth);
+  const report = materializeReferenceReport(buildReferenceSelection(loaded.groundTruth), loaded.catalog);
   const scopeCandidate = candidateOfExpectation("m0a-clear", "exp-clear-scope");
   const boqCandidate = candidateOfExpectation("m0a-clear", "exp-clear-boq");
-  selection.scopeOfWork = [{
+  report.scopeOfWork = [{
     category: "scopeOfWork",
-    statement: "نطاق العمل صيانة يشمل جدول الكميات ثلاثة بنود",
+    statement: `${scopeCandidate.excerpt}؛ ${boqCandidate.excerpt}`,
     severity: "medium",
     confidence: "high",
     evidenceIds: [scopeCandidate.candidateId, boqCandidate.candidateId],
   }];
-  selection.boqSummary = [];
-  const report = materializeCanonicalReport(selection, loaded.catalog);
+  report.boqSummary = [];
   const result = evaluateLoaded("m0a-clear", report);
   assert.equal(result.classification, "PASS", "ليس ادعاءً مختلقًا بل تغطية ناقصة");
   assert.ok(result.missedExpectedFindings.some((item) => item.expectedId === "exp-clear-boq"),

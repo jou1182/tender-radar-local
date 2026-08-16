@@ -14,7 +14,6 @@ import { buildBenchmarkPdf } from "./lib/analysis-benchmark-pdf.mjs";
 import { extractAnalysisDocument } from "./lib/analysis-documents.mjs";
 import { chunkAnalysisDocument } from "./lib/analysis-chunking.mjs";
 import { buildEvidenceCandidateCatalog } from "./lib/analysis-evidence-candidates.mjs";
-import { materializeCanonicalReport } from "./lib/analysis-model-selection.mjs";
 import {
   assertValidBenchmarkManifest,
   benchmarkFixtureMarker,
@@ -24,6 +23,7 @@ import {
   buildReferenceSelection,
   fingerprintCatalog,
   loadBenchmarkCase,
+  materializeReferenceReport,
   resolveExpectationCandidateIds,
   validateBenchmarkGroundTruth,
 } from "./lib/analysis-benchmark-manifest.mjs";
@@ -129,14 +129,14 @@ function buildCase(caseId) {
 function buildSamples(clearCase) {
   const { catalog, groundTruth } = clearCase;
   const selection = buildReferenceSelection(groundTruth);
-  const validReport = materializeCanonicalReport(selection, catalog);
+  const validReport = materializeReferenceReport(selection, catalog);
 
   // عينة الحذف: إسقاط finding الغرامات المطلوب دون أي خلل بنيوي.
   const omittedSelection = {
     ...selection,
     penalties: [],
   };
-  const omittedReport = materializeCanonicalReport(omittedSelection, catalog);
+  const omittedReport = materializeReferenceReport(omittedSelection, catalog);
 
   // عينة الدليل المجهول: finding يشير إلى معرف ليس في الكتالوج (النظام كان سيرفضه).
   // تُضاف نسخة دليل بالمعرف المجهول مع إبقاء الدليل الأصلي كي يبقى التقرير
@@ -219,7 +219,7 @@ function main() {
   const selfCheck = [];
   for (const built of builtCases) {
     const loaded = loadBenchmarkCase(outRoot, built.spec.caseId);
-    const referenceReport = materializeCanonicalReport(buildReferenceSelection(loaded.groundTruth), loaded.catalog);
+    const referenceReport = materializeReferenceReport(buildReferenceSelection(loaded.groundTruth), loaded.catalog);
     const result = evaluateBenchmarkRun({
       benchmarkCase: {
         caseId: built.spec.caseId,

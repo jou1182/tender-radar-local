@@ -25,8 +25,8 @@
     }
   },
   "analysisReportSchemaVersion": "analysis-report-v2",
-  "analysisPromptVersion": "p4a-prompt-v3",
-  "modelSelectionSchemaVersion": "analysis-model-selection-v1",
+  "analysisPromptVersion": "p4a-prompt-v4",
+  "modelSelectionSchemaVersion": "analysis-model-selection-v2",
   "liveAiEnabledByDefault": false,
   "currentDefaultProvider": "stub",
   "localModels": {

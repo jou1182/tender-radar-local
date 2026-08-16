@@ -82,7 +82,7 @@ function buildFlatePdf(pages) {
 
 test("S1) report schema and prompt versions are v2 with twelve finding categories", () => {
   assert.equal(analysisReportSchemaVersion, "analysis-report-v2");
-  assert.equal(analysisPromptVersion, "p4a-prompt-v3");
+  assert.equal(analysisPromptVersion, "p4a-prompt-v4");
   for (const field of ["scopeOfWork", "boqSummary", "criticalQuantities"]) {
     assert.ok(analysisFindingFields.includes(field), `${field} is an evidence-backed finding category`);
   }
@@ -124,11 +124,14 @@ test("S3) the Ollama request body itself: selection schema, source metadata, and
   const catalog = buildEvidenceCandidateCatalog({ document, chunks });
   const validSelection = {
     ...emptyAnalysisReport(),
+    scopeOfWork: [{ severity: "info", confidence: "medium", evidenceIds: [catalog.candidates[0].candidateId] }],
     preliminaryDecision: "review",
     confidence: "medium",
     decisionEvidenceIds: [catalog.candidates[0].candidateId],
   };
   delete validSelection.evidence; // مخطط الاختيار الداخلي لا يحتوي evidence
+  delete validSelection.executiveSummary; // P4-M0BR0: لا حقل نصي في المخطط الداخلي v2
+  delete validSelection.warnings;
   let seenBody = null;
   const seenUrls = [];
   const provider = createOllamaProvider({
@@ -145,9 +148,11 @@ test("S3) the Ollama request body itself: selection schema, source metadata, and
   const { prompt } = seenBody;
   assert.match(prompt, /decisionEvidenceIds/, "decision evidence is requested explicitly");
   assert.match(prompt, /evidenceIds/, "finding shape with evidenceIds is documented");
-  assert.match(prompt, /category, statement, severity/, "full finding shape is documented");
-  assert.match(prompt, /حرفيًا/, "the catalog is described as verbatim reference text");
-  assert.match(prompt, /analysis-report-v2/, "the canonical report version is named");
+  assert.match(prompt, /severity: info\|low\|medium\|high\|critical/, "finding shape is documented (v2 بلا statement/category)");
+  assert.match(prompt, /لا تكتب أي نص أو statement/, "the model is forbidden from writing any free text");
+  assert.doesNotMatch(prompt, /category, statement, severity/, "v2 لا يعرض حقل statement في شكل finding");
+  assert.match(prompt, /analysis-model-selection-v2/, "the internal selection schema version is named");
+  assert.doesNotMatch(prompt, /analysis-report-v2/, "النموذج لا يرى صيغة التقرير النهائية — يختار معرفات فقط");
   assert.match(prompt, /معرف المستند: doc-req/);
   for (const field of analysisFindingFields) assert.ok(prompt.includes(field), `prompt names category ${field}`);
   // كل مرشح يرسل بيانات مصدره الفعلية معه.

@@ -39,7 +39,7 @@ function engineWith(repository, env = {}, extra = {}) {
   return createAnalysisEngine({ repository, fixtureRoot, env, ...extra });
 }
 
-// مزود Ollama مزيف يبني اختيارًا بالمعرف من كتالوج الـprompt نفسه (P4-A1D0).
+// مزود Ollama مزيف يبني اختيارًا بالمعرف من كتالوج الـprompt نفسه (P4-M0BR0/v2).
 function groundedFakeFetch(calls) {
   return async (url, options) => {
     calls.push(url);
@@ -47,11 +47,14 @@ function groundedFakeFetch(calls) {
     const candidateId = prompt.match(/\[(cand-[0-9a-f]{24})\]/)[1];
     const selection = {
       ...emptyAnalysisReport(),
+      scopeOfWork: [{ severity: "info", confidence: "medium", evidenceIds: [candidateId] }],
       preliminaryDecision: "review",
       confidence: "medium",
       decisionEvidenceIds: [candidateId],
     };
-    delete selection.evidence; // مخطط الاختيار الداخلي لا يحتوي evidence (P4-A1D0)
+    delete selection.evidence; // مخطط الاختيار الداخلي لا يحتوي evidence
+    delete selection.executiveSummary; // P4-M0BR0: لا حقل نصي في المخطط الداخلي v2
+    delete selection.warnings;
     return { ok: true, json: async () => ({ response: JSON.stringify(selection) }) };
   };
 }

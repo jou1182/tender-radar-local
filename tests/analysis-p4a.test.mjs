@@ -292,10 +292,13 @@ test("14-15) Ollama sends only the bounded candidate catalog to /api/generate, n
     const candidateId = calls[0].body.prompt.match(/\[(cand-[0-9a-f]{24})\]/)[1];
     const selection = {
       ...emptyAnalysisReport(),
+      scopeOfWork: [{ severity: "info", confidence: "medium", evidenceIds: [candidateId] }],
       preliminaryDecision: "review",
       decisionEvidenceIds: [candidateId],
     };
     delete selection.evidence;
+    delete selection.executiveSummary; // P4-M0BR0: المخطط الداخلي v2 بلا حقول نصية
+    delete selection.warnings;
     return { ok: true, json: async () => ({ response: JSON.stringify(selection) }) };
   };
   const provider = createOllamaProvider({

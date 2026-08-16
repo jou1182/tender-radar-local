@@ -55,8 +55,8 @@ flowchart LR
 2. التقسيم (`analysis-chunking.mjs`) بحد صارم لكل جزء.
 3. الكتالوج (`analysis-evidence-candidates.mjs`) يستخرج مقتطفات حرفية بمعرفات `cand-`
    حتمية (SHA‑256)، بحدود 48 مرشحًا / 6000 حرف / 400 حرف للمقتطف.
-4. النموذج يستلم مخطط `analysis-model-selection-v1` الديناميكي و**يختار معرفات فقط** —
-   لا يكتب excerpt ولا evidence.
+4. النموذج يستلم مخطط `analysis-model-selection-v2` الديناميكي و**يختار معرفات فقط** —
+   لا يكتب excerpt ولا evidence ولا statement ولا summary ولا warnings.
 5. `materializeCanonicalReport` يبني التقرير من الكتالوج المحلي، ثم التحقق الكلي،
    ثم تطبيع المعرفات بنطاق المهمة، ثم `verifyReportGrounding` بلا تخفيف.
 6. الفشل في أي حاجز ⇒ المهمة `failed` بكود خطأ واضح، بلا تقرير ولا إعادة محاولة.

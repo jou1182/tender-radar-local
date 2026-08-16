@@ -209,7 +209,7 @@ export function createOllamaProvider({ env = {}, fetchFn = globalThis.fetch } = 
       let response;
       try {
         // نقطة التوليد فقط؛ لا سحب نماذج ولا أي endpoint آخر، ومحاولة واحدة بلا إعادة.
-        // format يحمل مخطط الاختيار الداخلي analysis-model-selection-v1 (P4-A1D0)
+        // format يحمل مخطط الاختيار الداخلي analysis-model-selection-v2 (P4-M0BR0)
         // لفرض بنية الاختيار بالمعرف من المصدر؛ validateModelSelection يبقى الحاجز
         // الإلزامي الثاني بعد الاستجابة.
         response = await fetchFn(`${host}/api/generate`, {

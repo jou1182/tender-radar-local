@@ -31,10 +31,14 @@ const fakeDocument = {
 };
 const fakeChunks = [{ chunkId: "chk-1", text: "نص جزء اختبار ثابت.", blockIds: ["b1"], sources: [{ pageNumber: 1 }] }];
 
-// اختيار نموذج صحيح الشكل (P4-A1D0): كل حقول التقرير عدا evidence.
+// اختيار نموذج صحيح الشكل (P4-M0BR0 / analysis-model-selection-v2):
+// الفئات الاثنتا عشرة + القرار واليقين وأدلة القرار فقط — بلا executiveSummary
+// ولا warnings ولا evidence (المخطط الداخلي لا يقبل أي حقل نصي أو زائد).
 function emptySelection() {
   const selection = { ...emptyAnalysisReport() };
   delete selection.evidence;
+  delete selection.executiveSummary;
+  delete selection.warnings;
   return selection;
 }
 
@@ -149,6 +153,8 @@ test("F) المخطط مجمد بالكامل ولا يتغير بمحاولة �
 });
 
 test("G) جسم طلب Ollama: format مخطط اختيار ديناميكي وليس نصًا", async () => {
+  const catalogForResponse = buildEvidenceCandidateCatalog({ document: fakeDocument, chunks: fakeChunks });
+  const candidateId = catalogForResponse.candidates[0].candidateId;
   let seenBody = null;
   const seenUrls = [];
   const provider = createOllamaProvider({
@@ -156,21 +162,30 @@ test("G) جسم طلب Ollama: format مخطط اختيار ديناميكي و�
     fetchFn: async (url, options) => {
       seenUrls.push(url);
       seenBody = JSON.parse(options.body);
-      return { ok: true, status: 200, json: async () => ({ response: JSON.stringify(emptySelection()) }) };
+      const response = {
+        ...emptySelection(),
+        scopeOfWork: [{ severity: "info", confidence: "medium", evidenceIds: [candidateId] }],
+        preliminaryDecision: "review",
+        confidence: "medium",
+        decisionEvidenceIds: [candidateId],
+      };
+      return { ok: true, status: 200, json: async () => ({ response: JSON.stringify(response) }) };
     },
   });
   await provider.analyze({ document: fakeDocument, chunks: fakeChunks });
   assert.deepEqual(seenUrls, ["http://127.0.0.1:11434/api/generate"], "endpoint الوحيد /api/generate ولا /api/pull");
   assert.equal(typeof seenBody.format, "object", "format ليس string");
   assert.notEqual(seenBody.format, "json", "لم تعد القيمة النصية json");
-  // P4-A1D0: format يحمل مخطط الاختيار الداخلي الديناميكي المعتمد على كتالوج المستند.
+  // P4-M0BR0: format يحمل مخطط الاختيار الداخلي v2 الديناميكي المعتمد على كتالوج المستند.
   const catalog = buildEvidenceCandidateCatalog({ document: fakeDocument, chunks: fakeChunks });
   assert.deepEqual(seenBody.format, JSON.parse(JSON.stringify(buildModelSelectionSchema(catalog.candidates))), "format يطابق مخطط الاختيار الديناميكي بنيويًا");
   assert.ok(!("evidence" in seenBody.format.properties), "النموذج لا يرى حقل evidence إطلاقًا");
+  assert.ok(!("executiveSummary" in seenBody.format.properties), "النموذج لا يرى حقل executiveSummary إطلاقًا");
+  assert.ok(!("warnings" in seenBody.format.properties), "النموذج لا يرى حقل warnings إطلاقًا");
   assert.equal(seenBody.stream, false);
   assert.equal(seenBody.options.temperature, 0);
   assert.equal(seenBody.model, "qwen2.5:7b", "النموذج الافتراضي من الإعداد");
-  assert.match(seenBody.prompt, /analysis-report-v2/, "صيغة التقرير canonical مذكورة في الـprompt");
+  assert.match(seenBody.prompt, /analysis-model-selection-v2/, "مخطط الاختيار الداخلي v2 مذكور في الـprompt");
 });
 
 test("H) استجابة صحيحة مطابقة تنجح وتبقى صيغة التقرير v2", async () => {
@@ -178,6 +193,7 @@ test("H) استجابة صحيحة مطابقة تنجح وتبقى صيغة ا�
   const candidateId = catalog.candidates[0].candidateId;
   const validSelection = {
     ...emptySelection(),
+    scopeOfWork: [{ severity: "info", confidence: "medium", evidenceIds: [candidateId] }],
     preliminaryDecision: "review",
     confidence: "medium",
     decisionEvidenceIds: [candidateId],
@@ -193,7 +209,7 @@ test("H) استجابة صحيحة مطابقة تنجح وتبقى صيغة ا�
   assert.equal(report.evidence[0].excerpt, "نص جزء اختبار ثابت.", "excerpt حرفي من الكتالوج لا من النموذج");
   assert.ok(Number.isInteger(_meta.durationMs));
   assert.equal(analysisReportSchemaVersion, "analysis-report-v2");
-  assert.equal(analysisPromptVersion, "p4a-prompt-v3");
+  assert.equal(analysisPromptVersion, "p4a-prompt-v4");
 });
 
 test("I) استجابة مشوهة (شكل P4-A1B) تُرفض بـAI_OUTPUT_INVALID بلا TypeError وبلا إعادة", async () => {

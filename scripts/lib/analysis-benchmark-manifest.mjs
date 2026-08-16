@@ -8,7 +8,7 @@ import path from "node:path";
 import { extractAnalysisDocument } from "./analysis-documents.mjs";
 import { chunkAnalysisDocument } from "./analysis-chunking.mjs";
 import { buildEvidenceCandidateCatalog } from "./analysis-evidence-candidates.mjs";
-import { analysisFindingFields } from "./analysis-report.mjs";
+import { analysisFindingFields, validateAnalysisReport } from "./analysis-report.mjs";
 
 export const benchmarkVersion = "analysis-benchmark-v1";
 export const benchmarkGroundTruthVersion = "benchmark-ground-truth-v1";
@@ -435,8 +435,11 @@ export function loadBenchmarkCase(benchmarkRoot, caseId) {
 }
 
 // ---------- بناء selection مرجعي من ground-truth (للعينات والتحقق الذاتي) ----------
-// ليس ناتج نموذج: statement = expectedValue الموثقة، وevidenceIds = candidateIds
-// المحلولة من كتالوج النظام. يمر عبر materializeCanonicalReport كأي selection.
+// مرجع مُصنّع من بيانات ground-truth المعتمدة — ليس ناتج نموذج إطلاقًا. لا يمر
+// عبر مسار النموذج الصارم (analysis-model-selection-v2) الذي يمنع أي نص حر؛
+// referenceReport تُبنى منه مباشرة عبر materializeReferenceReport لأنها بيانات
+// مرجعية لاختبار المُقيّم نفسه (تغطي أيضًا عبارات التعارض الموثقة التي لا تظهر
+// حرفيًا في مقتطفات الأدلة، مثل «مدة التنفيذ متعارضة بين الصفحتين»).
 export function buildReferenceSelection(groundTruth) {
   const selection = {
     executiveSummary: `تقرير مرجعي مصطنع للحالة ${groundTruth.caseId} — لأغراض المقارنة Offline فقط.`,
@@ -466,6 +469,68 @@ export function buildReferenceSelection(groundTruth) {
   }
   selection.decisionEvidenceIds = decisionIds;
   return selection;
+}
+
+// يُبني التقرير المرجعي من selection مرجعي: يبني evidence من الكتالوج حرفيًا
+// ثم يتحقق من صحة analysis-report-v2 فقط — بلا تقييد نصي لأن المصدر
+// ground-truth معتمد وليس ناتج نموذج. يُستخدم حصريًا في منصة المقارنة Offline.
+export function materializeReferenceReport(selection, catalog) {
+  const candidates = (catalog && Array.isArray(catalog.candidates)) ? catalog.candidates : [];
+  const byId = new Map(candidates.map((candidate) => [candidate.candidateId, candidate]));
+  const usedIds = [];
+  const seen = new Set();
+  const collect = (id) => {
+    if (!seen.has(id)) {
+      seen.add(id);
+      usedIds.push(id);
+    }
+  };
+  const report = {
+    executiveSummary: selection.executiveSummary,
+    preliminaryDecision: selection.preliminaryDecision,
+    confidence: selection.confidence,
+    decisionEvidenceIds: [...selection.decisionEvidenceIds],
+    warnings: [...selection.warnings],
+  };
+  for (const field of analysisFindingFields) {
+    report[field] = (Array.isArray(selection[field]) ? selection[field] : []).map((finding) => {
+      for (const id of finding.evidenceIds) collect(id);
+      return {
+        category: finding.category,
+        statement: finding.statement,
+        severity: finding.severity,
+        confidence: finding.confidence,
+        evidenceIds: [...finding.evidenceIds],
+      };
+    });
+  }
+  for (const id of selection.decisionEvidenceIds) collect(id);
+  report.evidence = usedIds.map((id) => {
+    const candidate = byId.get(id);
+    if (!candidate) {
+      const error = new Error(`معرف دليل مجهول لا يوجد في كتالوج المرشحين: ${id}`);
+      error.code = "AI_OUTPUT_INVALID";
+      throw error;
+    }
+    return {
+      evidenceId: candidate.candidateId,
+      documentId: candidate.documentId,
+      sourceType: candidate.sourceType,
+      ...(candidate.pageNumber !== undefined ? { pageNumber: candidate.pageNumber } : {}),
+      ...(candidate.sheetName !== undefined ? { sheetName: candidate.sheetName, cellRange: candidate.cellRange } : {}),
+      ...(candidate.section !== undefined ? { section: candidate.section } : {}),
+      excerpt: candidate.excerpt,
+      chunkId: candidate.chunkId,
+    };
+  });
+  const reportErrors = validateAnalysisReport(report);
+  if (reportErrors.length) {
+    const error = new Error(`فشل الفحص الذاتي للتقرير المرجعي: ${reportErrors[0]}`);
+    error.code = "BENCHMARK_REFERENCE_INVALID";
+    error.details = reportErrors;
+    throw error;
+  }
+  return report;
 }
 
 // يحل معرفات المرشحين من مقتطفات موثقة في spec: يجب أن يطابق كل مقتطف
