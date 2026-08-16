@@ -107,14 +107,21 @@ test("3) القيم الأساسية في CURRENT_STATE.json صحيحة (بني�
   assert.match(template, /ليس مساويًا له بالضرورة/, "القالب: المساواة مع functionalBaselineCommit غير إلزامية");
 });
 
-test("4) تسجيل النموذجين: qwen2.5:14b معروف وNemotron بحالة installed_tag_unverified فقط", () => {
+test("4) تسجيل النموذجين: qwen2.5:14b معروف وNemotron بالاسم الحرفي المكتشف ونتيجة الاختيار (P4-M0B8)", () => {
   const state = JSON.parse(readPackageFile("docs/continuity/CURRENT_STATE.json"));
   assert.equal(state.localModels.qwen.knownInstalledTag, "qwen2.5:14b");
-  assert.equal(state.localModels.nemotron.status, "installed_tag_unverified");
-  assert.match(state.localModels.nemotron.note, /\/api\/tags/, "الاسم الدقيق يُكتشف من /api/tags لاحقًا");
+  assert.equal(state.localModels.nemotron.status, "nemotron-3.5-lightning:latest");
+  assert.match(state.localModels.nemotron.note, /\/api\/tags/, "الاسم اكتُشف من /api/tags");
+  const outcome = state.modelSelectionOutcome;
+  assert.equal(outcome.status, "completed", "مسار اختيار النموذج اكتمل");
+  assert.equal(outcome.winner, "nemotron-3.5-lightning:latest", "الفائز هو Nemotron بالاسم الحرفي");
+  assert.equal(outcome.qualificationResult.includes("PASS 2/3"), true, "PASS 2/3 في P4-M0B7 دون تخفيف");
+  assert.equal(outcome.adopted, false, "النموذج غير مُعتمد بعد — لا تغيير في provider");
+  assert.equal(state.currentDefaultProvider, "stub", "currentDefaultProvider يبقى stub");
+  assert.equal(state.liveAiEnabledByDefault, false, "الذكاء الحي يبقى معطلًا");
   const nextPhases = readPackageFile("docs/continuity/NEXT_PHASES.md");
-  assert.doesNotMatch(nextPhases, /nemotron[:\w.-]*\d/i, "لا اسم Nemotron تخمينيًا برقم أو وسم");
-  assert.match(nextPhases, /installed_tag_unverified/, "NEXT_PHASES يسجل حالة عدم التحقق نفسها");
+  assert.match(nextPhases, /nemotron-3.5-lightning:latest/, "NEXT_PHASES يوثق الاسم الحرفي الفائز");
+  assert.doesNotMatch(nextPhases, /installed_tag_unverified/, "لم تعد حالة unverified — الاسم اكتُشف حيًا");
 });
 
 test("5) لا مسارات Windows مطلقة ولا أسماء مستخدمين في أي ملف من الحزمة", () => {

@@ -35,11 +35,33 @@
       "note": "سُجل من فحص محلي سابق معتمد؛ لا يمثل ضمانًا لحالة حية حالية."
     },
     "nemotron": {
-      "status": "installed_tag_unverified",
-      "note": "الاسم الدقيق يجب اكتشافه لاحقًا من /api/tags داخل مرحلة حية مصرح بها؛ لا يوجد اسم مثبت في الكود."
+      "status": "nemotron-3.5-lightning:latest",
+      "note": "الاسم الحرفي المكتشف والمؤكد حيًا عبر GET /api/tags؛ اجتاز PASS 2/3 في P4-M0B7 دون أي تخفيف لبوابات الأمان."
     }
   },
   "modelSelectionSource": "OLLAMA_MODEL",
+  "modelSelectionOutcome": {
+    "status": "completed",
+    "winner": "nemotron-3.5-lightning:latest",
+    "qualificationRule": "PASS في حالتين من ثلاث على الأقل دون أي تخفيف لبوابات الأمان",
+    "qualificationResult": "PASS 2/3 في P4-M0B7 (m0a-clear 100/100 + m0a-tables 57.5)",
+    "completedPhases": [
+      "P4-M0B",
+      "P4-M0B1",
+      "P4-M0B1R",
+      "P4-M0B2",
+      "P4-M0B2R0",
+      "P4-M0B2A",
+      "P4-M0B2B",
+      "P4-M0B3",
+      "P4-M0B4",
+      "P4-M0B5",
+      "P4-M0B6",
+      "P4-M0B7"
+    ],
+    "adopted": false,
+    "note": "النموذج الفائز محدَّد ولم يُعتمد بعد؛ currentDefaultProvider يبقى stub وliveAiEnabledByDefault=false. ربط النموذج بالتشغيل اليومي قرار منفصل صريح لاحق."
+  },
   "nextPlannedPhase": "P4-M0B",
   "attachmentLiveStages": {
     "p3b1b": {
