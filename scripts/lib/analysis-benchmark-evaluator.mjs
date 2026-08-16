@@ -148,12 +148,14 @@ function ungroundedNumericClaim(rows, evidenceItems) {
 }
 
 // ---------- تدقيق السرد: جمل executiveSummary وwarnings ----------
-// التقسيم على النقطة والسطر الجديد وعلامة التعجب فقط؛ علامتا الاستفهام تُبقيان
-// داخل الجملة لأن سياق السؤال يعفي من forbiddenAssertions (السؤال عن قيمة
-// ليس ادعاءً بها).
-function splitNarrativeSentences(text) {
+// التقسيم على النقطة الحقيقية والسطر الجديد وعلامة التعجب فقط؛ النقطة الواقعة
+// بين رقمين (فاصل عشري مثل 0.1% أو 10.5 أو 1.25) جزء من الرقم ولا تقسم —
+// وإلا انشطر «0.1%» إلى «0» و«1%» فتُختلق قيمة 0 غير مؤسسة. علامتا الاستفهام
+// تُبقيان داخل الجملة لأن سياق السؤال يعفي من forbiddenAssertions (السؤال عن
+// قيمة ليس ادعاءً بها).
+export function splitNarrativeSentences(text) {
   return String(text || "")
-    .split(/[.\n!]+/)
+    .split(/(?<!\d)\.|\.(?!\d)|\n+|!+/)
     .map((sentence) => normalizeSpaces(sentence))
     .filter((sentence) => sentence.length > 0);
 }

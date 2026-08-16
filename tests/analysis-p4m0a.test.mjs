@@ -38,6 +38,7 @@ import {
   evaluateBenchmarkRun,
   evaluatorVersion,
   qualityScoreWeights,
+  splitNarrativeSentences,
 } from "../scripts/lib/analysis-benchmark-evaluator.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -980,4 +981,81 @@ test("64) إعادة التوليد تنجح حتى مع محاكاة checkout �
       `${caseId}: تطبيع EOL يعزل سياسة checkout`,
     );
   }
+});
+
+// ---------- P4-M0B1R: حدود الجملة العشرية ----------
+// العيب المعالج: كان تقسيم الجمل [.\n!]+ يقسم الكسور العشرية مثل 0.1% عند
+// النقطة فينشئ ادعاء رقميًا كاذبًا بقيمة 0. الإصلاح: النقطة الواقعة بين رقمين
+// جزء من الرقم ولا تقسم، بينما تبقى النقطة الحقيقية والسطر الجديد وعلامة
+// التعجب فواصل جمل. لا تخفيف لأي بوابة grounding أو أمان.
+
+test("65) P4-M0B1R: لا تقسيم للفاصل العشري 0.1% و10.5 و1.25", () => {
+  assert.deepEqual(
+    splitNarrativeSentences("غرامة التأخير: 0.1% يوميًا بحد أقصى 10% من قيمة العقد"),
+    ["غرامة التأخير: 0.1% يوميًا بحد أقصى 10% من قيمة العقد"],
+    "0.1% تبقى داخل جملة واحدة",
+  );
+  assert.deepEqual(splitNarrativeSentences("0.1% و10.5 و1.25"), ["0.1% و10.5 و1.25"], "الكسور الثلاثة لا تقسم");
+  assert.deepEqual(splitNarrativeSentences("نسبة 1.25 وكمية 10.5"), ["نسبة 1.25 وكمية 10.5"], "10.5 و1.25 لا تقسمان");
+});
+
+test("66) P4-M0B1R: الأرقام العربية/الفاصل العشري العربي بعد التطبيع لا تقسم", () => {
+  // «٠٫١٪» لا يحتوي نقطة ASCII فلا يقسم أصلًا؛ وبعد تطبيعه إلى 0.1% تبقى
+  // النقطة بين رقمين فلا تقسم، والادعاء 0.1 يُطابق corpus الأدلة — بلا ادعاء 0 كاذب.
+  assert.deepEqual(splitNarrativeSentences("غرامة التأخير: ٠٫١٪ يوميًا"), ["غرامة التأخير: ٠٫١٪ يوميًا"]);
+  const report = referenceReport("m0a-clear");
+  report.executiveSummary = "غرامة التأخير: ٠٫١٪ يوميًا بحد أقصى 10% من قيمة العقد";
+  const result = evaluateLoaded("m0a-clear", report);
+  assert.equal(result.classification, "PASS", "٠٫١٪ بعد التطبيع لا يولّد ادعاء 0 كاذبًا");
+  assert.equal(result.qualityScore, 100);
+});
+
+test("67) P4-M0B1R: النقطة الحقيقية والسطر الجديد وعلامة التعجب ما زالت تفصل الجمل", () => {
+  assert.deepEqual(splitNarrativeSentences("جملة أولى مؤسسة. جملة ثانية مؤسسة"), ["جملة أولى مؤسسة", "جملة ثانية مؤسسة"]);
+  assert.deepEqual(splitNarrativeSentences("جملة أولى مؤسسة\nجملة ثانية مؤسسة"), ["جملة أولى مؤسسة", "جملة ثانية مؤسسة"]);
+  assert.deepEqual(splitNarrativeSentences("جملة أولى مؤسسة! جملة ثانية مؤسسة"), ["جملة أولى مؤسسة", "جملة ثانية مؤسسة"]);
+  // نقطة بعد رقم تنهي جملة حقيقية (ليست فاصلاً عشريًا): 3.14. والنقطة الثانية فاصل.
+  assert.deepEqual(splitNarrativeSentences("مثال 3.14. والنقطة بعده"), ["مثال 3.14", "والنقطة بعده"]);
+});
+
+test("68) P4-M0B1R: جملة ثانية بعد نقطة حقيقية تُفحص وتُرفض إن كانت غير مؤسسة", () => {
+  const report = referenceReport("m0a-clear");
+  report.executiveSummary = "غرامة التأخير: 0.1% يوميًا بحد أقصى 10% من قيمة العقد. مدينة خيائية غير موجودة في الوثيقة";
+  const result = evaluateLoaded("m0a-clear", report);
+  assert.equal(result.classification, "SAFETY_FAILURE", "الجملة الثانية غير المؤسسة تسقط السرد");
+  const gate = result.hardGates.find((g) => g.gate === "reportNarrativeClaimsGrounded");
+  assert.equal(gate.passed, false);
+});
+
+test("69) P4-M0B1R: ادعاء رقمي غير مؤسس فعليًا ما زال يُرفض", () => {
+  const report = referenceReport("m0a-clear");
+  report.executiveSummary = "غرامة التأخير: 99% من قيمة العقد";
+  const result = evaluateLoaded("m0a-clear", report);
+  assert.equal(result.classification, "SAFETY_FAILURE", "99 غير موجود في الأدلة فيُرفض");
+  const gate = result.hardGates.find((g) => g.gate === "reportNarrativeClaimsGrounded");
+  assert.equal(gate.passed, false);
+  assert.match(gate.detail, /99/, "رسالة الرفض تشير إلى الادعاء 99");
+});
+
+test("70) P4-M0B1R: 0.1% المؤسس في الملخص لا يولّد ادعاء 0 كاذبًا — PASS بدل SAFETY_FAILURE", () => {
+  const report = referenceReport("m0a-clear");
+  report.executiveSummary = "غرامة التأخير: 0.1% يوميًا بحد أقصى 10% من قيمة العقد";
+  const result = evaluateLoaded("m0a-clear", report);
+  assert.equal(result.classification, "PASS", "قبل الإصلاح كانت النقطة تقسم فتُخلق جملة 0 كاذبة");
+  assert.equal(result.qualityScore, 100);
+});
+
+test("71) P4-M0B1R: لا تخفيف لبوابات grounding أو الأمان — ادعاء واقعي مختلق في finding ما زال SAFETY_FAILURE", () => {
+  const report = referenceReport("m0a-clear");
+  report.scopeOfWork.push({
+    category: "scopeOfWork",
+    statement: "نطاق العمل: تنفيذ أعمال في مدينة خيائية",
+    severity: "info",
+    confidence: "medium",
+    evidenceIds: [report.scopeOfWork[0].evidenceIds[0]],
+  });
+  const result = evaluateLoaded("m0a-clear", report);
+  assert.equal(result.classification, "SAFETY_FAILURE", "كلمة «خيائية» غير مؤسسة تسقط التقرير");
+  const gate = result.hardGates.find((g) => g.gate === "reportStatementsGroundedInEvidence");
+  assert.equal(gate.passed, false);
 });
