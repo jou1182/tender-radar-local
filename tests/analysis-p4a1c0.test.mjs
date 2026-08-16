@@ -374,17 +374,21 @@ test("Q) P4-M0B2A: runtime-freeze محدَّث وبصمة analysis-providers ت�
   assert.equal(actual, freeze.files["scripts/lib/analysis-providers.mjs"], "بصمة providers في runtime-freeze تطابق الملف بعد think:false");
 });
 
-test("R) P4-M0B4: التعليمات الجديدة ضد التنويهات والتعارضات موجودة حرفيًا في الـprompt الناتج", () => {
+test("R) P4-M0B6: التعليمات المعمَّمة (معرفات التتبع/الاختبار + حظر حسم التعارض) موجودة حرفيًا في الـprompt الناتج", () => {
   const catalog = buildEvidenceCandidateCatalog({ document: fakeDocument, chunks: fakeChunks });
   assert.ok(catalog.candidates.length > 0, "كتالوج مرشحين متاح لبناء الـprompt");
   const prompt = buildModelSelectionPrompt({ document: fakeDocument, catalog });
   assert.ok(
-    prompt.includes("أي مقتطف يبدو تنويهًا أو علامة تحذيرية تفيد أن الوثيقة بيانات اختبار اصطناعية أو ليست منافسة حقيقية — يُستبعد تمامًا من أي finding واقعي؛ لا يُعامل كشرط أهلية أو حقيقة من الوثيقة."),
-    "تعليمة استبعاد التنويهات موجودة حرفيًا",
+    prompt.includes("يشبه معرف تتبع أو اختبار داخليًا للنظام")
+      && prompt.includes("كل ذلك مرجع تقني للنظام وليس محتوى تعاقديًا")
+      && prompt.includes("يُستبعد تمامًا من أي finding واقعي"),
+    "تعليمة استبعاد معرفات التتبع/الاختبار والتنويهات موجودة حرفيًا",
   );
   assert.ok(
-    prompt.includes("إن وُجدت قيمتان متعارضتان صراحةً لنفس الحقيقة (نفس البند، مدة أو تاريخ أو مبلغ مختلف) بين مقتطفات مختلفة — يُمنع اختيار أحدهما وحسم التعارض؛ يجب توجيه هذه الحالة إلى unclearItems أو questionsForAuthority فقط."),
-    "تعليمة التعارضات موجودة حرفيًا",
+    prompt.includes("تنبيه صارم: إن وُجدت قيمتان متعارضتان صراحةً لنفس الحقيقة")
+      && prompt.includes("يُمنع منعًا باتًا اختيار أحدهما أو ترجيحه أو حسم التعارض")
+      && prompt.includes("وجّه هذه الحالة حصريًا إلى فئتي unclearItems أو questionsForAuthority فقط"),
+    "تعليمة حظر حسم التعارض موجودة حرفيًا",
   );
 });
 
