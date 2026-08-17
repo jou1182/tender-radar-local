@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const workflowUrl = new URL("../automation/n8n/radar-phase-1.workflow.json", import.meta.url);
+const analysisWorkflowUrl = new URL("../workflows/p4a-local-analysis.json", import.meta.url);
 
 test("n8n phase one workflow is importable and contains no AI or file nodes", async () => {
   const workflow = JSON.parse(await readFile(workflowUrl, "utf8"));
@@ -47,4 +48,63 @@ test("radar sends metadata only and exposes an automation health surface", async
   assert.match(service, /\/automation\/status/);
   assert.match(service, /\/automation\/test/);
   assert.match(service, /N8N_RADAR_WEBHOOK_URL/);
+});
+
+test("n8n p4a local analysis workflow is active, loopback-only, and contains no AI or file nodes", async () => {
+  const workflow = JSON.parse(await readFile(analysisWorkflowUrl, "utf8"));
+  const types = workflow.nodes.map((node) => node.type);
+  assert.equal(workflow.active, true, "the analysis workflow is active");
+  const allowed = [
+    "n8n-nodes-base.webhook",
+    "n8n-nodes-base.if",
+    "n8n-nodes-base.httpRequest",
+    "n8n-nodes-base.respondToWebhook",
+  ];
+  assert.ok(types.every((type) => allowed.includes(type)), `only webhook/if/httpRequest/respondToWebhook allowed, got: ${types.join(",")}`);
+  assert.ok(types.includes("n8n-nodes-base.webhook"));
+  assert.ok(types.includes("n8n-nodes-base.if"));
+  assert.ok(types.includes("n8n-nodes-base.httpRequest"));
+  assert.ok(types.includes("n8n-nodes-base.respondToWebhook"));
+  assert.ok(!types.some((type) => /langchain|ollama|openai|readWriteFile|extractFromFile/i.test(type)));
+  const http = workflow.nodes.find((node) => node.type === "n8n-nodes-base.httpRequest");
+  assert.ok(http, "httpRequest node exists");
+  const url = http.parameters.url;
+  assert.match(url, /^=http:\/\/127\.0\.0\.1:\d+\//, "httpRequest targets http://127.0.0.1:<port>/ exclusively");
+  const host = (url.match(/^=http:\/\/([^/]+)\//) || [])[1];
+  assert.equal(host, "127.0.0.1:4318", "the loopback host is exactly 127.0.0.1:4318");
+  // explicit rejection of any other host anywhere in the workflow JSON
+  const allHosts = [...JSON.stringify(workflow).matchAll(/https?:\/\/([^/$\s"']+)/g)].map((m) => m[1]);
+  assert.ok(allHosts.length > 0, "the workflow contains http URLs");
+  assert.ok(allHosts.every((h) => h.startsWith("127.0.0.1")), `every workflow URL is loopback-only, got: ${allHosts.join(",")}`);
+  const raw = await readFile(analysisWorkflowUrl, "utf8");
+  assert.doesNotMatch(raw, /password|secret|api[_-]?key|token|authorization|cookie|otp/i, "no secrets inside any node");
+  const ifNode = workflow.nodes.find((node) => node.type === "n8n-nodes-base.if");
+  assert.ok(ifNode, "if node exists");
+  assert.equal(ifNode.parameters.conditions.combinator, "and");
+  const condition = ifNode.parameters.conditions.conditions[0];
+  assert.equal(condition.leftValue, "={{ $json.body.analysisJobId }}");
+  assert.equal(condition.rightValue, "");
+  assert.equal(condition.operator.type, "string");
+  assert.equal(condition.operator.operation, "notEmpty");
+});
+
+test("n8n p4a local analysis if-node requires a non-empty analysisJobId", async () => {
+  const workflow = JSON.parse(await readFile(analysisWorkflowUrl, "utf8"));
+  const ifNode = workflow.nodes.find((node) => node.type === "n8n-nodes-base.if");
+  const condition = ifNode.parameters.conditions.conditions[0];
+  // Evaluate the n8n "string/notEmpty" condition for sample payloads, same extraction style as phase-1.
+  const evaluate = (body) => {
+    const left = String(body?.analysisJobId ?? "");
+    if (condition.operator.operation === "notEmpty") return left.length > 0;
+    return left === String(condition.rightValue ?? "");
+  };
+  assert.equal(evaluate({ analysisJobId: "analysis-job-123" }), true, "a non-empty analysisJobId passes");
+  assert.equal(evaluate({ analysisJobId: " " }), true, "whitespace-only is non-empty");
+  assert.equal(evaluate({ analysisJobId: "" }), false, "empty analysisJobId fails");
+  assert.equal(evaluate({ analysisJobId: null }), false, "null analysisJobId fails");
+  assert.equal(evaluate({}), false, "absent analysisJobId fails");
+  const respondInvalid = workflow.nodes.find((node) => node.name === "رفض المدخل الناقص");
+  assert.match(respondInvalid.parameters.responseBody, /INVALID_INPUT/, "the invalid branch replies INVALID_INPUT");
+  const respondSuccess = workflow.nodes.find((node) => node.name === "تسجيل النجاح");
+  assert.match(respondSuccess.parameters.responseBody, /jobStatus/, "the success branch reports jobStatus");
 });

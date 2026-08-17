@@ -1,6 +1,6 @@
 {
   "name": "Radar P4-A Local Analysis",
-  "active": false,
+  "active": true,
   "nodes": [
     {
       "parameters": {

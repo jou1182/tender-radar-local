@@ -378,10 +378,10 @@ test("17) fixtures never mix with operational data and the registry is closed", 
   }
 });
 
-test("18) the n8n workflow is valid, inactive, localhost-only, and free of secrets and cloud AI", async () => {
+test("18) the n8n workflow is valid, active, localhost-only, and free of secrets and cloud AI", async () => {
   const raw = await readFile(new URL("../workflows/p4a-local-analysis.json", import.meta.url), "utf8");
   const workflow = JSON.parse(raw);
-  assert.equal(workflow.active, false, "the workflow ships disabled");
+  assert.equal(workflow.active, true, "the workflow is active (P4-N0A)");
   assert.ok(Array.isArray(workflow.nodes) && workflow.nodes.length >= 4);
   const allowedTypes = new Set(["n8n-nodes-base.webhook", "n8n-nodes-base.if", "n8n-nodes-base.httpRequest", "n8n-nodes-base.respondToWebhook"]);
   for (const node of workflow.nodes) {
