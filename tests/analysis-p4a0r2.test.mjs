@@ -168,9 +168,9 @@ test("S4) /api/tags decides availability by the installed model — never pulls"
   try {
     const urls = [];
     const probe = (body) => async (url) => { urls.push(url); return { ok: true, json: async () => body }; };
-    const byName = engineWith(repository, ollamaEnv, { fetchFn: probe({ models: [{ name: "qwen2.5:7b" }] }) });
+    const byName = engineWith(repository, ollamaEnv, { fetchFn: probe({ models: [{ name: "nemotron-3.5-lightning:latest" }] }) });
     assert.equal((await byName.health({ probe: true })).status, "available", "models[].name detects the model");
-    const byModel = engineWith(repository, ollamaEnv, { fetchFn: probe({ models: [{ model: "qwen2.5:7b" }] }) });
+    const byModel = engineWith(repository, ollamaEnv, { fetchFn: probe({ models: [{ model: "nemotron-3.5-lightning:latest" }] }) });
     assert.equal((await byModel.health({ probe: true })).status, "available", "models[].model detects the model");
     const missing = engineWith(repository, ollamaEnv, { fetchFn: probe({ models: [{ name: "llama3.1:8b" }] }) });
     assert.equal((await missing.health({ probe: true })).status, "model-unavailable", "service up but model absent");

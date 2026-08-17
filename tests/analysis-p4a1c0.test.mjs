@@ -186,7 +186,7 @@ test("G) جسم طلب Ollama: format مخطط اختيار ديناميكي و�
   assert.ok(!("warnings" in seenBody.format.properties), "النموذج لا يرى حقل warnings إطلاقًا");
   assert.equal(seenBody.stream, false);
   assert.equal(seenBody.options.temperature, 0);
-  assert.equal(seenBody.model, "qwen2.5:7b", "النموذج الافتراضي من الإعداد");
+  assert.equal(seenBody.model, "nemotron-3.5-lightning:latest", "النموذج الافتراضي من الإعداد");
   // P4-M0B2A: think:false يُرسل كقيمة boolean صريحة داخل /api/generate.
   assert.equal(seenBody.think, false, "think:false في جسم طلب /api/generate");
   assert.equal(typeof seenBody.think, "boolean", "think قيمة boolean لا string ولا undefined");

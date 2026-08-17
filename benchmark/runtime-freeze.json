@@ -9,7 +9,7 @@
     "scripts/lib/analysis-evidence-candidates.mjs": "ba4ec7f1b1b8b090871bdf6d60bb3712ca14466295398ac102deec4342fb904f",
     "scripts/lib/analysis-fixtures.mjs": "1e12c6e51ea250c80af7a6836db1e20451d196cf3f89cb0f3692e0f31cdeac58",
     "scripts/lib/analysis-model-selection.mjs": "1be8e957e35ee39e526ee7793e3ac0ed64fda98eaff5a6a3d42ada3347932ea4",
-    "scripts/lib/analysis-providers.mjs": "85d902064b69a64deed9584f2fb1b0e41a24c0b45e9ef4535a6e452853674cf8",
+    "scripts/lib/analysis-providers.mjs": "f5f06e35e0c20b8d3f0db136b932ab15321b795e0497655697c85c81bc3dc77f",
     "scripts/lib/analysis-report.mjs": "1f556f17ffc2d59fe464a0dd05fa16b4765d822166aef7a645e8b7304f6071a0"
   }
 }

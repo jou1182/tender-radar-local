@@ -318,7 +318,7 @@ test("R10) Ollama health has honest states and probes /api/tags only on demand",
     assert.equal((await engineWith(repository, {}).health({ probe: true })).status, "stub", "stub never probes");
     assert.equal((await engineWith(repository, { RADAR_AI_PROVIDER: "ollama", RADAR_AI_ENABLED: "false" }).health({ probe: true })).status, "disabled");
     const probeUrls = [];
-    const tagsWithModel = async (url) => { probeUrls.push(url); return { ok: true, json: async () => ({ models: [{ name: "qwen2.5:7b" }] }) }; };
+    const tagsWithModel = async (url) => { probeUrls.push(url); return { ok: true, json: async () => ({ models: [{ name: "nemotron-3.5-lightning:latest" }] }) }; };
     const available = engineWith(repository, ollamaEnv, { fetchFn: tagsWithModel });
     assert.equal((await available.health()).status, "configured-unverified", "no probe without an explicit request");
     assert.equal(probeUrls.length, 0);

@@ -42,7 +42,7 @@ export function readAnalysisAiConfig(env = {}) {
     enabled: env.RADAR_AI_ENABLED === "true",
     provider: analysisProviderNames.includes(env.RADAR_AI_PROVIDER) ? env.RADAR_AI_PROVIDER : "stub",
     ollamaHost: env.OLLAMA_HOST || "http://127.0.0.1:11434",
-    ollamaModel: env.OLLAMA_MODEL || "qwen2.5:7b",
+    ollamaModel: env.OLLAMA_MODEL || "nemotron-3.5-lightning:latest",
     timeoutMs: Number(env.RADAR_AI_TIMEOUT_MS) > 0 ? Number(env.RADAR_AI_TIMEOUT_MS) : 60_000,
   };
 }

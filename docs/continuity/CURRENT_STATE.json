@@ -60,7 +60,8 @@
       "P4-M0B7"
     ],
     "adopted": false,
-    "note": "النموذج الفائز محدَّد ولم يُعتمد بعد؛ currentDefaultProvider يبقى stub وliveAiEnabledByDefault=false. ربط النموذج بالتشغيل اليومي قرار منفصل صريح لاحق."
+    "wiredOptIn": true,
+    "note": "النموذج الفائز وُصّل كافتراضي OLLAMA_MODEL عند التفعيل الصريح (RADAR_AI_PROVIDER=ollama) في P4-M1A؛ currentDefaultProvider يبقى stub وliveAiEnabledByDefault=false — الافتراضي الآمن (stub بلا env vars) لم يتغير، والتفعيل يبقى اختياريًا صريحًا عبر env vars فقط. ربط النموذج بالتشغيل اليومي قرار منفصل صريح لاحق."
   },
   "nextPlannedPhase": "P4-M0B",
   "attachmentLiveStages": {

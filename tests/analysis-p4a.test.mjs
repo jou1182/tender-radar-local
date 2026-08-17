@@ -282,6 +282,12 @@ test("12-13) Ollama fails safe when disabled and rejects any non-loopback host",
   assert.equal(readAnalysisAiConfig({}).provider, "stub", "stub is the default provider");
 });
 
+test("P4-M1A) explicit Ollama opt-in without OLLAMA_MODEL resolves to the winning nemotron model", () => {
+  const config = readAnalysisAiConfig({ RADAR_AI_PROVIDER: "ollama" });
+  assert.equal(config.provider, "ollama");
+  assert.equal(config.ollamaModel, "nemotron-3.5-lightning:latest", "the winning model is the fallback when OLLAMA_MODEL is absent");
+});
+
 test("14-15) Ollama sends only the bounded candidate catalog to /api/generate, never pulls a model, and rejects invalid output", async () => {
   const document = extractAnalysisDocument({ documentId: "doc-ollama", fileName: "booklet-sample.pdf", buffer: fixtureBuffers["booklet-pdf"] });
   const chunks = chunkAnalysisDocument(document);
@@ -439,7 +445,7 @@ test("engine health reflects the disabled-by-default posture and fixture list", 
     assert.equal(disabledOllama.status, "disabled");
     const enabledOllama = await engineWith(repository, { RADAR_AI_PROVIDER: "ollama", RADAR_AI_ENABLED: "true" }).health();
     assert.equal(enabledOllama.status, "configured-unverified", "no probe without an explicit request");
-    assert.equal(enabledOllama.model, "qwen2.5:7b");
+    assert.equal(enabledOllama.model, "nemotron-3.5-lightning:latest");
   } finally {
     await cleanup(projectRoot, repository);
   }
