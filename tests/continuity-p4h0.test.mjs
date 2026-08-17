@@ -301,3 +301,16 @@ test("14) التحقق من عزل المسارات الشخصية والأسم�
   assert.ok(!handoff.includes("Gemini المنفذ"), "لا فرض للوكلاء في أدوار التسليم الإلزامية");
   assert.ok(!handoff.includes("Codex المشرف"), "لا فرض للمشرف المسمى في أدوار التسليم الإلزامية");
 });
+
+test("15) توثيق مخاطرة CUDA المتكررة مثبت في OPERATIONS_RUNBOOK.md وCURRENT_STATE.json", () => {
+  const runbook = readPackageFile("docs/continuity/OPERATIONS_RUNBOOK.md");
+  const state = JSON.parse(readPackageFile("docs/continuity/CURRENT_STATE.json"));
+  assert.match(runbook, /عطل CUDA المتكرر عند تحميل النموذج \(معروف، غير محلول من المنبع\)/, "قسم CUDA موجود في دليل التشغيل");
+  assert.match(runbook, /0xc0000409/, "رمز الخروج موثق حرفيًا");
+  assert.match(runbook, /shared object initialization failed/, "رسالة الخطأ موثقة حرفيًا");
+  assert.match(runbook, /CUDA_MODULE_LOADING=EAGER/, "تحذير EAGER موثق");
+  assert.match(runbook, /ollama\/ollama\/issues\/17380/, "مرجع Issue #17380 موثق");
+  const cudaRisk = state.knownRisks.find((risk) => /CUDA/.test(risk));
+  assert.ok(cudaRisk, "مدخل CUDA موجود في knownRisks");
+  assert.match(cudaRisk, /OPERATIONS_RUNBOOK\.md/, "مدخل knownRisks يشير إلى دليل التشغيل");
+});
