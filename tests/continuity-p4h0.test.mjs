@@ -314,3 +314,20 @@ test("15) توثيق مخاطرة CUDA المتكررة مثبت في OPERATIONS
   assert.ok(cudaRisk, "مدخل CUDA موجود في knownRisks");
   assert.match(cudaRisk, /OPERATIONS_RUNBOOK\.md/, "مدخل knownRisks يشير إلى دليل التشغيل");
 });
+
+
+test("16) نسخة v1.0.0 وجاهزية الإصدار موثقتان في package.json وCURRENT_STATE والمراحل", () => {
+  const pkg = JSON.parse(readPackageFile("package.json"));
+  assert.equal(pkg.version, "1.0.0", "نسخة package.json هي 1.0.0");
+  const state = JSON.parse(readPackageFile("docs/continuity/CURRENT_STATE.json"));
+  assert.ok(state.v1Release, "حقل v1Release موجود في CURRENT_STATE.json");
+  assert.equal(state.v1Release.version, "1.0.0-local", "إصدار الوثائق هو 1.0.0-local");
+  assert.equal(state.v1Release.tagged, false, "لم يُوسَم بعد");
+  assert.equal(state.v1Release.roadmapStatus["step1-modelSelection"], "completed (P4-M0B8M)");
+  assert.equal(state.v1Release.roadmapStatus["step4-finalAcceptanceUat"], "completed (P4-UAT0)");
+  assert.match(state.v1Release.roadmapStatus["step5-releaseTag"], /pending/, "الخطوة 5 (الوسم) قادمة");
+  const ledger = readPackageFile("docs/continuity/PHASE_LEDGER.md");
+  assert.match(ledger, /خارطة v1/, "خارطة v1 موثقة في سجل المراحل");
+  const next = readPackageFile("docs/continuity/NEXT_PHASES.md");
+  assert.match(next, /v1\.0\.0-local/, "وسم v1.0.0-local مؤجَّل لمهمة منفصلة وموثق");
+});

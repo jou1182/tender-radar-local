@@ -64,6 +64,18 @@
     "note": "النموذج الفائز وُصّل كافتراضي OLLAMA_MODEL عند التفعيل الصريح (RADAR_AI_PROVIDER=ollama) في P4-M1A؛ currentDefaultProvider يبقى stub وliveAiEnabledByDefault=false — الافتراضي الآمن (stub بلا env vars) لم يتغير، والتفعيل يبقى اختياريًا صريحًا عبر env vars فقط. ربط النموذج بالتشغيل اليومي قرار منفصل صريح لاحق."
   },
   "nextPlannedPhase": "P4-M0B",
+  "v1Release": {
+    "version": "1.0.0-local",
+    "roadmapStatus": {
+      "step1-modelSelection": "completed (P4-M0B8M)",
+      "step2-wireModelIntoDailyOperation": "completed (P4-M1AM)",
+      "step3-n8nIntegration": "completed (P4-N0AM + اختبار حي P4-N0B)",
+      "step4-finalAcceptanceUat": "completed (P4-UAT0)",
+      "step5-releaseTag": "pending — وسم v1.0.0-local في مهمة تالية منفصلة"
+    },
+    "tagged": false,
+    "note": "النسخة والوثائق جاهزة للوسم (P4-REL0، توثيق فقط بلا وسم). currentDefaultProvider يبقى stub وliveAiEnabledByDefault=false — التفعيل الحقيقي يبقى اختياريًا صريحًا عبر env vars فقط."
+  },
   "attachmentLiveStages": {
     "p3b1b": {
       "status": "approved_safe_stop",
