@@ -12,6 +12,7 @@ benchmark/**/*.txt text eol=lf
 
 # P4-GITATTR0 — قاعدة محصورة بملفي runtime-freeze المبنيين أصلًا على LF:
 # تثبيت LF لهذين الملفين فقط حتى لا تتأثر بصماتهما بسياسة autocrlf لأي جهاز.
-# لا تطال القاعدة بقية ملفات scripts/**/*.mjs.
-scripts/lib/analysis-providers.mjs text eol=lf
-scripts/lib/analysis-model-selection.mjs text eol=lf
+# P4-GITATTR1 — وسّع القاعدة لتشمل كل scripts/lib/*.mjs بعد إعادة توليد بصمات
+# runtime-freeze.json ضد المحتوى القانوني (Git blob، LF): المحتوى القانوني لم
+# يتغيّر — فقط تمثيل نهايات الأسطر على القرص.
+scripts/lib/*.mjs text eol=lf
