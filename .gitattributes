@@ -9,3 +9,9 @@
 # autocrlf لأي جهاز. لا تطال القواعد أي ملف ثنائي (PDF/XLSX/DOCX أعلاه).
 benchmark/**/*.json text eol=lf
 benchmark/**/*.txt text eol=lf
+
+# P4-GITATTR0 — قاعدة محصورة بملفي runtime-freeze المبنيين أصلًا على LF:
+# تثبيت LF لهذين الملفين فقط حتى لا تتأثر بصماتهما بسياسة autocrlf لأي جهاز.
+# لا تطال القاعدة بقية ملفات scripts/**/*.mjs.
+scripts/lib/analysis-providers.mjs text eol=lf
+scripts/lib/analysis-model-selection.mjs text eol=lf
