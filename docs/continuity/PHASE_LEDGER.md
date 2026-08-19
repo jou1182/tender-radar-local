@@ -47,6 +47,7 @@
 | P4-UAT0 | اختبار القبول النهائي (مزامنة حية + تحليل بالمسار الكامل + نسخ احتياطي/استعادة) | approved (تشغيلي بلا commit) | — | 7/7 خطوات؛ تحليل حي بالمسار الكامل (n8n + Ollama) نجح؛ أدلة في `P4-UAT0-20260817-225109` |
 | P4-UAT1B | إنشاء مهمة تحليل من مستند موثوق موجود فعلًا في المخزن الموثوق المحلي (`createJobFromStoredDocument`) بدل قائمة fixtures فقط | approved | `b0aa3fa` | **بنية بيانات خاملة فقط (data-plumbing):** القدرة الجديدة غير موصولة بأي HTTP route ولا CLI ولا webhook حي حتى الآن. أي استئناف لتحليل مستند حقيقي فعلي (ما كان يُعرف بـ"UAT Phase B") يتطلب موافقة صريحة منفصلة من المشرف قبل أي وصل حي أو تشغيل — ولم تصدر تلك الموافقة بعد. اختبارات P4-UAT1B-1..7 موصولة بـ`npm test`. |
 | P4-GITATTR1 | توسيع قاعدة .gitattributes لتغطية كل `scripts/lib/*.mjs` وإعادة توليد بصمات `benchmark/runtime-freeze.json` ضد المحتوى القانوني LF | approved | (قيد الدمج) | الكود لم يتغيّر — فقط بصمات runtime-freeze أعيد توليدها ضد المحتوى القانوني LF بعد توسيع .gitattributes |
+| P4-UAT2A | أداتا CLI لربط `createJobFromStoredDocument` الخاملة: `placeTrustedDocument` لوضع مستند موثوق يدويًا و`runTrustedDocumentAnalysis` لتشغيل تحليل عليه (كود فقط) | approved | (هذه المهمة) | **أدوات كود فقط بلا أي مستند حقيقي أو تشغيل حي** — تُعيد الاستخدام الحرفي لـ`resolveAttachmentStoragePath`/`attachmentStorageRoot` بلا منطق موازٍ، وبلا شبكة/Chrome/Etimad؛ التشغيل الحي على مستند حقيقي مرحلة منفصلة لاحقة تحتاج موافقة صريحة إضافية من المشرف. اختبارات P4-UAT2A-1..6 موصولة بـ`npm test`. |
 
 ## مراحل الدمج المعتمدة
 
