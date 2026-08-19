@@ -24,6 +24,7 @@ import { cardFeeEvidence, mergeSyncFeeEvidence } from "./lib/fee-evidence.mjs";
 import { createLiveDownloadAdapter } from "./lib/live-attachment-acquisition.mjs";
 import { createAnalysisEngine } from "./lib/analysis-engine.mjs";
 import { createAnalysisApiHandler } from "./lib/analysis-api.mjs";
+import { attachmentStorageRoot } from "./lib/attachment-storage.mjs";
 import { readJsonBodyLimited as readJsonBody } from "./lib/http-body.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -44,9 +45,11 @@ const downloadAdapter = createDisabledProductionDownloadAdapter();
 // لا يوجد driver حي في P3-B1A. حتى مع متغيرات التفعيل سيفشل قبل استهلاك الموافقة.
 const liveAcquisitionAdapter = createLiveDownloadAdapter({ repository, projectRoot, privateDir });
 // محرك التحليل المحلي P4-A0: fixtures مغلقة فقط، Stub افتراضي، وOllama المحلي لا يعمل إلا بتفعيل صريح.
+// المخزن الموثوق للمرفقات المحلية يوفّر مدخلًا ثانيًا ضيقًا: مستند موثق موجود فعلًا على القرص.
 const analysisEngine = createAnalysisEngine({
   repository,
   fixtureRoot: path.join(projectRoot, "analysis-fixtures"),
+  trustedStoreRoot: attachmentStorageRoot(projectRoot),
   env: process.env,
 });
 const handleAnalysisRequest = createAnalysisApiHandler({ engine: analysisEngine });

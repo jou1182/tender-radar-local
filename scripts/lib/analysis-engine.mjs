@@ -2,10 +2,11 @@
 // ينسق: fixtureId مغلق ← قراءة آمنة ← استخراج ← تقسيم ← مزود ← تحقق صيغة ← حفظ.
 // لا يقبل مسار ملف من العميل إطلاقًا، ولا يلمس قاعدة الإنتاج خارج ما يحقنه المنشئ،
 // ولا يجري أي اتصال خارجي؛ Ollama المحلي لا يعمل إلا بتفعيل صريح.
-import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { readFile, readdir } from "node:fs/promises";
+import path from "node:path";
 import { analysisFixtures, findAnalysisFixture } from "./analysis-fixtures.mjs";
-import { defaultMaxFileBytes, extractAnalysisDocument, resolveAnalysisPath } from "./analysis-documents.mjs";
+import { defaultMaxFileBytes, extractAnalysisDocument, resolveAnalysisPath, supportedDocumentTypes } from "./analysis-documents.mjs";
 import { chunkAnalysisDocument } from "./analysis-chunking.mjs";
 import {
   analysisPromptVersion,
@@ -15,6 +16,7 @@ import {
   verifyReportGrounding,
 } from "./analysis-report.mjs";
 import { assertLoopbackOllamaHost, createAnalysisProvider, readAnalysisAiConfig } from "./analysis-providers.mjs";
+import { resolveAttachmentStoragePath } from "./attachment-storage.mjs";
 
 function engineError(code, message) {
   const error = new Error(message);
@@ -25,6 +27,7 @@ function engineError(code, message) {
 export function createAnalysisEngine({
   repository,
   fixtureRoot,
+  trustedStoreRoot,
   env = {},
   fetchFn,
   readFileFn = readFile,
@@ -116,6 +119,124 @@ export function createAnalysisEngine({
     return repository.getAnalysisJob(jobId);
   }
 
+  // ---------- P4-UAT1B: مستند موثوق محلي (المخزن الموثوق للمرفقات) ----------
+  // إعادة استخدام حرفي لبوابة أسماء المخزن الموثوق: resolveAttachmentStoragePath
+  // ترفض أي اسم ليس اسم ملف مخزَّن عاديًا آمنًا (مسارات مطلقة، فواصل مسارات،
+  // traversal، أسماء محجوزة، محارف غير آمنة لنظام Windows). لا نستخدم المسار
+  // المُعاد منه — القواعد نفسها هي ما نعيد استخدامه كبوابة قبل أي بحث أو قراءة.
+  function assertTrustedStoredName(localStoredName) {
+    try {
+      resolveAttachmentStoragePath(trustedStoreRoot, "000000000000", localStoredName);
+    } catch (error) {
+      if (error?.code === "INVALID_STORAGE_PATH" || error?.code === "INVALID_TENDER_REFERENCE") {
+        throw engineError("DOCUMENT_PATH_NOT_ALLOWED", "اسم الملف المحلي غير مسموح؛ يُقبل اسم ملف مخزَّن عادي فقط داخل المخزن الموثوق.");
+      }
+      throw error;
+    }
+  }
+
+  // بحث محصور داخل المخزن الموثوق فقط: مجلدات مراجع المنافسات (باسم مطابق لقاعدة
+  // مرجع المنافسة) وملفات عادية تحمل الاسم المخزَّن الحرفي. لا يتبع غير الدلائل
+  // والملفات العادية، ولا يخرج عن جذر المخزن، ولا يلمس أي مجلد خارجي إطلاقًا.
+  async function findTrustedStoredFiles(localStoredName) {
+    const root = path.resolve(String(trustedStoreRoot));
+    let tenderDirs;
+    try {
+      tenderDirs = await readdir(root, { withFileTypes: true });
+    } catch (error) {
+      if (error?.code === "ENOENT") return [];
+      throw error;
+    }
+    const found = [];
+    for (const tenderEntry of tenderDirs) {
+      if (!tenderEntry.isDirectory() || !/^[A-Za-z0-9_-]+$/.test(tenderEntry.name)) continue;
+      const files = await readdir(path.join(root, tenderEntry.name), { withFileTypes: true });
+      for (const file of files) {
+        if (!file.isFile() || file.name !== localStoredName) continue;
+        const resolved = path.resolve(root, tenderEntry.name, file.name);
+        if (!resolved.startsWith(root + path.sep)) continue;
+        found.push({ path: resolved, tenderReference: tenderEntry.name });
+      }
+    }
+    return found;
+  }
+
+  // التحقق النهائي قبل أي إنشاء/تشغيل: الاسم موجود فعلًا في المخزن الموثوق،
+  // ومحتواه الفعلي يطابق البصمة المتوقعة (إن طُلبت). أي غياب أو تباين يفشل
+  // بصوت عالٍ بكود واضح قبل أي تسجيل مستند أو إنشاء مهمة.
+  async function resolveTrustedStoreDocument({ localStoredName, expectedSha256 }) {
+    if (!trustedStoreRoot) throw engineError("ANALYSIS_CONFIG", "المخزن الموثوق غير مكوَّن؛ يلزم trustedStoreRoot لقراءة مستند موثوق محلي.");
+    assertTrustedStoredName(localStoredName);
+    const found = await findTrustedStoredFiles(localStoredName);
+    if (found.length === 0) {
+      throw engineError("ANALYSIS_DOCUMENT_NOT_IN_TRUSTED_STORE", `المستند غير موجود في المخزن الموثوق: ${String(localStoredName)}.`);
+    }
+    const verified = [];
+    for (const candidate of found) {
+      const buffer = await readFileFn(candidate.path);
+      const actualSha256 = createHash("sha256").update(buffer).digest("hex");
+      if (expectedSha256 && actualSha256 !== expectedSha256) continue;
+      verified.push({ ...candidate, buffer, sha256: actualSha256 });
+    }
+    if (verified.length === 0) {
+      throw engineError("DOCUMENT_SHA256_MISMATCH", `SHA-256 للمستند لا يطابق البصمة المتوقعة: ${String(localStoredName)}.`);
+    }
+    if (verified.length > 1) {
+      throw engineError("ANALYSIS_DOCUMENT_AMBIGUOUS", `اسم مخزَّن واحد يطابق أكثر من ملف داخل المخزن الموثوق: ${String(localStoredName)}.`);
+    }
+    return verified[0];
+  }
+
+  // إنشاء مهمة تحليل من مرجع مستند موثوق موجود فعلًا في المخزن الموثوق المحلي.
+  // المرجع حصري: localStoredName + sha256 + originalFileName + documentType فقط —
+  // لا يُقبل أي مسار أو محتوى من المتصل إطلاقًا، والمستند يجب أن يكون موجودًا
+  // مسبقًا بمطابقة البصمة الحرفية قبل تسجيل أي مستند أو إنشاء أي مهمة، ثم يمر
+  // عبر نفس خط الأنابيب المعتمد تمامًا (استخراج ← تقسيم ← مزود ← تحقق ← تأسيس).
+  async function createJobFromStoredDocument({ localStoredName, sha256, originalFileName, documentType, now = new Date() }) {
+    if (!trustedStoreRoot) throw engineError("ANALYSIS_CONFIG", "المخزن الموثوق غير مكوَّن؛ يلزم trustedStoreRoot لإنشاء مهمة من مستند موثوق محلي.");
+    const storedName = String(localStoredName || "");
+    const originalName = String(originalFileName || "");
+    const referenceSha256 = String(sha256 || "").toLowerCase();
+    if (!storedName) throw engineError("ANALYSIS_DOCUMENT_REFERENCE_INVALID", "مرجع المستند ناقص: localStoredName مطلوب.");
+    if (!originalName) throw engineError("ANALYSIS_DOCUMENT_REFERENCE_INVALID", "مرجع المستند ناقص: originalFileName مطلوب.");
+    if (!/^[a-f0-9]{64}$/.test(referenceSha256)) throw engineError("ANALYSIS_DOCUMENT_REFERENCE_INVALID", "مرجع المستند غير صالح: sha256 يجب أن يكون بصمة SHA-256 سداسية عشرية من 64 محرفًا.");
+    if (!supportedDocumentTypes.includes(documentType)) {
+      throw engineError("DOCUMENT_TYPE_NOT_SUPPORTED", `نوع المستند غير مدعوم: ${documentType}. المدعوم: PDF وXLSX وDOCX.`);
+    }
+    const stored = await resolveTrustedStoreDocument({ localStoredName: storedName, expectedSha256: referenceSha256 });
+    const nowIso = (now instanceof Date ? now : new Date(now)).toISOString();
+    const documentId = `doc-${randomUUID()}`;
+    const document = extractAnalysisDocument({ documentId, fileName: originalName, buffer: stored.buffer, maxBytes: maxFileBytes });
+    if (document.documentType !== documentType) {
+      throw engineError("DOCUMENT_TYPE_MISMATCH", `نوع المستند المعلَن (${documentType}) لا يطابق المحتوى الفعلي (${document.documentType}).`);
+    }
+    repository.registerAnalysisDocument({
+      id: documentId,
+      tenderReference: stored.tenderReference,
+      documentType: document.documentType,
+      originalFileName: originalName,
+      localStoredName: storedName,
+      checksum: stored.sha256,
+      mimeType: document.mimeType,
+      sizeBytes: document.sizeBytes,
+      fixtureId: "",
+      now: nowIso,
+    });
+    const config = readAnalysisAiConfig(env);
+    const jobId = `analysis-job-${randomUUID()}`;
+    repository.createAnalysisJob({
+      id: jobId,
+      documentId,
+      tenderReference: stored.tenderReference,
+      provider: config.provider,
+      model: config.provider === "ollama" ? config.ollamaModel : null,
+      promptVersion: analysisPromptVersion,
+      outputSchemaVersion: analysisReportSchemaVersion,
+      now: nowIso,
+    });
+    return repository.getAnalysisJob(jobId);
+  }
+
   function getJob(id) {
     return repository.getAnalysisJob(String(id || ""));
   }
@@ -137,10 +258,16 @@ export function createAnalysisEngine({
     let provider = null;
     try {
       provider = createAnalysisProvider({ env, fetchFn });
-      const fixture = findAnalysisFixture(job.document.fixtureId);
-      if (!fixture) throw engineError("ANALYSIS_FIXTURE_NOT_FOUND", "الـfixture المرتبط بالمستند لم يعد معروفًا.");
-      const safePath = resolveAnalysisPath(fixtureRoot, job.document.localStoredName || fixture.fileName);
-      const buffer = await readFileFn(safePath);
+      // المستند الموثوق المحلي (fixtureId فارغ) يُقرأ من المخزن الموثوق ويُتحقق
+      // من بصمته المسجلة؛ أما fixtures فتُقرأ من جذرها المحدد كما كان دون تغيير.
+      const isStoredDocument = !job.document.fixtureId;
+      const fixture = isStoredDocument ? null : findAnalysisFixture(job.document.fixtureId);
+      if (!isStoredDocument && !fixture) throw engineError("ANALYSIS_FIXTURE_NOT_FOUND", "الـfixture المرتبط بالمستند لم يعد معروفًا.");
+      const storedDocument = isStoredDocument
+        ? await resolveTrustedStoreDocument({ localStoredName: job.document.localStoredName, expectedSha256: job.document.checksum })
+        : null;
+      const safePath = isStoredDocument ? storedDocument.path : resolveAnalysisPath(fixtureRoot, fixture.fileName);
+      const buffer = isStoredDocument ? storedDocument.buffer : await readFileFn(safePath);
       const document = extractAnalysisDocument({
         documentId: job.document.id,
         fileName: job.document.originalFileName,
@@ -197,5 +324,5 @@ export function createAnalysisEngine({
     }
   }
 
-  return { listFixtures, health, createJob, getJob, runJob };
+  return { listFixtures, health, createJob, createJobFromStoredDocument, getJob, runJob };
 }
