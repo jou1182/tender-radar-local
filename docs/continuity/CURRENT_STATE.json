@@ -100,10 +100,35 @@
       "note": "إنشاء مهمة تحليل من مستند موثوق موجود فعلًا في المخزن الموثوق المحلي بدل fixtures فقط. بنية بيانات خاملة فقط — غير موصولة بأي HTTP route ولا CLI ولا webhook حي حتى الآن. أي استئناف لتحليل مستند حقيقي فعلي (UAT Phase B) يتطلب موافقة صريحة منفصلة من المشرف قبل أي وصل حي أو تشغيل، ولم تصدر تلك الموافقة بعد."
     }
   ],
+  "realDocumentAttempts": {
+    "phase": "P4-UAT2B",
+    "status": "closed_by_user_decision",
+    "competitionReference": "260739002979",
+    "documentFile": "كراسة الشروط والمواصفات.pdf",
+    "documentSha256": "a57fdf48f298173c7240e2175c202989f192d0c2a8092642db41d821f3879bbc",
+    "backup": ".radar-data/radar-backup-2026-08-19-231524.sqlite",
+    "attemptDate": "2026-08-19",
+    "attempt1": {
+      "result": "failed",
+      "errorCode": "AI_PROVIDER_UNAVAILABLE",
+      "detail": "HTTP 500 من Ollama — توقيع عطل CUDA المعروف عند أول تحميل نموذج في عملية Ollama جديدة؛ فحص قراءة فقط لاحق لـ/api/tags أكد أن Ollama يعمل والنموذج nemotron-3.5-lightning:latest مسحوب فعليًا بالاسم الدقيق"
+    },
+    "attempt2": {
+      "result": "safe_abstention",
+      "errorCode": "AI_NO_GROUNDED_SELECTION",
+      "detail": "امتناع صادق وسليم من بوابة grounding/canonical — النموذج لم يُنتج اختيار أدلة مؤسَّسًا بمقتطفات حرفية كافية؛ لم تُخفف أي بوابة grounding/صيغة/سلامة"
+    },
+    "reportProduced": false,
+    "pipelineEndToEndVerified": true,
+    "mainUnaffected": true,
+    "commitsFromLiveAttempts": 0,
+    "futureAttemptsRequireFreshApproval": true,
+    "note": "خط الأنابيب الكامل (نسخة احتياطية ← مستند موثوق عبر place-trusted-document.mjs ← Ollama حي ← تحقق تأسيس) عمل بنجاح تام من طرف إلى طرف على مستند حقيقي؛ أُغلقت UAT Phase B بقرار المستخدم دون محاولات إضافية؛ أي محاولة مستقبلية (بمستند مختلف أو إعادة نفس المستند) تحتاج موافقة مشرف صريحة منفصلة جديدة من الصفر — الموافقة السابقة مستهلكة ولا تصلح لأي محاولة قادمة"
+  },
   "pendingHumanGates": [
     "P3-B1C: التنزيل الحي الأول لملف واحد — موافقة بشرية جديدة بمرجع وملف وبصمة",
     "تجربة التحليل على مستند حقيقي واحد — موافقة بشرية منفصلة",
-    "UAT Phase B: استئناف تحليل مستند حقيقي فعلي عبر createJobFromStoredDocument (P4-UAT1B) — موافقة مشرف صريحة منفصلة قبل أي وصل حي أو تشغيل؛ القدرة خاملة حاليًا بلا route/CLI/webhook حي",
+    "UAT Phase B: محاولة تحليل حي على مستند حقيقي واحد نُفذت وأُغلقت (P4-UAT2B) — محاولتان حيتان (أولى فشلت بعطل CUDA المعروف، ثانية انتهت بامتناع صادق AI_NO_GROUNDED_SELECTION بلا تقرير)؛ الموافقة السابقة مستهلكة — أي محاولة مستقبلية جديدة (بمستند مختلف أو إعادة نفس المستند) تحتاج موافقة مشرف صريحة منفصلة جديدة من الصفر",
     "P4-M0B — مقارنة Qwen/Nemotron المحلية المضبوطة، بمهمة صريحة"
   ],
   "knownRisks": [
