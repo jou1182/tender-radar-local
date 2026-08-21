@@ -317,7 +317,7 @@ test("15) توثيق مخاطرة CUDA المتكررة مثبت في OPERATIONS
 });
 
 
-test("16) نسخة v1.0.1 وجاهزية الإصدار موثقتان في package.json وCURRENT_STATE والمراحل", () => {
+test("16) حالة الإصدار v1.0.1-local موثقة في CURRENT_STATE والمراحل فقط، بينما تبقى package.json عند 1.0.0 عمدًا", () => {
   const pkg = JSON.parse(readPackageFile("package.json"));
   assert.equal(pkg.version, "1.0.0", "نسخة package.json هي 1.0.0");
   const state = JSON.parse(readPackageFile("docs/continuity/CURRENT_STATE.json"));
