@@ -63,18 +63,18 @@
     "wiredOptIn": true,
     "note": "النموذج الفائز وُصّل كافتراضي OLLAMA_MODEL عند التفعيل الصريح (RADAR_AI_PROVIDER=ollama) في P4-M1A؛ currentDefaultProvider يبقى stub وliveAiEnabledByDefault=false — الافتراضي الآمن (stub بلا env vars) لم يتغير، والتفعيل يبقى اختياريًا صريحًا عبر env vars فقط. ربط النموذج بالتشغيل اليومي قرار منفصل صريح لاحق."
   },
-  "nextPlannedPhase": "P4-M0B",
+  "nextPlannedPhase": "P4-O0",
   "v1Release": {
-    "version": "1.0.0-local",
+    "version": "1.0.1-local",
     "roadmapStatus": {
       "step1-modelSelection": "completed (P4-M0B8M)",
       "step2-wireModelIntoDailyOperation": "completed (P4-M1AM)",
       "step3-n8nIntegration": "completed (P4-N0AM + اختبار حي P4-N0B)",
       "step4-finalAcceptanceUat": "completed (P4-UAT0)",
-      "step5-releaseTag": "pending — وسم v1.0.0-local في مهمة تالية منفصلة"
+      "step5-releaseTag": "completed (P4-REL2): annotated tag v1.0.1-local created on main HEAD; previous tag v1.0.0-local preserved as older historical annotation without modification"
     },
-    "tagged": false,
-    "note": "النسخة والوثائق جاهزة للوسم (P4-REL0، توثيق فقط بلا وسم). currentDefaultProvider يبقى stub وliveAiEnabledByDefault=false — التفعيل الحقيقي يبقى اختياريًا صريحًا عبر env vars فقط."
+    "tagged": true,
+    "note": "الإصدار النهائي Radar Local v1 مُوسَم بـ v1.0.1-local (P4-REL2). وسوم التاريخ السابقة v1.0.0-local محفوظة بدون تعديل. currentDefaultProvider يبقى stub وliveAiEnabledByDefault=false — التفعيل الحقيقي يبقى اختياريًا صريحًا عبر env vars فقط."
   },
   "attachmentLiveStages": {
     "p3b1b": {

@@ -49,6 +49,7 @@
 | P4-GITATTR1 | توسيع قاعدة .gitattributes لتغطية كل `scripts/lib/*.mjs` وإعادة توليد بصمات `benchmark/runtime-freeze.json` ضد المحتوى القانوني LF | approved | (قيد الدمج) | الكود لم يتغيّر — فقط بصمات runtime-freeze أعيد توليدها ضد المحتوى القانوني LF بعد توسيع .gitattributes |
 | P4-UAT2A | أداتا CLI لربط `createJobFromStoredDocument` الخاملة: `placeTrustedDocument` لوضع مستند موثوق يدويًا و`runTrustedDocumentAnalysis` لتشغيل تحليل عليه (كود فقط) | approved | (هذه المهمة) | **أدوات كود فقط بلا أي مستند حقيقي أو تشغيل حي** — تُعيد الاستخدام الحرفي لـ`resolveAttachmentStoragePath`/`attachmentStorageRoot` بلا منطق موازٍ، وبلا شبكة/Chrome/Etimad؛ التشغيل الحي على مستند حقيقي مرحلة منفصلة لاحقة تحتاج موافقة صريحة إضافية من المشرف. اختبارات P4-UAT2A-1..6 موصولة بـ`npm test`. |
 | P4-UAT2B | محاولة تحليل حي على مستند حقيقي واحد عبر أدوات P4-UAT2A | approved (تشغيلي بلا commit) | — | محاولتان حيتان على مستند حقيقي واحد (مرجع 260739002979): الأولى فشلت بعطل CUDA المعروف (HTTP 500 / AI_PROVIDER_UNAVAILABLE)، الثانية انتهت بامتناع صادق AI_NO_GROUNDED_SELECTION بلا تقرير؛ خط الأنابيب (نسخة احتياطية ← مستند موثوق ← Ollama حي ← تحقق تأسيس) مُثبَت العمل من طرف إلى طرف؛ أُغلقت بقرار المستخدم. |
+| P4-REL2 | إصدار Radar Local v1: tag `v1.0.1-local` annotated على HEAD النهائي + توثيق قرار الإصدار | approved | (هذه المهمة) | `nextPlannedPhase=P4-O0`، `v1Release.version=1.0.1-local` و`tagged=true`؛ `v1.0.0-local` التاريخي محفوظ بدون تعديل؛ commit توثيق واحد بلا تغيير على ملفات التشغيل أو `package.json`؛ `npm test`/`lint`/`build`/`db:init` (قاعدة مؤقتة مستقلة) + `git diff --check` ناجحة |
 
 ## مراحل الدمج المعتمدة
 
@@ -68,15 +69,16 @@
 | P4-M1AM | دمج `c2214cb` (توصيل النموذج الافتراضي — fast-forward) | approved |
 | P4-N0AM | دمج `8aab355` (تفعيل مخطط n8n — fast-forward) | approved |
 | P4-R0M | دمج `d39611d` (توثيق مخاطرة CUDA — fast-forward) | approved |
+| P4-REL2M | دمج commit إصدار P4-REL2 (توثيق — fast-forward) | approved |
 
 ## مراحل لم تبدأ
 
-- **خارطة v1 (5 خطوات)**: الخطوات 1-4 **اكتملت**، والخطوة 5 (الوسم) قادمة:
+- **خارطة v1 (5 خطوات)**: **اكتملت بالكامل** (P4-REL2):
   1. اختيار النموذج المحلي — اكتملت (P4-M0B8M، الفائز `nemotron-3.5-lightning:latest`).
   2. ربط النموذج بالتشغيل اليومي — اكتملت (P4-M1AM؛ يبقى stub/false افتراضيًا مع تفعيل صريح).
   3. تكامل n8n — اكتملت (P4-N0AM + اختبار حي P4-N0B بالمسار الكامل؛ عطل CUDA المعروف موثّق).
   4. اختبار القبول النهائي — اكتملت (P4-UAT0: مزامنة حية + تحليل بالمسار الكامل + نسخ احتياطي/استعادة).
-  5. الإصدار والوسم — **قادمة**: وسم `v1.0.0-local` في مهمة منفصلة بعد اعتماد P4-REL0 (توثيق/ترقيم فقط، بلا وسم الآن).
+  5. الإصدار والوسم — اكتملت (P4-REL2): وسم `v1.0.1-local` annotated على HEAD النهائي؛ `v1.0.0-local` التاريخي محفوظ بلا تعديل.
 - P4-O0 — pending. الترتيب في [NEXT_PHASES.md](NEXT_PHASES.md).
 
 ## قرارات حاكمة مستمرة

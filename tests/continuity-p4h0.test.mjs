@@ -71,7 +71,7 @@ test("3) القيم الأساسية في CURRENT_STATE.json صحيحة (بني�
   assert.equal(state.modelSelectionSchemaVersion, "analysis-model-selection-v2");
   assert.equal(state.liveAiEnabledByDefault, false, "الذكاء الحي معطل افتراضيًا");
   assert.equal(state.currentDefaultProvider, "stub");
-  assert.equal(state.nextPlannedPhase, "P4-M0B");
+  assert.equal(state.nextPlannedPhase, "P4-O0");
   assert.ok(Array.isArray(state.pendingHumanGates) && state.pendingHumanGates.length > 0);
   assert.ok(Array.isArray(state.knownRisks) && state.knownRisks.length > 0);
   assert.ok(Array.isArray(state.authoritativeDocuments) && state.authoritativeDocuments.length === 10);
@@ -265,9 +265,9 @@ test("13) منع رجوع قيم وحالات الاستمرارية وحزمة 
   const currentPackageIdx = packagePhaseOrder.indexOf(state.continuityPackagePhase);
   assert.ok(currentPackageIdx >= packagePhaseOrder.indexOf("P4-H1B"), `continuityPackagePhase يجب أن تكون P4-H1B أو أحدث: ${state.continuityPackagePhase}`);
 
-  const plannedPhaseOrder = ["P4-H1B", "P4-M0B", "P4-M1"];
+  const plannedPhaseOrder = ["P4-H1B", "P4-M0B", "P4-M1", "P4-O0"];
   const nextPlannedIdx = plannedPhaseOrder.indexOf(state.nextPlannedPhase);
-  assert.ok(nextPlannedIdx >= plannedPhaseOrder.indexOf("P4-M0B"), `nextPlannedPhase يجب أن تكون P4-M0B أو أحدث: ${state.nextPlannedPhase}`);
+  assert.ok(nextPlannedIdx >= plannedPhaseOrder.indexOf("P4-O0"), `nextPlannedPhase يجب أن تكون P4-O0 أو أحدث: ${state.nextPlannedPhase}`);
 
   // التأكد من عدم وجود الأعداد القديمة 143/155 في وثيقة التسليم
   const handoff = readPackageFile("docs/continuity/PROJECT_HANDOFF.md");
@@ -279,7 +279,8 @@ test("13) منع رجوع قيم وحالات الاستمرارية وحزمة 
 
   // التأكد من إزالة الادعاء بأن P4-M0 ككل لم تبدأ (لأن M0A انتهت)
   assert.ok(!handoff.includes("P4‑M0/P4‑M1"), "لا خلط بين P4-M0 كاملة و P4-M0B");
-  assert.match(handoff, /مقارنة النموذجين المحليين.*مخططة في P4‑M0B/, "التسليم يجب أن يحدد M0B كخطوة تالية");
+  assert.match(handoff, /اكتملت خارطة v1 بالكامل/, "التسليم يجب أن يسجل اكتمال خارطة v1");
+  assert.match(handoff, /P4‑O0/, "التسليم يجب أن يحدد P4-O0 كمرحلة تالية");
 
   // التأكد من ذكر حزمة التعافي الذاتية ورسائل البدلاء
   assert.match(handoff, /حزمة التعافي الذاتية أصبحت جاهزة ومختبرة ومكتملة تمامًا/, "ذكر جاهزية حزمة التعافي");
@@ -316,18 +317,18 @@ test("15) توثيق مخاطرة CUDA المتكررة مثبت في OPERATIONS
 });
 
 
-test("16) نسخة v1.0.0 وجاهزية الإصدار موثقتان في package.json وCURRENT_STATE والمراحل", () => {
+test("16) نسخة v1.0.1 وجاهزية الإصدار موثقتان في package.json وCURRENT_STATE والمراحل", () => {
   const pkg = JSON.parse(readPackageFile("package.json"));
   assert.equal(pkg.version, "1.0.0", "نسخة package.json هي 1.0.0");
   const state = JSON.parse(readPackageFile("docs/continuity/CURRENT_STATE.json"));
   assert.ok(state.v1Release, "حقل v1Release موجود في CURRENT_STATE.json");
-  assert.equal(state.v1Release.version, "1.0.0-local", "إصدار الوثائق هو 1.0.0-local");
-  assert.equal(state.v1Release.tagged, false, "لم يُوسَم بعد");
+  assert.equal(state.v1Release.version, "1.0.1-local", "إصدار الوثائق هو 1.0.1-local");
+  assert.equal(state.v1Release.tagged, true, "أُنجز الوسم (P4-REL2)");
   assert.equal(state.v1Release.roadmapStatus["step1-modelSelection"], "completed (P4-M0B8M)");
   assert.equal(state.v1Release.roadmapStatus["step4-finalAcceptanceUat"], "completed (P4-UAT0)");
-  assert.match(state.v1Release.roadmapStatus["step5-releaseTag"], /pending/, "الخطوة 5 (الوسم) قادمة");
+  assert.match(state.v1Release.roadmapStatus["step5-releaseTag"], /completed/, "الخطوة 5 (الوسم) اكتملت");
   const ledger = readPackageFile("docs/continuity/PHASE_LEDGER.md");
   assert.match(ledger, /خارطة v1/, "خارطة v1 موثقة في سجل المراحل");
   const next = readPackageFile("docs/continuity/NEXT_PHASES.md");
-  assert.match(next, /v1\.0\.0-local/, "وسم v1.0.0-local مؤجَّل لمهمة منفصلة وموثق");
+  assert.match(next, /v1\.0\.1-local/, "وسم v1.0.1-local موثق في المراحل التالية");
 });
