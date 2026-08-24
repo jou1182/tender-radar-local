@@ -98,7 +98,7 @@ test("Schema v7 migration preserves live tenders, details, and attachments from 
     legacy.close();
 
     repository = await createRadarRepository({ projectRoot });
-    assert.equal(repository.schemaVersion, 7);
+    assert.equal(repository.schemaVersion, 8);
     const stored = repository.getTender("260000000030");
     assert.equal(stored.title, "منافسة من v3");
     assert.equal(stored.feeVerification, "unknown");

@@ -16,7 +16,7 @@ import {
 } from "./download-gate.mjs";
 import { assertDownloadFeeGate, cardFeeEvidence, detailFeeEvidence, mergeSyncFeeEvidence } from "./fee-evidence.mjs";
 
-const migrationVersion = 7;
+const migrationVersion = 8;
 const trackedTenderFields = ["title", "agency", "fee", "region", "deadline", "publishedAt", "platformStatus", "activity", "etimadUrl"];
 
 function safeJson(value, fallback) {
@@ -448,6 +448,50 @@ export async function createRadarRepository({ projectRoot }) {
   ensureColumn("tenders", "fee_raw_text", "fee_raw_text TEXT");
   ensureColumn("tenders", "fee_verified_at", "fee_verified_at TEXT");
 
+  // ── v8 (P5-A0): طوابير التنزيل والتصنيف والسياسات ──────────────────────────
+  // صف واحد لكل (منافسة، ملف): يمر بالحالات المقترحة حتى التخزين أو الحجب.
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS download_queue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tender_reference TEXT NOT NULL REFERENCES tenders(reference) ON DELETE CASCADE,
+      file_name TEXT NOT NULL,
+      state TEXT NOT NULL DEFAULT 'proposed' CHECK (state IN (
+        'proposed', 'auto-approved', 'waiting-purchase', 'approved',
+        'downloading', 'stored', 'failed', 'blocked'
+      )),
+      manifest_sha256 TEXT,
+      bytes INTEGER,
+      error_code TEXT,
+      created_at TEXT NOT NULL,
+      decided_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_download_queue_state ON download_queue(state, created_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_download_queue_unique_file
+      ON download_queue(tender_reference, file_name, created_at);
+  `);
+
+  // تصنيف حتمي بقواعد (بلا LLM) — يغذي درجة الملاءمة والفلاتر.
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS tender_classification (
+      tender_reference TEXT PRIMARY KEY REFERENCES tenders(reference) ON DELETE CASCADE,
+      specialty_code TEXT NOT NULL,
+      confidence REAL NOT NULL DEFAULT 0 CHECK (confidence BETWEEN 0 AND 1),
+      method TEXT NOT NULL DEFAULT 'rulebook' CHECK (method IN ('rulebook', 'manual')),
+      classified_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_classification_specialty
+      ON tender_classification(specialty_code);
+  `);
+
+  // إعدادات سياسات دائمة (مفتاح/قيمة JSON) — مثل سياسة التنزيل الدائمة والميزانية اليومية.
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS policy_settings (
+      key TEXT PRIMARY KEY,
+      value_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+
   // موافقات v4 لم تكن مرتبطة بنطاق أو مدة؛ تُبطل صراحة ولا يمكن توريثها إلى مسار تنزيل حي.
   database.prepare(`
     UPDATE approvals SET status = 'revoked', revoked_at = COALESCE(revoked_at, ?)
@@ -459,6 +503,37 @@ export async function createRadarRepository({ projectRoot }) {
   const statements = {
     insertBaseline: database.prepare("INSERT OR IGNORE INTO sync_baseline (reference, imported_at) VALUES (?, ?)"),
     listBaseline: database.prepare("SELECT reference FROM sync_baseline ORDER BY reference"),
+    insertDownloadQueue: database.prepare(`
+      INSERT INTO download_queue (tender_reference, file_name, state, manifest_sha256, created_at, decided_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `),
+    listDownloadQueue: database.prepare("SELECT * FROM download_queue ORDER BY created_at DESC LIMIT 500"),
+    listDownloadQueueByState: database.prepare(
+      "SELECT * FROM download_queue WHERE state = ? ORDER BY created_at DESC LIMIT 500"
+    ),
+    getDownloadQueueById: database.prepare("SELECT * FROM download_queue WHERE id = ?"),
+    updateDownloadQueueState: database.prepare(`
+      UPDATE download_queue
+      SET state = ?, error_code = ?, bytes = COALESCE(?, bytes), decided_at = ?
+      WHERE id = ?
+    `),
+    upsertPolicySetting: database.prepare(`
+      INSERT INTO policy_settings (key, value_json, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
+    `),
+    getPolicySetting: database.prepare("SELECT value_json FROM policy_settings WHERE key = ?"),
+    upsertClassification: database.prepare(`
+      INSERT INTO tender_classification (tender_reference, specialty_code, confidence, method, classified_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(tender_reference) DO UPDATE SET
+        specialty_code = excluded.specialty_code,
+        confidence = excluded.confidence,
+        method = excluded.method,
+        classified_at = excluded.classified_at
+    `),
+    getClassification: database.prepare(
+      "SELECT * FROM tender_classification WHERE tender_reference = ?"
+    ),
     listTenders: database.prepare(`
       SELECT t.*, s.user_status, s.document_status, s.score, s.review_json,
         d.status AS detail_status, d.inspected_at AS detail_inspected_at,
@@ -1414,7 +1489,7 @@ export async function createRadarRepository({ projectRoot }) {
           }
         }
       }
-      statements.completeRun.run(result.lastSyncAt, result.regions, result.checked, result.added.length, result.changed.length, runId);
+      statements.completeRun.run(result.lastSyncAt, result.regions ?? 0, result.checked ?? 0, result.added.length, result.changed.length, runId);
     });
   }
 
@@ -1575,12 +1650,71 @@ export async function createRadarRepository({ projectRoot }) {
     );
   }
 
+  // ── P5-A0: طابور التنزيل والتصنيف وسياسات التشغيل ─────────────────────────
+  function enqueueDownload({ tenderReference, fileName, state = "proposed", manifestSha256 = null }) {
+    const now = new Date().toISOString();
+    const result = statements.insertDownloadQueue.run(
+      String(tenderReference), String(fileName), state, manifestSha256 || null, now,
+      state === "auto-approved" ? now : null,
+    );
+    return result.lastInsertRowid;
+  }
+
+  function listDownloadQueue(stateFilter) {
+    if (stateFilter) {
+      return statements.listDownloadQueueByState.all(String(stateFilter));
+    }
+    return statements.listDownloadQueue.all();
+  }
+
+  function updateDownloadQueueState(id, { state, errorCode = null, bytes = null }) {
+    statements.updateDownloadQueueState.run(
+      String(state), errorCode || null, bytes ?? null, new Date().toISOString(), Number(id),
+    );
+    return statements.getDownloadQueueById.get(Number(id));
+  }
+
+  function setPolicySetting(key, value) {
+    statements.upsertPolicySetting.run(
+      String(key), JSON.stringify(value), new Date().toISOString(),
+    );
+    return value;
+  }
+
+  function getPolicySetting(key, fallback = null) {
+    const row = statements.getPolicySetting.get(String(key));
+    if (!row) return fallback;
+    try {
+      return JSON.parse(row.value_json);
+    } catch {
+      return fallback;
+    }
+  }
+
+  function saveTenderClassification({ tenderReference, specialtyCode, confidence, method = "rulebook" }) {
+    statements.upsertClassification.run(
+      String(tenderReference), String(specialtyCode), Number(confidence) || 0,
+      method === "manual" ? "manual" : "rulebook", new Date().toISOString(),
+    );
+  }
+
+  function getTenderClassification(tenderReference) {
+    return statements.getClassification.get(String(tenderReference)) || null;
+  }
+
   return {
     databasePath,
     schemaVersion: migrationVersion,
     seedBaseline,
     listTenders,
     getTender,
+    enqueueDownload,
+    listDownloadQueue,
+    updateDownloadQueueState,
+    setPolicySetting,
+    getPolicySetting,
+    saveTenderClassification,
+    getTenderClassification,
     saveVisibleAttachmentNames,
     saveTenderDetails,
     getDetailsStats,

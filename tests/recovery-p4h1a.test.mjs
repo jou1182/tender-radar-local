@@ -48,7 +48,7 @@ function makeFixtureState(overrides = {}) {
     functionalBaselineCommit: "0123456789abcdef0123456789abcdef01234567",
     lastApprovedFunctionalPhase: "P4-M0AMRM",
     continuityPackagePhase: "P4-H1AR",
-    databaseSchemaVersion: 7,
+    databaseSchemaVersion: 8,
     testBaselines: {
       functionalBaseline: { commit: "0123456789abcdef0123456789abcdef01234567", passed: 143, failed: 0 },
       continuityPackage: { phase: "P4-H1AR", passed: 155, failed: 0 },
@@ -75,7 +75,7 @@ function makeFixtureDb(dbPath) {
   const database = new DatabaseSync(dbPath);
   database.exec(`
     CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
-    INSERT INTO schema_migrations (version, applied_at) VALUES (5, 't'), (6, 't'), (7, 't');
+    INSERT INTO schema_migrations (version, applied_at) VALUES (5, 't'), (6, 't'), (7, 't'), (8, 't');
     CREATE TABLE tenders (reference TEXT PRIMARY KEY, title TEXT NOT NULL);
     INSERT INTO tenders (reference, title) VALUES ('R1', 'أ'), ('R2', 'ب'), ('R3', 'ج');
     CREATE TABLE sync_runs (id INTEGER PRIMARY KEY, status TEXT NOT NULL DEFAULT '');
@@ -191,11 +191,11 @@ test("3) HEAD المستعاد من الحزمة يساوي Hash المصدر", 
   assert.equal(verification.details.headCommit, head);
 });
 
-test("4) نسخة SQLite داخل الحزمة quick_check = ok وschemaVersion = 7", async (t) => {
+test("4) نسخة SQLite داخل الحزمة quick_check = ok وschemaVersion = 8", async (t) => {
   const { bundleDir } = await arrangeBundle(t);
   const databasePath = path.join(bundleDir, bundleLayout.database);
   assert.equal(quickCheckSqlite(databasePath), "ok");
-  assert.equal(readSqliteState(databasePath).schemaVersion, 7);
+  assert.equal(readSqliteState(databasePath).schemaVersion, 8);
 });
 
 test("5) أعداد الجداول والسجلات في النسخة تطابق المصدر", async (t) => {
@@ -204,7 +204,7 @@ test("5) أعداد الجداول والسجلات في النسخة تطابق
   const copy = readSqliteState(path.join(bundleDir, bundleLayout.database));
   assert.deepEqual(copy.tables, source.tables, "أعداد السجلات قبل وبعد متطابقة");
   assert.deepEqual(result.manifest.database.tables, source.tables, "manifest يسجل الأعداد نفسها");
-  assert.deepEqual(source.tables, { schema_migrations: 3, sync_runs: 2, tenders: 3 });
+  assert.deepEqual(source.tables, { schema_migrations: 4, sync_runs: 2, tenders: 3 });
 });
 
 test("6) تغيير بايت واحد في Git bundle يفشل التحقق", async (t) => {
@@ -340,7 +340,7 @@ test("14) RESUME_HERE يعكس Hash والمرحلة وschema الفعلية", a
   assert.match(resume, /P4-M0AMRM/, "يذكر آخر مرحلة وظيفية من الحالة");
   assert.match(resume, /P4-H1AR/, "يذكر مرحلة حزمة الاستمرارية");
   assert.match(resume, /P4-H1B/, "يذكر المرحلة التالية المخططة");
-  assert.match(resume, /schemaVersion المسجلة: 7/, "يذكر schemaVersion الفعلية");
+  assert.match(resume, /schemaVersion المسجلة: 8/, "يذكر schemaVersion الفعلية");
   assert.match(resume, /approved_safe_stop/, "يوثق حالة التوقف الآمن المعتمد");
   assert.match(resume, /paused/, "يوثق توقف P3-B1C");
   assert.match(resume, /لم تبدأ/, "يوثق أن المرحلة التالية لم تبدأ");
