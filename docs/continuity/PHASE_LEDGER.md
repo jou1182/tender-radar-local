@@ -70,6 +70,8 @@
 | P4-N0AM | دمج `8aab355` (تفعيل مخطط n8n — fast-forward) | approved |
 | P4-R0M | دمج `d39611d` (توثيق مخاطرة CUDA — fast-forward) | approved |
 | P4-REL2M | دمج commit إصدار P4-REL2 (توثيق — fast-forward) | approved |
+| P4-O0AM | دمج `202115e` (أدوات النسخ الاحتياطي الآمن وفحص الصحة — fast-forward) | approved |
+| P4-O0A2M | دمج `7911f64` (اختبار صحة معزول عن البيئة + تجاوز روابط loopback-only — fast-forward) | approved |
 
 ## مراحل لم تبدأ
 
@@ -79,7 +81,7 @@
   3. تكامل n8n — اكتملت (P4-N0AM + اختبار حي P4-N0B بالمسار الكامل؛ عطل CUDA المعروف موثّق).
   4. اختبار القبول النهائي — اكتملت (P4-UAT0: مزامنة حية + تحليل بالمسار الكامل + نسخ احتياطي/استعادة).
   5. الإصدار والوسم — اكتملت (P4-REL2): وسم `v1.0.1-local` annotated على HEAD النهائي؛ `v1.0.0-local` التاريخي محفوظ بلا تعديل.
-- P4-O0 — pending. الترتيب في [NEXT_PHASES.md](NEXT_PHASES.md).
+- P4-O0A — completed (P4-O0AM + P4-O0A2M): أدوات تشغيلية `db:backup` و`health` على main؛ التفاصيل في CURRENT_STATE.json `operationalTools`. الترتيب في [NEXT_PHASES.md](NEXT_PHASES.md).
 
 ## قرارات حاكمة مستمرة
 
