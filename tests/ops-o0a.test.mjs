@@ -8,10 +8,28 @@ import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import http from "node:http";
 import { DatabaseSync } from "node:sqlite";
 import { createDatabaseBackup } from "../scripts/lib/db-maintenance.mjs";
 
 const worktreeRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+// خادم مغلق مؤقت لاختبار فشل الصحة دون افتراض حالة خدمات الجهاز الحقيقية.
+let closedServer = null;
+async function startClosedServer() {
+  closedServer = http.createServer((_request, response) => response.destroy());
+  await new Promise((resolve) => closedServer.listen(0, "127.0.0.1", resolve));
+  const port = closedServer.address().port;
+  return {
+    RADAR_UI_URL: `http://127.0.0.1:${port}/`,
+    RADAR_SYNC_URL: `http://127.0.0.1:${port}/health`,
+  };
+}
+async function stopClosedServer() {
+  if (!closedServer) return;
+  await new Promise((resolve) => closedServer.close(resolve));
+  closedServer = null;
+}
 
 function runCli(args, envOverrides = {}) {
   return new Promise((resolve) => {
@@ -145,14 +163,23 @@ test("P4-O0A-5: cli writes a timestamped backup into the default backups directo
   }
 });
 
-test("P4-O0A-6: health check fails with non-zero exit when services are down", async () => {
-  // لا خدمات تعمل على المنفذين — الفحص يجب أن يفشل بأمان ويطبع JSON واحدًا.
-  const outcome = await runCli(["scripts/health-check.mjs"]);
-  assert.notEqual(outcome.code, 0);
-  const payload = JSON.parse(outcome.stdout);
-  assert.equal(payload.ok, false);
-  for (const key of ["ui", "syncService", "analysisHealth"]) {
-    assert.equal(payload.checks[key].ok, false);
+test("P4-O0A-6: health check fails with non-zero exit when services are unreachable", async () => {
+  // معزولة عن البيئة: خادم مؤقت يغلق اتصاله فورًا (connection refused) على منفذ عابر
+  // بدل افتراض توقف خدمات الجهاز — قد يكون الرادار الحقيقي يعمل فعلًا أثناء الاختبار.
+  const { RADAR_UI_URL, RADAR_SYNC_URL } = await startClosedServer();
+  try {
+    const outcome = await runCli(["scripts/health-check.mjs"], {
+      RADAR_UI_URL,
+      RADAR_SYNC_URL,
+    });
+    assert.notEqual(outcome.code, 0);
+    const payload = JSON.parse(outcome.stdout);
+    assert.equal(payload.ok, false);
+    for (const key of ["ui", "syncService", "analysisHealth"]) {
+      assert.equal(payload.checks[key].ok, false);
+    }
+  } finally {
+    await stopClosedServer();
   }
 });
 

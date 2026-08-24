@@ -6,6 +6,8 @@
 //   - نقطة صحة التحليل على http://127.0.0.1:4318/analysis/health
 // أي مضيف آخر مرفوض تصميميًا (SAFETY_BOUNDARIES: منع الاتصال الخارجي).
 // الخرج: JSON واحد؛ exit 0 فقط إذا نجحت كل الفحوص.
+// روابط الفحص قابلة للتجاوز عبر RADAR_UI_URL / RADAR_SYNC_URL — بقيم loopback فقط
+// (لاختبارات معزولة عن خدمات الجهاز الحقيقية)؛ أي مضيف آخر يرفضه الحارس أدناه.
 
 function assertLoopbackUrl(rawUrl) {
   const parsed = new URL(rawUrl);
@@ -41,9 +43,9 @@ async function fetchJsonHealth(rawUrl, timeoutMs = 4000) {
   }
 }
 
-async function checkUi() {
+async function checkUi(rawUrl) {
   // الواجهة قد تعرض HTML عاديًا — يكفي أن ترد استجابة من أي حالة.
-  const parsed = assertLoopbackUrl("http://localhost:3000/");
+  const parsed = assertLoopbackUrl(rawUrl);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 4000);
   try {
@@ -55,19 +57,24 @@ async function checkUi() {
 }
 
 async function main() {
+  const uiUrl = process.env.RADAR_UI_URL || "http://localhost:3000/";
+  const syncBase = (process.env.RADAR_SYNC_URL || "http://127.0.0.1:4318/health").replace(
+    /\/health\/?$/,
+    "",
+  );
   const checks = {};
   let allOk = true;
 
   try {
-    checks.ui = { ...(await checkUi()), endpoint: "http://localhost:3000/" };
+    checks.ui = { ...(await checkUi(uiUrl)), endpoint: uiUrl };
   } catch (error) {
-    checks.ui = { ok: false, error: String(error?.message || error) };
+    checks.ui = { ok: false, error: String(error?.message || error), endpoint: uiUrl };
   }
   allOk = allOk && checks.ui.ok === true;
 
   for (const [key, rawUrl] of [
-    ["syncService", "http://127.0.0.1:4318/health"],
-    ["analysisHealth", "http://127.0.0.1:4318/analysis/health"],
+    ["syncService", `${syncBase}/health`],
+    ["analysisHealth", `${syncBase}/analysis/health`],
   ]) {
     try {
       checks[key] = { ...(await fetchJsonHealth(rawUrl)), endpoint: rawUrl };
