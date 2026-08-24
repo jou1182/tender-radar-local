@@ -11,12 +11,14 @@
     "start": "vinext start",
     "radar": "node scripts/start-radar.mjs",
     "sync-service": "node scripts/etimad-sync-service.mjs",
-    "test": "npm run build && node --test tests/rendered-html.test.mjs tests/n8n-integration.test.mjs tests/repository.test.mjs tests/sync-p1.test.mjs tests/details-p2.test.mjs tests/details-p2-quality.test.mjs tests/catalog-p3.test.mjs tests/p3-safety.test.mjs tests/approval-p3b0.test.mjs tests/live-acquisition-p3b1.test.mjs tests/fee-integrity-p3b1b0.test.mjs tests/analysis-p4a.test.mjs tests/analysis-p4a0r.test.mjs tests/analysis-p4a0r2.test.mjs tests/analysis-p4a1r.test.mjs tests/analysis-p4a1c0.test.mjs tests/analysis-p4a1d0.test.mjs tests/analysis-p4uat1b.test.mjs tests/analysis-p4uat2a.test.mjs tests/continuity-p4h0.test.mjs tests/analysis-p4m0a.test.mjs tests/recovery-p4h1a.test.mjs",
+    "test": "npm run build && node --test tests/rendered-html.test.mjs tests/n8n-integration.test.mjs tests/repository.test.mjs tests/sync-p1.test.mjs tests/details-p2.test.mjs tests/details-p2-quality.test.mjs tests/catalog-p3.test.mjs tests/p3-safety.test.mjs tests/approval-p3b0.test.mjs tests/live-acquisition-p3b1.test.mjs tests/fee-integrity-p3b1b0.test.mjs tests/analysis-p4a.test.mjs tests/analysis-p4a0r.test.mjs tests/analysis-p4a0r2.test.mjs tests/analysis-p4a1r.test.mjs tests/analysis-p4a1c0.test.mjs tests/analysis-p4a1d0.test.mjs tests/analysis-p4uat1b.test.mjs tests/analysis-p4uat2a.test.mjs tests/continuity-p4h0.test.mjs tests/analysis-p4m0a.test.mjs tests/recovery-p4h1a.test.mjs tests/ops-o0a.test.mjs",
     "recovery:verify": "node scripts/verify-recovery-bundle.mjs",
     "benchmark:fixtures": "node scripts/generate-analysis-benchmark-fixtures.mjs",
     "benchmark:run": "node scripts/run-analysis-benchmark.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern .radar-data",
     "db:init": "node scripts/initialize-database.mjs",
+    "db:backup": "node scripts/db-backup.mjs",
+    "health": "node scripts/health-check.mjs",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
