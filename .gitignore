@@ -44,3 +44,7 @@ yarn-error.log*
 # recovery bundle local outputs (P4-H1A — الأدوات ترفض الكتابة داخل المشروع أصلًا)
 /recovery-bundle-out/
 /.recovery-staging-*/
+
+# large media never belongs in the repo
+*.mp4
+*.mov
