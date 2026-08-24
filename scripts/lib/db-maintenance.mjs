@@ -7,8 +7,49 @@ import { stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 
+// عتبة تجاوز checkpoint التلقائي: لا داعي لاختصار ملف أصغر من هذه القيمة.
+const walAutoCheckpointMinBytes = 64 * 1024;
+
 export function defaultDatabasePath(projectRoot) {
   return path.join(projectRoot, ".radar-data", "radar.sqlite");
+}
+
+async function walSizeBytes(databasePath) {
+  try {
+    return (await stat(`${databasePath}-wal`)).size;
+  } catch {
+    return 0;
+  }
+}
+
+// يختصر الـWAL المصدر عند وجوده بحجم يستحق العملية؛ يتجاوز بأمان ما عداه.
+// القرار (exists/size) والتنفيذ منفصلان لسهولة الاختبار — بلا أي حذف للملف أبدًا.
+export async function maybeTruncateWal(databasePath, { minBytes = walAutoCheckpointMinBytes } = {}) {
+  const sizeBefore = await walSizeBytes(databasePath);
+  if (!existsSync(`${databasePath}-wal`) || sizeBefore < minBytes) {
+    return { attempted: false, skipped: true, walBytesBefore: sizeBefore };
+  }
+  const handle = new DatabaseSync(databasePath);
+  try {
+    handle.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  } finally {
+    handle.close();
+  }
+  const walBytesAfter = existsSync(`${databasePath}-wal`) ? await walSizeBytes(databasePath) : 0;
+  return { attempted: true, skipped: false, walBytesBefore: sizeBefore, walBytesAfter };
+}
+
+// نقطة النداء الوحيدة من خدمة المزامنة: بعد saveCompletedSync فقط عندما status=complete.
+// فشل الاختصار لا يفشل الجولة أبدًا — يسجل كتحذير داخل النتيجة.
+export async function truncateSourceWalAfterCompleteRun({ databasePath, runStatus, minBytes }) {
+  if (runStatus !== "complete") {
+    return { attempted: false, reason: `run-status-${runStatus}` };
+  }
+  try {
+    return await maybeTruncateWal(databasePath, minBytes ? { minBytes } : undefined);
+  } catch (error) {
+    return { attempted: false, warning: String(error?.message || error) };
+  }
 }
 
 // حماية الهدف: يُمنع استهداف قاعدة التشغيل الحية نفسها أو ملفات -wal/-shm التابعة لها.

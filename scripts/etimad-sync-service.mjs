@@ -22,6 +22,7 @@ import {
 import { createDisabledProductionDownloadAdapter } from "./lib/attachment-adapters.mjs";
 import { cardFeeEvidence, mergeSyncFeeEvidence } from "./lib/fee-evidence.mjs";
 import { createLiveDownloadAdapter } from "./lib/live-attachment-acquisition.mjs";
+import { truncateSourceWalAfterCompleteRun } from "./lib/db-maintenance.mjs";
 import { createAnalysisEngine } from "./lib/analysis-engine.mjs";
 import { createAnalysisApiHandler } from "./lib/analysis-api.mjs";
 import { attachmentStorageRoot } from "./lib/attachment-storage.mjs";
@@ -472,6 +473,12 @@ async function performSync() {
       },
     };
     repository.saveCompletedSync(result, run.id);
+    // P4-O0B: بعد جولة مكتملة فقط — اختصار الـWAL المصدر إن تجاوز العتبة؛
+    // لا يفشل الجولة أبدًا (النتيجة تحمل walCheckpoint للشفافية).
+    result.walCheckpoint = await truncateSourceWalAfterCompleteRun({
+      databasePath: repository.databasePath,
+      runStatus: "complete",
+    });
     result.automation = await notifyN8n(result);
     state = {
       phase: "complete",
