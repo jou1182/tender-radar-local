@@ -11,7 +11,7 @@
   },
   "lastApprovedFunctionalPhase": "P4-M0AMRM",
   "continuityPackagePhase": "P4-H1B",
-  "databaseSchemaVersion": 7,
+  "databaseSchemaVersion": 8,
   "testBaselines": {
     "functionalBaseline": {
       "commit": "2677e0099ef95bd6077e785f60a18fb43e7723e1",
@@ -27,6 +27,12 @@
       "phase": "P4-O0A2",
       "commit": "7911f64",
       "passed": 299,
+      "failed": 0
+    },
+    "p5a0": {
+      "phase": "P5-A0",
+      "commit": "d543b8b",
+      "passed": 304,
       "failed": 0
     }
   },
