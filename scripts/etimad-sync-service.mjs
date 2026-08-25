@@ -25,6 +25,7 @@ import { cardFeeEvidence, mergeSyncFeeEvidence } from "./lib/fee-evidence.mjs";
 import { createLiveDownloadAdapter } from "./lib/live-attachment-acquisition.mjs";
 import { truncateSourceWalAfterCompleteRun } from "./lib/db-maintenance.mjs";
 import { classifyAndStoreTenders, loadRulebook as loadSpecialtyRulebook } from "./lib/specialty-classifier.mjs";
+import { evaluateQueueForRun } from "./lib/attachment-queue-evaluator.mjs";
 import {
   validateBinding,
   setTeamCredential,
@@ -519,6 +520,18 @@ async function performSync() {
       } catch (activityFailure) {
         console.warn("[agents] could not record classifier failure:", activityFailure);
       }
+    }
+    // وكيل التحميل «عبدالله» — يبني صفوف الطابور من المرفقات الظاهرة وفق السياسة.
+    try {
+      const queueSummary = evaluateQueueForRun(repository, result.items);
+      repository.recordAgentActivity({
+        roleCode: "courier",
+        action: "queue-evaluated",
+        status: "success",
+        detail: { ...queueSummary },
+      });
+    } catch (queueError) {
+      console.warn("[agents] queue evaluation failed:", queueError);
     }
     result.automation = await notifyN8n(result);
     state = {
