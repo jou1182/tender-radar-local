@@ -24,6 +24,7 @@ import { createDisabledProductionDownloadAdapter } from "./lib/attachment-adapte
 import { cardFeeEvidence, mergeSyncFeeEvidence } from "./lib/fee-evidence.mjs";
 import { createLiveDownloadAdapter } from "./lib/live-attachment-acquisition.mjs";
 import { truncateSourceWalAfterCompleteRun } from "./lib/db-maintenance.mjs";
+import { classifyAndStoreTenders, loadRulebook as loadSpecialtyRulebook } from "./lib/specialty-classifier.mjs";
 import {
   validateBinding,
   setTeamCredential,
@@ -48,6 +49,7 @@ const localUiOrigins = new Set(["http://localhost:3000", "http://127.0.0.1:3000"
 const n8nWebhookUrl = process.env.N8N_RADAR_WEBHOOK_URL || "http://127.0.0.1:5678/webhook/radar-sync-5d354757-90d1-4dc3-b7f7-c93e4c50ecb1";
 const repository = await createRadarRepository({ projectRoot });
 const baselineIds = JSON.parse(await readFile(baselineFile, "utf8"));
+await loadSpecialtyRulebook(); // كاش قواعد تصنيف «خالد»
 repository.seedBaseline(baselineIds);
 const chromeSession = createRadarChromeSession({ privateDir, startUrl: listUrl });
 // المحوّل الوحيد في P3-B0: أي محاولة تنفيذ حي تعيد DOWNLOAD_ADAPTER_DISABLED.
@@ -500,6 +502,23 @@ async function performSync() {
     } catch (activityError) {
       // نشاط الوكلاء لا يفشل الجولة أبدًا — يسجل كتحذير في سجل الخدمة فقط.
       console.warn("[agents] failed to record scout activity:", activityError);
+    }
+    // وكيل التصنيف «خالد» — حتمي بلا LLM؛ فشله لا يفشل الجولة.
+    try {
+      const classification = await classifyAndStoreTenders(repository, result.items);
+      repository.recordAgentActivity({
+        roleCode: "classifier",
+        action: "classification-complete",
+        status: "success",
+        detail: { classified: classification.classified, skipped: classification.skipped },
+      });
+    } catch (classifierError) {
+      console.warn("[agents] classifier pass failed:", classifierError);
+      try {
+        repository.recordAgentActivity({ roleCode: "classifier", action: "classification-complete", status: "error", detail: { message: String(classifierError?.message || classifierError).slice(0, 200) } });
+      } catch (activityFailure) {
+        console.warn("[agents] could not record classifier failure:", activityFailure);
+      }
     }
     result.automation = await notifyN8n(result);
     state = {
