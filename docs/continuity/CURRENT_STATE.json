@@ -40,7 +40,10 @@
       "commit": "29e1094",
       "passed": 314,
       "failed": 0
-    }
+    },
+    "p5c0": { "phase": "P5-C0", "commit": "3dfbbcf", "passed": 320, "failed": 0 },
+    "p5a1": { "phase": "P5-A1", "commit": "5021b16", "passed": 325, "failed": 0 },
+    "p5d0": { "phase": "P5-D0", "commit": "4a8bbb7", "passed": 329, "failed": 0 }
   },
   "agentTeam": {
     "phase": "P5-F0",
