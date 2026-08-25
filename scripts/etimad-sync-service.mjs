@@ -1,4 +1,5 @@
 import http from "node:http";
+import crypto from "node:crypto";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -23,14 +24,23 @@ import { createDisabledProductionDownloadAdapter } from "./lib/attachment-adapte
 import { cardFeeEvidence, mergeSyncFeeEvidence } from "./lib/fee-evidence.mjs";
 import { createLiveDownloadAdapter } from "./lib/live-attachment-acquisition.mjs";
 import { truncateSourceWalAfterCompleteRun } from "./lib/db-maintenance.mjs";
+import {
+  validateBinding,
+  setTeamCredential,
+  verifyTeamPassphrase,
+  createSessionManager,
+} from "./lib/agent-team.mjs";
 import { createAnalysisEngine } from "./lib/analysis-engine.mjs";
 import { createAnalysisApiHandler } from "./lib/analysis-api.mjs";
 import { attachmentStorageRoot } from "./lib/attachment-storage.mjs";
 import { readJsonBodyLimited as readJsonBody } from "./lib/http-body.mjs";
 
-const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+// RADAR_DB_ROOT يوجّه قاعدة البيانات إلى مجلد معزول (لاختبارات التكامل) دون لمس قاعدة التشغيل.
+const projectRoot = process.env.RADAR_DB_ROOT ? path.resolve(process.env.RADAR_DB_ROOT) : path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const privateDir = path.join(projectRoot, ".radar-data");
-const baselineFile = path.join(projectRoot, "scripts", "sync-baseline.json");
+// baseline يُقرأ دائمًا من مجلد السكربتات الفعلي حتى لو وُجّهت قاعدة البيانات لمجلد معزول.
+const scriptRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const baselineFile = path.join(scriptRoot, "scripts", "sync-baseline.json");
 const listUrl = "https://tenders.etimad.sa/Tender/AllSuppliersTenders?PageNumber=1";
 const port = Number(process.env.RADAR_SYNC_PORT || 4318);
 const serviceVersion = "p4a-local-analysis-1";
@@ -479,6 +489,18 @@ async function performSync() {
       databasePath: repository.databasePath,
       runStatus: "complete",
     });
+    // نشاط وكيل الرصد «يوسف» — سجل حي لطاقم الوكلاء (P5-F0).
+    try {
+      repository.recordAgentActivity({
+        roleCode: "scout",
+        action: "sync-complete",
+        status: "success",
+        detail: { checked: result.checked, added: added.length, changed: changed.length },
+      });
+    } catch (activityError) {
+      // نشاط الوكلاء لا يفشل الجولة أبدًا — يسجل كتحذير في سجل الخدمة فقط.
+      console.warn("[agents] failed to record scout activity:", activityError);
+    }
     result.automation = await notifyN8n(result);
     state = {
       phase: "complete",
@@ -514,10 +536,115 @@ function send(response, status, payload) {
 
 // قراءة جسم JSON تتم عبر readJsonBody المستوردة من lib/http-body.mjs — حد 64 ك.ب إلزامي.
 
+// ── P5-F0: واجهة طاقم الوكلاء ─────────────────────────────────────────────────
+// كلمة سر الفريق تُضبط أول مرة عبر /agents/auth (setup)؛ بعدها كل تعديل يتطلب توكنًا.
+const teamSessions = createSessionManager({ secret: crypto.randomUUID() });
+
+function requireTeamToken(request) {
+  const token = String(request.headers["x-team-token"] || "");
+  if (!teamSessions.verify(token)) {
+    return false;
+  }
+  return true;
+}
+
+async function handleAgentsApi(request, response, pathname) {
+  if (request.method === "GET" && pathname === "/agents") {
+    const agents = repository.listAgents().map((agent) => ({
+      roleCode: agent.role_code,
+      nameAr: agent.name_ar,
+      nameEn: agent.name_en,
+      gender: agent.gender,
+      color: agent.color,
+      roleLabel: agent.role_label,
+      enabled: agent.enabled,
+      displayOrder: agent.display_order,
+      provider: agent.binding?.provider || "stub",
+      external: Boolean(agent.binding?.baseUrl && !/^http(s)?:\/\/(127\.0\.0\.1|localhost|\[::1\])/.test(agent.binding.baseUrl)),
+      updatedAt: agent.updated_at,
+    }));
+    return send(response, 200, { agents, activity: repository.listRecentAgentActivity(12) });
+  }
+
+  if (request.method === "POST" && pathname === "/agents/auth") {
+    const body = await readJsonBody(request);
+    try {
+      if (body?.action === "setup") {
+        setTeamCredential(repository, {
+          newSecret: body.newSecret,
+          currentSecret: body.currentSecret,
+        });
+        repository.recordAgentActivity({ roleCode: "sentinel", action: "team-credential-set", status: "info" });
+        const { token, expiresAt } = teamSessions.issue();
+        return send(response, 200, { ok: true, token, expiresAt });
+      }
+      if (!verifyTeamPassphrase(repository, body?.teamSecret)) {
+        return send(response, 401, { error: "TEAM_CREDENTIAL_MISMATCH", message: "كلمة السر غير صحيحة." });
+      }
+      const { token, expiresAt } = teamSessions.issue();
+      return send(response, 200, { ok: true, token, expiresAt });
+    } catch (error) {
+      const code = error?.code || "TEAM_AUTH_FAILED";
+      return send(response, code === "TEAM_CREDENTIAL_NOT_SET" ? 409 : 400, { error: code, message: String(error?.message || error) });
+    }
+  }
+
+  // كل ما بعد هذه النقطة إداري — يتطلب توكن فريق صالحًا.
+  if (!requireTeamToken(request)) {
+    return send(response, 401, { error: "TEAM_TOKEN_REQUIRED", message: "أدخل كلمة سر الفريق أولًا." });
+  }
+
+  if (request.method === "POST" && pathname === "/agents/update") {
+    const body = await readJsonBody(request);
+    const roleCode = String(body?.roleCode || "").trim();
+    if (!roleCode) return send(response, 400, { error: "ROLE_REQUIRED", message: "معرف الدور مطلوب." });
+    try {
+      repository.updateAgentProfile(roleCode, {
+        nameAr: body.nameAr,
+        nameEn: body.nameEn,
+        enabled: body.enabled,
+        displayOrder: body.displayOrder,
+      });
+      repository.recordAgentActivity({
+        roleCode, action: "profile-updated", status: "info",
+        detail: { nameAr: body.nameAr ?? null, enabled: body.enabled ?? null },
+      });
+      return send(response, 200, { ok: true, agent: repository.getAgentByRole(roleCode) });
+    } catch (error) {
+      return send(response, 404, { error: "AGENT_NOT_FOUND", message: String(error?.message || error) });
+    }
+  }
+
+  if (request.method === "POST" && pathname === "/agents/binding") {
+    const body = await readJsonBody(request);
+    const roleCode = String(body?.roleCode || "").trim();
+    if (!roleCode) return send(response, 400, { error: "ROLE_REQUIRED", message: "معرف الدور مطلوب." });
+    try {
+      const binding = validateBinding(body.binding);
+      repository.setAgentBinding(roleCode, binding);
+      repository.recordAgentActivity({
+        roleCode, action: "binding-updated", status: binding.provider === "stub" ? "info" : "success",
+        detail: { provider: binding.provider, external: Boolean(binding.baseUrl && !binding.baseUrl.includes("127.0.0.1") && !binding.baseUrl.includes("localhost")) },
+      });
+      return send(response, 200, { ok: true, agent: repository.getAgentByRole(roleCode) });
+    } catch (error) {
+      const code = error?.code || "AGENT_BINDING_INVALID";
+      return send(response, 400, { error: code, message: String(error?.message || error) });
+    }
+  }
+
+  return send(response, 404, { error: "NOT_FOUND", message: `مسار غير معروف: ${pathname}` });
+}
+
 const server = http.createServer(async (request, response) => {
   if (request.method === "OPTIONS") return send(response, 204, {});
   const pathname = new URL(request.url || "/", "http://127.0.0.1").pathname;
   try {
+    // ── P5-F0: مسارات طاقم الوكلاء ──────────────────────────────────────────
+    // عام: قراءة الطاقم وحالته وآخر النشاط. إداري: يتطلب X-Team-Token.
+    if (pathname === "/agents" || pathname.startsWith("/agents/")) {
+      return handleAgentsApi(request, response, pathname);
+    }
     if (request.method === "GET" && pathname === "/catalog/activities") {
       return send(response, 200, { activities: repository.listActivityCatalog() });
     }
@@ -739,6 +866,11 @@ const server = http.createServer(async (request, response) => {
 });
 
 server.listen(port, "127.0.0.1", () => console.log(`Etimad sync service: http://127.0.0.1:${port}`));
+
+// يُصدَّر لأغراض اختبارات التكامل المعزولة (إغلاق نظيف + معرفة المنفذ الفعلي).
+export function getSyncServer() {
+  return server;
+}
 
 function shutdown() {
   repository.close();

@@ -89,7 +89,7 @@ test("1-2) migration v6→v7 preserves existing data and is idempotent", async (
     assert.deepEqual(before, { tenders: 2, approvals: 1 }, "fixture row counts before migration");
 
     repository = await createRadarRepository({ projectRoot });
-    assert.equal(repository.schemaVersion, 8);
+    assert.equal(repository.schemaVersion, 9);
     assert.equal(repository.getTender("260000008100").feeVerification, "detail-verified", "v6 evidence survives");
     assert.equal(repository.getTender("260000008101").fee, 900);
     const tables = database => new Set(database.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((row) => row.name));
@@ -108,7 +108,7 @@ test("1-2) migration v6→v7 preserves existing data and is idempotent", async (
 
     // إعادة التشغيل: لا خطأ ولا تغيير.
     repository = await createRadarRepository({ projectRoot });
-    assert.equal(repository.schemaVersion, 8);
+    assert.equal(repository.schemaVersion, 9);
     assert.equal(repository.listTenders().length, 2);
   } finally {
     await cleanup(projectRoot, repository);

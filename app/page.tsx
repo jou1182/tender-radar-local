@@ -2,6 +2,7 @@
 
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import { demoTenders } from "./demo-tenders";
+import { AgentTeamPanel } from "./agent-team";
 
 type TenderStatus = "جديدة" | "قيد المراجعة" | "مناسبة" | "مستبعدة";
 type DocumentStatus = "لم تُفتح" | "الكراسة" | "الكراسة + الكميات" | "مكتملة";
@@ -677,6 +678,7 @@ export default function Home() {
 
   return <main>
     {isBooting && <RadarLoader overlay />}
+    <AgentTeamPanel syncState={syncState} lastSyncAt={syncMeta.lastSyncAt} />
     <section className="hero"><div><p className="eyebrow">منصة قرار محلية · نطاق اعتماد الكامل</p><h1>رادار المنافسات</h1><p className="intro">ابحث بدقة، فرّق بين المجاني والمدفوع بأي قيمة، ثم حوّل كل فرصة إلى قرار واضح قبل الشراء أو التسعير أو التقديم.</p></div><div className="session-card"><span>جلسة عمل اعتماد</span>{sessionStartedAt ? <><strong>{remainingMinutes === 0 ? "سجّل الدخول مجددًا عند الحاجة" : `تنبيه بعد ${remainingMinutes} دقيقة`}</strong><button className="quiet" onClick={() => void openEtimadSession()}>إعادة فتح جلسة اعتماد</button></> : <><strong>{helperOnline ? "الخدمة المحلية متصلة" : "تحتاج تشغيل الرادار"}</strong><button onClick={() => void openEtimadSession()}>فتح جلسة اعتماد</button></>}<a className="etimad-link" href="https://tenders.etimad.sa/Tender/AllSuppliersTenders?PageNumber=1" target="_blank" rel="noreferrer">فتح اعتماد العادي</a><small>تسجيل الدخول يتم داخل اعتماد، ولا نخزّن اسم المستخدم أو كلمة المرور.</small></div></section>
     <section className="operation-center" aria-label="مركز تشغيل الرادار"><div><span className="ready-dot" /> <b>الرادار يعمل محليًا على هذا الجهاز</b><small>بياناتك تبقى محلية، ولا يتم حفظ كلمة مرور اعتماد.</small></div><ol><li><b>1</b> شغّل «تشغيل-الرادار.cmd».</li><li><b>2</b> افتح جلسة اعتماد وسجّل الدخول بنفسك.</li><li><b>3</b> اضغط «مزامنة الآن» دون الحاجة إلى كودكس.</li></ol><button type="button" onClick={() => void openEtimadSession()}>فتح جلسة اعتماد</button></section>
     <section className={`sync-center ${syncState}`} aria-label="مركز مزامنة اعتماد">

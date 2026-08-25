@@ -15,8 +15,9 @@ import {
   verifyDownloadConsent,
 } from "./download-gate.mjs";
 import { assertDownloadFeeGate, cardFeeEvidence, detailFeeEvidence, mergeSyncFeeEvidence } from "./fee-evidence.mjs";
+import { defaultAgents } from "./agent-team.mjs";
 
-const migrationVersion = 8;
+const migrationVersion = 9;
 const trackedTenderFields = ["title", "agency", "fee", "region", "deadline", "publishedAt", "platformStatus", "activity", "etimadUrl"];
 
 function safeJson(value, fallback) {
@@ -492,6 +493,44 @@ export async function createRadarRepository({ projectRoot }) {
     );
   `);
 
+  // ── v9 (P5-F0): طاقم وكلاء الرادار وسجل نشاطهم ─────────────────────────────
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS agents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      role_code TEXT NOT NULL UNIQUE,
+      name_ar TEXT NOT NULL,
+      name_en TEXT NOT NULL,
+      gender TEXT NOT NULL CHECK (gender IN ('male', 'female')),
+      color TEXT NOT NULL DEFAULT '#14b8a6',
+      role_label TEXT NOT NULL DEFAULT '',
+      enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+      display_order INTEGER NOT NULL DEFAULT 99,
+      binding_json TEXT NOT NULL DEFAULT '{"provider":"stub"}',
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS agent_activity (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_role_code TEXT NOT NULL REFERENCES agents(role_code) ON DELETE CASCADE,
+      action TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'info' CHECK (status IN ('info', 'success', 'warning', 'error')),
+      detail_json TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_activity_recent
+      ON agent_activity(agent_role_code, created_at DESC);
+  `);
+
+  // بذر الطاقم الافتراضي دون الكتابة فوق أي تعديل سابق للمالك (INSERT OR IGNORE بالدور).
+  for (const agent of defaultAgents) {
+    database.prepare(`
+      INSERT OR IGNORE INTO agents (role_code, name_ar, name_en, gender, color, role_label, display_order, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      agent.roleCode, agent.nameAr, agent.nameEn, agent.gender, agent.color,
+      agent.roleLabel, agent.displayOrder, new Date().toISOString(),
+    );
+  }
+
   // موافقات v4 لم تكن مرتبطة بنطاق أو مدة؛ تُبطل صراحة ولا يمكن توريثها إلى مسار تنزيل حي.
   database.prepare(`
     UPDATE approvals SET status = 'revoked', revoked_at = COALESCE(revoked_at, ?)
@@ -534,6 +573,22 @@ export async function createRadarRepository({ projectRoot }) {
     getClassification: database.prepare(
       "SELECT * FROM tender_classification WHERE tender_reference = ?"
     ),
+    listAgents: database.prepare("SELECT * FROM agents ORDER BY display_order, id"),
+    getAgentByRole: database.prepare("SELECT * FROM agents WHERE role_code = ?"),
+    updateAgentById: database.prepare(`
+      UPDATE agents SET name_ar = ?, name_en = ?, enabled = ?, display_order = ?, updated_at = ?
+      WHERE role_code = ?
+    `),
+    updateAgentBinding: database.prepare(`
+      UPDATE agents SET binding_json = ?, updated_at = ? WHERE role_code = ?
+    `),
+    insertAgentActivity: database.prepare(`
+      INSERT INTO agent_activity (agent_role_code, action, status, detail_json, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `),
+    listRecentAgentActivity: database.prepare(`
+      SELECT * FROM agent_activity ORDER BY created_at DESC LIMIT 50
+    `),
     listTenders: database.prepare(`
       SELECT t.*, s.user_status, s.document_status, s.score, s.review_json,
         d.status AS detail_status, d.inspected_at AS detail_inspected_at,
@@ -1702,6 +1757,61 @@ export async function createRadarRepository({ projectRoot }) {
     return statements.getClassification.get(String(tenderReference)) || null;
   }
 
+  // ── P5-F0: واجهة طاقم الوكلاء ─────────────────────────────────────────────
+  function listAgents() {
+    return statements.listAgents.all().map((row) => ({
+      ...row,
+      enabled: Number(row.enabled) === 1,
+      binding: safeJson(row.binding_json, { provider: "stub" }),
+    }));
+  }
+
+  function getAgentByRole(roleCode) {
+    const row = statements.getAgentByRole.get(String(roleCode));
+    if (!row) return null;
+    return {
+      ...row,
+      enabled: Number(row.enabled) === 1,
+      binding: safeJson(row.binding_json, { provider: "stub" }),
+    };
+  }
+
+  function updateAgentProfile(roleCode, { nameAr, nameEn, enabled, displayOrder }) {
+    const current = statements.getAgentByRole.get(String(roleCode));
+    if (!current) throw new Error(`وكيل غير معروف: ${roleCode}`);
+    statements.updateAgentById.run(
+      nameAr !== undefined ? String(nameAr).trim() : current.name_ar,
+      nameEn !== undefined ? String(nameEn).trim() : current.name_en,
+      enabled !== undefined ? (enabled ? 1 : 0) : Number(current.enabled),
+      displayOrder !== undefined ? Number(displayOrder) : Number(current.display_order),
+      new Date().toISOString(),
+      String(roleCode),
+    );
+    return this?.getAgentByRole?.(roleCode) ?? getAgentByRole(roleCode);
+  }
+
+  function setAgentBinding(roleCode, binding) {
+    const current = statements.getAgentByRole.get(String(roleCode));
+    if (!current) throw new Error(`وكيل غير معروف: ${roleCode}`);
+    statements.updateAgentBinding.run(JSON.stringify(binding), new Date().toISOString(), String(roleCode));
+    return getAgentByRole(roleCode);
+  }
+
+  function recordAgentActivity({ roleCode, action, status = "info", detail = null }) {
+    statements.insertAgentActivity.run(
+      String(roleCode), String(action), String(status),
+      detail == null ? null : JSON.stringify(detail), new Date().toISOString(),
+    );
+  }
+
+  function listRecentAgentActivity(limit = 20) {
+    return statements.listRecentAgentActivity.all().slice(0, Number(limit) || 20);
+  }
+
+  function getPolicySettingRaw(key) {
+    return database.prepare("SELECT key, value_json, updated_at FROM policy_settings WHERE key = ?").get(String(key)) || null;
+  }
+
   return {
     databasePath,
     schemaVersion: migrationVersion,
@@ -1715,6 +1825,13 @@ export async function createRadarRepository({ projectRoot }) {
     getPolicySetting,
     saveTenderClassification,
     getTenderClassification,
+    listAgents,
+    getAgentByRole,
+    updateAgentProfile,
+    setAgentBinding,
+    recordAgentActivity,
+    listRecentAgentActivity,
+    getPolicySettingRaw,
     saveVisibleAttachmentNames,
     saveTenderDetails,
     getDetailsStats,

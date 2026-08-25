@@ -12,11 +12,11 @@ async function makeProjectRoot(prefix) {
   return projectRoot;
 }
 
-test("P5-A0-1: fresh database initializes at schemaVersion 8 with the new tables", async () => {
+test("P5-A0-1: fresh database initializes at schemaVersion 9 with the new tables", async () => {
   const projectRoot = await makeProjectRoot("radar-p5a0-fresh-");
   try {
     const repo = await createRadarRepository({ projectRoot });
-    assert.equal(repo.schemaVersion, 8);
+    assert.equal(repo.schemaVersion, 9);
     const db = new DatabaseSync(repo.databasePath, { readOnly: true });
     try {
       const tables = db
@@ -28,7 +28,7 @@ test("P5-A0-1: fresh database initializes at schemaVersion 8 with the new tables
       const versionRow = db
         .prepare("SELECT MAX(CAST(version AS INTEGER)) AS v FROM schema_migrations")
         .get();
-      assert.equal(versionRow.v, 8);
+      assert.equal(versionRow.v, 9);
     } finally {
       db.close();
       repo.close();
@@ -38,7 +38,7 @@ test("P5-A0-1: fresh database initializes at schemaVersion 8 with the new tables
   }
 });
 
-test("P5-A0-2: an existing v7 database upgrades in place to v8 without data loss", async () => {
+test("P5-A0-2: an existing v7/v8 database upgrades in place to v9 without data loss", async () => {
   const projectRoot = await makeProjectRoot("radar-p5a0-upgrade-");
   try {
     // إنشاء قاعدة ثم خفض تسجيل إصدارها إلى v7 لمحاكاة قاعدة قديمة (الجداول موجودة بالفعل
@@ -58,7 +58,7 @@ test("P5-A0-2: an existing v7 database upgrades in place to v8 without data loss
     downgrade.close();
 
     const reopened = await createRadarRepository({ projectRoot });
-    assert.equal(reopened.schemaVersion, 8);
+    assert.equal(reopened.schemaVersion, 9);
     const baselineRows = reopened.listTenders ? reopened.listTenders().length : -1;
     assert.ok(baselineRows >= 0);
     reopened.enqueueDownload({ tenderReference: "260739009419", fileName: "كراسة.pdf" });

@@ -11,7 +11,7 @@
   },
   "lastApprovedFunctionalPhase": "P4-M0AMRM",
   "continuityPackagePhase": "P4-H1B",
-  "databaseSchemaVersion": 8,
+  "databaseSchemaVersion": 9,
   "testBaselines": {
     "functionalBaseline": {
       "commit": "2677e0099ef95bd6077e785f60a18fb43e7723e1",

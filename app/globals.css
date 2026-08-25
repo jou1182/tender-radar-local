@@ -285,3 +285,40 @@ label { display:block; margin:0 0 7px; font-size:.82rem; color:var(--muted); fon
 .download-gate-consent { display: flex; gap: 0.5rem; align-items: flex-start; font-weight: 600; }
 .download-gate-message { background: #f3f6fb; border-radius: 10px; padding: 0.75rem; margin: 0; }
 .download-gate-actions { display: flex; gap: 0.75rem; justify-content: flex-end; }
+
+/* ── P5-F0: فريق وكلاء الرادار ─────────────────────────────────────────────── */
+.agent-team { background: var(--card, #fff); border: 1px solid rgba(15, 61, 46, .12); border-radius: 18px; padding: 22px; margin: 18px 0; }
+.agent-team-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+.agent-team-head h2 { margin: 4px 0; font-size: 1.25rem; }
+.agent-team-head p { color: var(--muted-foreground, #5b6b64); font-size: .9rem; margin: 0; }
+.team-state { white-space: nowrap; border-radius: 999px; padding: 6px 14px; background: rgba(20, 184, 166, .14); color: #0f766e; font-weight: 700; font-size: .85rem; }
+.team-state.busy { background: rgba(245, 158, 11, .16); color: #92400e; animation: teamBlink 1.2s ease-in-out infinite; }
+@keyframes teamBlink { 50% { opacity: .55; } }
+.agent-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.agent-card { border: 1px solid rgba(15, 61, 46, .1); border-radius: 14px; overflow: hidden; position: relative; transition: box-shadow .2s; }
+.agent-card.open { box-shadow: 0 8px 24px rgba(15, 61, 46, .16); }
+.agent-card.disabled { opacity: .45; filter: grayscale(.5); }
+.agent-open { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 100%; padding: 14px 8px 10px; background: none; border: none; cursor: pointer; font: inherit; }
+.agent-open:hover { background: rgba(20, 184, 166, .06); }
+.agent-avatar.working { animation: agentBreath 1.6s ease-in-out infinite; }
+@keyframes agentBreath { 50% { transform: translateY(-2px) scale(1.03); } }
+.pulse-ring { transform-origin: center; animation: ringPulse 1.4s ease-out infinite; }
+@keyframes ringPulse { 0% { opacity: .8; transform: scale(.92); } 100% { opacity: 0; transform: scale(1.08); } }
+.agent-card b { font-size: 1.02rem; }
+.agent-card small { color: var(--muted-foreground, #6b7a73); letter-spacing: .04em; }
+.agent-role { font-size: .78rem; color: var(--muted-foreground, #6b7a73); }
+.agent-provider { font-size: .72rem; color: #0f766e; background: rgba(20, 184, 166, .1); padding: 2px 8px; border-radius: 999px; }
+@media (prefers-reduced-motion: reduce) { .agent-avatar.working, .pulse-ring, .team-state.busy { animation: none; } }
+.agent-panel { padding: 12px; border-top: 1px dashed rgba(15, 61, 46, .18); display: grid; gap: 8px; background: rgba(255,255,255,.65); }
+.agent-panel label { display: grid; gap: 4px; font-size: .82rem; color: var(--muted-foreground, #55655e); }
+.agent-panel input, .agent-panel select { border: 1px solid rgba(15, 61, 46, .22); border-radius: 8px; padding: 7px 9px; font: inherit; width: 100%; }
+.confirm-external { display: flex; gap: 6px; align-items: center; color: #92400e !important; }
+.agent-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.panel-msg { color: #0f766e; font-style: normal; font-weight: 700; }
+.agent-auth em, .panel-msg { font-size: .85rem; }
+.agent-feed { margin-top: 14px; border-top: 1px solid rgba(15, 61, 46, .1); padding-top: 10px; }
+.agent-feed ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.agent-feed li { display: flex; gap: 8px; align-items: baseline; font-size: .85rem; }
+.feed-dot { width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; flex-shrink: 0; align-self: center; }
+.feed-dot.success { background: #10b981; } .feed-dot.warning { background: #f59e0b; } .feed-dot.error { background: #ef4444; }
+.agent-feed time { margin-inline-start: auto; color: var(--muted-foreground, #6b7a73); }
