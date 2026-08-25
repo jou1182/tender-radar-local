@@ -1,0 +1,106 @@
+{
+  "name": "رادار المنافسات - الخط الليلي: مزامنة وتصنيف وطابور (P5-D0)",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 2 * * *" }]
+        }
+      },
+      "id": "schedule-0200",
+      "name": "جدولة ليلية 02:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-360, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:4318/sync",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "content-type", "value": "application/json" }] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"regionsPriority\":[\"القصيم\"]}",
+        "options": { "timeout": 600000 }
+      },
+      "id": "post-sync",
+      "name": "بدء جولة المزامنة (loopback)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-140, 0]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://127.0.0.1:4318/agents",
+        "options": { "timeout": 30000 }
+      },
+      "id": "read-agents",
+      "name": "قراءة حالة الطاقم والطوابير",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [80, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// تلخيص نتيجة الخط الليلي — بلا أسرار ولا بيانات حساسة، loopback فقط.\nconst sync = $json ?? {};\nconst agents = $('قراءة حالة الطاقم والطوابير').first().json ?? {};\nconst activity = agents.activity ?? [];\nconst classifier = activity.find(a => a.agent_role_code === 'classifier');\nconst courier = activity.find(a => a.agent_role_code === 'courier');\nreturn [{\n  json: {\n    summary: 'اكتمل الخط الليلي',\n    checked: sync.checked ?? null,\n    added: Array.isArray(sync.added) ? sync.added.length : (sync.new_count ?? null),\n    changed: Array.isArray(sync.changed) ? sync.changed.length : (sync.changed_count ?? null),\n    classified: classifier ? JSON.parse(classifier.detail_json || '{}').classified : null,\n    queueRows: courier ? JSON.parse(courier.detail_json || '{}').rowsCreated : null,\n    waitingPurchase: courier ? JSON.parse(courier.detail_json || '{}').waitingPurchase : null,\n    generatedAt: new Date().toISOString(),\n  }\n}];"
+      },
+      "id": "summarize",
+      "name": "تلخيص اليوم",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [300, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "version": 2 },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.waitingPurchase }}",
+              "rightValue": 0,
+              "operator": { "type": "number", "operation": "gt" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-waiting-purchase",
+      "name": "هل هناك بانتظار شرائك؟",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [520, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"ok\": true, \"summary\": $json } }}",
+        "options": {}
+      },
+      "id": "done",
+      "name": "النتيجة النهائية",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [740, 0]
+    }
+  ],
+  "connections": {
+    "جدولة ليلية 02:00": { "main": [[{ "node": "بدء جولة المزامنة (loopback)", "type": "main", "index": 0 }]] },
+    "بدء جولة المزامنة (loopback)": { "main": [[{ "node": "قراءة حالة الطاقم والطوابير", "type": "main", "index": 0 }]] },
+    "قراءة حالة الطاقم والطوابير": { "main": [[{ "node": "تلخيص اليوم", "type": "main", "index": 0 }]] },
+    "تلخيص اليوم": { "main": [[{ "node": "هل هناك بانتظار شرائك؟", "type": "main", "index": 0 }]] },
+    "هل هناك بانتظار شرائك؟": {
+      "main": [
+        [{ "node": "النتيجة النهائية", "type": "main", "index": 0 }],
+        [{ "node": "النتيجة النهائية", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "pinData": {},
+  "tags": ["radar-local", "p5-d0", "loopback-only"]
+}
