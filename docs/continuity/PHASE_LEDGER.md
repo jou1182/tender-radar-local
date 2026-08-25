@@ -74,6 +74,7 @@
 | P4-O0A2M | دمج `7911f64` (اختبار صحة معزول عن البيئة + تجاوز روابط loopback-only — fast-forward) | approved |
 | P4-O0BM | دمج `14eb224` (checkpoint تلقائي للـWAL بعد الجولات المكتملة — fast-forward) | approved |
 | P5-A0M | دمج `d543b8b` (Schema v8: download_queue + tender_classification + policy_settings + واجهة Repository — fast-forward) | approved |
+| P5-F0M | دمج `29e1094` (طاقم الوكلاء السبعة: Schema v9 + مسارات محمية + واجهة أفاتار متحرك — fast-forward) | approved |
 
 ## مراحل لم تبدأ
 

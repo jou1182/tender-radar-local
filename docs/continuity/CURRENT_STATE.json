@@ -34,6 +34,30 @@
       "commit": "d543b8b",
       "passed": 304,
       "failed": 0
+    },
+    "p5f0": {
+      "phase": "P5-F0",
+      "commit": "29e1094",
+      "passed": 314,
+      "failed": 0
+    }
+  },
+  "agentTeam": {
+    "phase": "P5-F0",
+    "schemaVersion": 9,
+    "defaultCrew": [
+      { "roleCode": "scout", "nameAr": "يوسف", "nameEn": "Yusuf", "gender": "male", "roleLabel": "الرصد والمسح" },
+      { "roleCode": "courier", "nameAr": "عبدالله", "nameEn": "Abdullah", "gender": "male", "roleLabel": "تحميل المرفقات" },
+      { "roleCode": "auditor", "nameAr": "مريم", "nameEn": "Maryam", "gender": "female", "roleLabel": "تدقيق الرسوم والأدلة" },
+      { "roleCode": "classifier", "nameAr": "خالد", "nameEn": "Khalid", "gender": "male", "roleLabel": "التصنيف التخصصي" },
+      { "roleCode": "analyst", "nameAr": "نورة", "nameEn": "Noura", "gender": "female", "roleLabel": "التحليل المحلي" },
+      { "roleCode": "reporter", "nameAr": "فهد", "nameEn": "Fahad", "gender": "male", "roleLabel": "التقارير والملخصات" },
+      { "roleCode": "sentinel", "nameAr": "سديم", "nameEn": "Sadeem", "gender": "female", "roleLabel": "مراقبة الصحة والتنبيه" }
+    ],
+    "management": {
+      "api": "GET /agents عام؛ /agents/auth ثم /agents/update و/agents/binding محمية بتوكن جلسة (HMAC، TTL 30 دقيقة)",
+      "teamSecret": "تُضبط أول مرة من لوحة أي وكيل؛ تُخزن scrypt hash فقط؛ تغييرها يتطلب السر الحالي",
+      "externalProviders": "قرار المالك 2026-08-25: مسموح لكل وكيل على حدة مع تأكيد صريح بأن البيانات تغادر الجهاز؛ مفاتيح API تُشفَّر AES-256-GCM بمفتاح مشتق من سر الفريق ولا تُعرض بعد الحفظ"
     }
   },
   "operationalTools": {
