@@ -226,31 +226,36 @@ test("any manifest outside the single-tender single-file allowlist is rejected b
   }
 });
 
-test("pre-click checks require a zero booklet fee and free-available state", async () => {
-  const paid = await repositoryWithTender({ fee: 10, attachmentStates: { [freeFile]: "purchased-available" } });
+test("P5-B0PRE v2: pre-click checks are fee-neutral — paid passes like free", async () => {
+  // منافسة مدفوعة (200) بملف ظاهر = تمرّ، تمامًا كالمجانية (قرار المالك: الرسوم معلوماتية)
+  const paid = await repositoryWithTender({ fee: 200, attachmentStates: { [freeFile]: "purchased-available" } });
   try {
     const approval = approve(paid.repository, { purchaseConfirmed: true });
     const adapter = createAdapter({
       repository: paid.repository, projectRoot: paid.projectRoot,
       env: liveEnv(approval), driver: pdfSimulator().driver,
     });
-    await expectRejectedAndUnconsumed({ adapter, approval, jobId: "job-paid", code: "LIVE_PRECHECK_FAILED" });
-    assert.equal(paid.repository.getDownloadApproval(approval.id).status, "approved", "paid tenders are refused before consumption");
+    // يجب ألا يُرفض LIVE_PRECHECK_FAILED — ينفّذ حتى النهاية عبر السائق المحاكى
+    const result = await adapter.execute({ id: "job-paid-ok", approvalId: approval.id, manifest: approval.scope });
+    assert.equal(result.status, "complete", "paid tender downloads identically");
   } finally {
     paid.repository.close();
     await rm(paid.projectRoot, { recursive: true, force: true });
   }
-  assert.throws(
-    () => assertLivePreconditions({ tender: { fee: 0, attachmentsMeta: [{ displayName: "x.pdf", availability: "metadata-only" }] }, displayName: "x.pdf" }),
-    (error) => error.code === "LIVE_PRECHECK_FAILED",
-  );
+  // الحواجز الأمنية الحقيقية تبقى:
   assert.throws(
     () => assertLivePreconditions({ tender: null, displayName: "x.pdf" }),
     (error) => error.code === "LIVE_PRECHECK_FAILED",
   );
   assert.throws(
-    () => assertLivePreconditions({ tender: { fee: 0, attachmentsMeta: [{ displayName: "x.pdf", availability: "free-available", remoteVisible: false }] }, displayName: "x.pdf" }),
+    () => assertLivePreconditions({ tender: { fee: 200, attachmentsMeta: [{ displayName: "x.pdf", availability: "free-available", remoteVisible: false }] }, displayName: "x.pdf" }),
     (error) => error.code === "LIVE_PRECHECK_FAILED",
+    "unlisted/hidden file still refused",
+  );
+  assert.throws(
+    () => assertLivePreconditions({ tender: { fee: 0, attachmentsMeta: [{ displayName: "x.pdf", availability: "restricted", remoteVisible: true }] }, displayName: "x.pdf" }),
+    (error) => error.code === "LIVE_PRECHECK_FAILED",
+    "restricted files still refused",
   );
 });
 

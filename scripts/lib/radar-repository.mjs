@@ -689,7 +689,8 @@ export async function createRadarRepository({ projectRoot }) {
     `),
     markAttachmentDownloaded: database.prepare(`
       UPDATE attachments SET download_status = 'downloaded', local_path = ?, sha256 = ?, mime_type = ?, size = ?
-      WHERE tender_reference = ? AND display_name = ? AND remote_visible = 1 AND availability = 'free-available'
+      WHERE tender_reference = ? AND display_name = ? AND remote_visible = 1
+        AND availability IN ('free-available', 'purchased-available', 'metadata-only', 'unknown')
     `),
     insertActivity: database.prepare(`
       INSERT INTO activity_catalog (id, etimad_value, name_ar, source, active, first_seen_at, last_seen_at)
@@ -1149,7 +1150,7 @@ export async function createRadarRepository({ projectRoot }) {
       String(reference), String(displayName),
     );
     if (Number(result.changes) !== 1) {
-      const error = new Error("لم يعد المرفق ظاهرًا ومتاحًا مجانًا؛ أُلغي حفظ نتيجة التنزيل.");
+      const error = new Error("لم يعد المرفق مرصودًا ظاهرًا؛ أُلغي حفظ نتيجة التنزيل.");
       error.code = "ATTACHMENT_STATE_CHANGED";
       throw error;
     }

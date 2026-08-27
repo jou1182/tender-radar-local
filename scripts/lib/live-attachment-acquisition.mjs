@@ -92,18 +92,17 @@ export function assertTrustedTenderUrl(value) {
 
 export function assertLivePreconditions({ tender, displayName }) {
   const fail = (message) => liveAcquisitionError("LIVE_PRECHECK_FAILED", message);
+  // P5-B0PRE v2 (قرار المالك): قيمة الكراسة معلوماتية بحتة — لا شرط صفر ولا شرط تحقق
+  // تفصيلي للرسوم على مسار التنزيل الحي. الحواجز الأمنية الحقيقية: الملف مرصود،
+  // إتاحته ظاهرة، والموافقة البشرية الصريحة (عبارة + بصمة manifest) كما هي.
   if (!tender) throw fail("المنافسة غير موجودة في SQLite.");
-  if (typeof tender.fee !== "number" || !Number.isFinite(tender.fee) || tender.fee !== 0) throw fail("قيمة الكراسة ليست صفرًا.");
   const meta = (tender.attachmentsMeta || []).find((candidate) => candidate.displayName === displayName);
   if (!meta) throw fail(`الملف ليس ضمن المرفقات المرصودة: ${displayName}`);
-  if (meta.remoteVisible !== true || meta.availability !== "free-available") {
-    throw fail("الملف ليس ظاهرًا ومتاحًا مجانًا الآن.");
+  if (meta.remoteVisible !== true) {
+    throw fail("الملف غير ظاهر في صفحة المنافسة الآن.");
   }
-  const detailVerifiedFree = tender.feeVerification === "detail-verified"
-    && Number.isFinite(Date.parse(tender.feeVerifiedAt || ""))
-    && isTrustedEtimadDetailsUrl(tender.details?.sourceUrl || "");
-  if (!detailVerifiedFree) {
-    throw liveAcquisitionError("FEE_NOT_DETAIL_VERIFIED", "قيمة الكراسة الصفرية غير مؤكدة من صفحة تفاصيل موثوقة.");
+  if (meta.availability === "restricted") {
+    throw fail("الملف مقيّد ولا يمكن طلب تنزيله.");
   }
   return meta;
 }

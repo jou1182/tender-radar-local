@@ -23,6 +23,7 @@ import {
 import { createDisabledProductionDownloadAdapter } from "./lib/attachment-adapters.mjs";
 import { cardFeeEvidence, mergeSyncFeeEvidence } from "./lib/fee-evidence.mjs";
 import { createLiveDownloadAdapter } from "./lib/live-attachment-acquisition.mjs";
+import { createEtimadLiveDriver } from "./lib/etimad-live-driver.mjs";
 import { truncateSourceWalAfterCompleteRun } from "./lib/db-maintenance.mjs";
 import { classifyAndStoreTenders, loadRulebook as loadSpecialtyRulebook } from "./lib/specialty-classifier.mjs";
 import { evaluateQueueForRun } from "./lib/attachment-queue-evaluator.mjs";
@@ -58,9 +59,11 @@ repository.seedBaseline(baselineIds);
 const chromeSession = createRadarChromeSession({ privateDir, startUrl: listUrl });
 // المحوّل الوحيد في P3-B0: أي محاولة تنفيذ حي تعيد DOWNLOAD_ADAPTER_DISABLED.
 const downloadAdapter = createDisabledProductionDownloadAdapter();
-// محوّل P3-B1A الحي المحكوم: معطل افتراضيًا بيئيًا ومقيد بقائمة سماح واحدة ومفتاح إيقاف فوري.
-// لا يوجد driver حي في P3-B1A. حتى مع متغيرات التفعيل سيفشل قبل استهلاك الموافقة.
-const liveAcquisitionAdapter = createLiveDownloadAdapter({ repository, projectRoot, privateDir });
+// محوّل P3-B1A/B1C الحي المحكوم: معطل افتراضيًا بيئيًا ومقيد بقائمة سماح واحدة ومفتاح إيقاف فوري.
+// P3-B1C: سائق Chrome البشري (CDP :9333) متصل الآن — يبقى خامًا حتى تفعيل env vars الثلاثة
+// (ENABLED + TENDER_REF + FILE_NAME + MANIFEST_SHA256) وإلا فشل قبل استهلاك الموافقة.
+const liveDriver = createEtimadLiveDriver({ cdpPort: Number(process.env.RADAR_LIVE_CDP_PORT ?? 9333) });
+const liveAcquisitionAdapter = createLiveDownloadAdapter({ repository, projectRoot, privateDir, driver: liveDriver });
 // محرك التحليل المحلي P4-A0: fixtures مغلقة فقط، Stub افتراضي، وOllama المحلي لا يعمل إلا بتفعيل صريح.
 // المخزن الموثوق للمرفقات المحلية يوفّر مدخلًا ثانيًا ضيقًا: مستند موثق موجود فعلًا على القرص.
 const analysisEngine = createAnalysisEngine({
