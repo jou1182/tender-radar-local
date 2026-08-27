@@ -466,36 +466,33 @@ label { display:block; margin:0 0 7px; font-size:.82rem; color:var(--muted); fon
 .smart-results li small { color: #648077; }
 .smart-results li button { margin-inline-start: auto; }
 
-/* ── UI-QA: تباين أزرار quiet — كانت شبه مخفية على الخلفيات الفاتحة والداكنة ── */
-/* السياق الداكن (داخل لوحة الوكلاء / بطاقات الخلفية الخضراء): نص فاتح واضح + حدود */
+/* ── UI-QA v2: أزرار quiet — السياقات الفاتحة كلها نص أخضر داكن + خلفية تيل واضحة ── */
+/* لوحات الوكلاء وإدارة الوكلاء ولوحة السر خلفياتها بيضاء شبه معتمة = سياق فاتح */
 .agent-auth button.quiet,
 .agent-panel button.quiet,
 .management-card button.quiet,
-.team-secret-manager button.quiet {
-  color: #eafffa;
-  background: rgba(255, 255, 255, .14);
-  border: 1px solid rgba(234, 255, 250, .45);
+.team-secret-manager button.quiet,
+.insights-panel button.quiet,
+.smart-search button.quiet {
+  color: #073a30 !important;
+  background: rgba(20, 184, 166, .16) !important;
+  border: 1.5px solid #0f766e !important;
+  font-weight: 800 !important;
+  text-decoration: none !important;
 }
 .agent-auth button.quiet:hover,
 .agent-panel button.quiet:hover,
 .management-card button.quiet:hover,
-.team-secret-manager button.quiet:hover {
-  background: rgba(255, 255, 255, .26);
-  color: #ffffff;
-}
-/* السياق الفاتح (بطاقات الرؤى والبحث): نص أخضر داكن واضح بدل الشفاف */
-.insights-panel button.quiet,
-.smart-search button.quiet {
-  color: #0b4f42;
-  background: rgba(15, 118, 110, .1);
-  border: 1px solid rgba(15, 118, 110, .35);
-  text-decoration: none;
-}
+.team-secret-manager button.quiet:hover,
 .insights-panel button.quiet:hover,
 .smart-search button.quiet:hover {
-  background: rgba(15, 118, 110, .2);
-  color: #073a30;
+  color: #ffffff !important;
+  background: #0f766e !important;
+  border-color: #0f766e !important;
 }
+/* روابط النسيان/التغيير: تباين عالٍ دائمًا */
+.secret-change-toggle { color: #0d9488 !important; font-weight: 800 !important; text-decoration: underline !important; }
+.secret-recovery-toggle { color: #c2410c !important; font-weight: 800 !important; text-decoration: underline !important; }
 /* أزرار روابط النسيان/التغيير تبقى روابط نصية لكن بتباين أعلى */
 .secret-change-toggle { color: #0d9488 !important; font-weight: 700; }
 .secret-recovery-toggle { color: #c2410c !important; font-weight: 700; }
