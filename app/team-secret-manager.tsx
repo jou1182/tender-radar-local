@@ -26,6 +26,7 @@ export function TeamSecretManager({ onSecretChanged }: { onSecretChanged?: () =>
 
   useEffect(() => {
     // القراءة داخل مؤقت: setState خارج دورة الرندر المتزامنة (قاعدة react-hooks).
+    const handler = () => setToken(window.sessionStorage.getItem("radar-team-token"));
     const initial = window.setTimeout(handler, 0);
     window.addEventListener("storage", handler);
     return () => {
