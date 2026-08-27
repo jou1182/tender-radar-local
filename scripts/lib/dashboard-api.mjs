@@ -1,6 +1,5 @@
 // P5-DASH — ملخص آخر جولة مزامنة + إحصاءات المناطق (للرسم البياني)
 // قراءة فقط من SQLite — بلا أي أثر كتابة.
-import { readFile } from "node:fs/promises";
 
 function formatArabicDuration(ms) {
   const totalSeconds = Math.max(0, Math.round(ms / 1000));

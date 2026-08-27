@@ -56,7 +56,7 @@ export function InsightsPanel() {
     } catch { /* الخدمة غير متاحة — القسم يختفي بهدوء */ }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { const t = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(t); }, [load]);
 
   async function previewPurge() {
     setPurgeMessage("");
