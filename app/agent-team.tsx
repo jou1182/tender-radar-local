@@ -1,5 +1,6 @@
 
 import { useCallback, useEffect, useState } from "react";
+import { TeamSecretManager } from "./team-secret-manager";
 
 // ── P5-F0: فريق وكلاء الرادار ─────────────────────────────────────────────────
 type AgentRow = {
@@ -181,6 +182,7 @@ export function AgentTeamPanel({ syncState, lastSyncAt }: { syncState: string; l
                       <button type="button" className="quiet" onClick={() => { setNeedsSetup(!needsSetup); setAuthError(""); }}>{needsSetup ? "لديّ كلمة سر" : "أول مرة؟ اضبطها"}</button>
                       <button type="button" className="quiet" onClick={() => setOpenRole(null)}>إغلاق</button>
                     </div>
+                    <TeamSecretManager />
                   </div>
                 )}
                 {token && (

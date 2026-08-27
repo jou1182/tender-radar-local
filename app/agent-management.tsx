@@ -11,6 +11,7 @@ type ManagedAgent = {
 };
 type SandboxResult = { provider: string; model: string | null; response: string; isolated: boolean; at: string };
 
+import { TeamSecretManager } from "./team-secret-manager";
 const SYNC_BASE = "http://127.0.0.1:4318";
 const providerNames: Record<string, string> = { stub: "محاكاة آمنة", ollama: "محلي (Ollama)", "openai-compatible": "خارجي (API)" };
 
@@ -28,6 +29,7 @@ export function AgentManagementScreen() {
   const [needsSetup, setNeedsSetup] = useState(false);
   const [openRole, setOpenRole] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState("");
+  const [nameEnDraft, setNameEnDraft] = useState("");
   const [instructionsDraft, setInstructionsDraft] = useState("");
   const [instructionsSaved, setInstructionsSaved] = useState("");
   const [providerDraft, setProviderDraft] = useState("stub");
@@ -75,6 +77,7 @@ export function AgentManagementScreen() {
   function toggle(agent: ManagedAgent) {
     setOpenRole(openRole === agent.roleCode ? null : agent.roleCode);
     setNameDraft(agent.nameAr);
+    setNameEnDraft(agent.nameEn);
     setInstructionsDraft(agent.systemInstructions || "");
     setInstructionsSaved("");
     setProviderDraft(agent.provider);
@@ -93,8 +96,12 @@ export function AgentManagementScreen() {
   }
 
   async function saveName(agent: ManagedAgent) {
-    const { ok, data } = await post("/agents/update", { roleCode: agent.roleCode, nameAr: nameDraft });
-    setFlash(ok ? "تم حفظ الاسم ✓" : data.message ?? "تعذر الحفظ.");
+    const { ok, data } = await post("/agents/update", {
+      roleCode: agent.roleCode,
+      nameAr: nameDraft,
+      nameEn: nameEnDraft || agent.nameEn,
+    });
+    setFlash(ok ? "تم حفظ الاسم (عربي + إنجليزي) ✓" : data.message ?? "تعذر الحفظ.");
     if (ok) void loadAgents();
   }
 
@@ -141,6 +148,7 @@ export function AgentManagementScreen() {
         </div>
         {!token && <span className="team-state">محمية بكلمة سر الفريق</span>}
         {token && <span className="team-state busy" style={{ animation: "none" }}>جلسة إدارة نشطة</span>}
+        <TeamSecretManager onSecretChanged={() => void loadAgents()} />
       </div>
 
       {!token && (
@@ -177,10 +185,11 @@ export function AgentManagementScreen() {
               {openRole === agent.roleCode && (
                 <div className="management-controls">
                   {/* 1) الاسم */}
-                  <fieldset><legend>1 · الاسم</legend>
+                  <fieldset><legend>1 · الاسم (عربي + إنجليزي)</legend>
+                    <input placeholder="الاسم العربي" value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} />
+                    <input placeholder="الاسم الإنجليزي (Latin)" value={nameEnDraft} onChange={(e) => setNameEnDraft(e.target.value)} dir="ltr" />
                     <div className="inline-row">
-                      <input value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} />
-                      <button type="button" onClick={() => void saveName(agent)}>حفظ</button>
+                      <button type="button" onClick={() => void saveName(agent)}>حفظ الاسم</button>
                     </div>
                   </fieldset>
 

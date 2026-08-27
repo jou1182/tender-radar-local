@@ -342,3 +342,15 @@ label { display:block; margin:0 0 7px; font-size:.82rem; color:var(--muted); fon
 .test-output { background: #0f172a; color: #d1e7dd; border-radius: 8px; padding: 10px; font-size: .82rem; white-space: pre-wrap; max-height: 220px; overflow: auto; direction: rtl; text-align: start; }
 .test-error { color: #b91c1c; font-style: normal; }
 .agent-provider.external { background: rgba(245, 158, 11, .16); color: #92400e; }
+
+/* ── P5-F2: إدارة سر الفريق (تغيير + إرشادات النسيان) ─────────────────────── */
+.team-secret-manager { display: grid; gap: 6px; }
+.secret-change-toggle, .secret-recovery-toggle { border: none; background: none; color: #0f766e; cursor: pointer; font: inherit; font-size: .82rem; text-decoration: underline; padding: 0; }
+.secret-recovery-toggle { color: #92400e; }
+.secret-change-panel, .secret-recovery-panel { display: grid; gap: 8px; border: 1px solid rgba(15,61,46,.18); border-radius: 10px; padding: 12px; background: rgba(255,255,255,.7); }
+.secret-change-panel input { border: 1px solid rgba(15,61,46,.22); border-radius: 8px; padding: 7px 9px; font: inherit; }
+.secret-recovery-panel { background: rgba(245, 158, 11, .07); border-color: rgba(146, 64, 14, .3); font-size: .88rem; }
+.secret-recovery-panel ul, .secret-recovery-panel ol { margin: 4px 0; padding-inline-start: 18px; display: grid; gap: 4px; }
+.secret-recovery-panel pre { background: #0f172a; color: #d1e7dd; border-radius: 8px; padding: 10px; font-size: .78rem; white-space: pre-wrap; word-break: break-all; direction: ltr; text-align: left; overflow: auto; }
+.secret-recovery-panel code { background: rgba(15,61,46,.08); border-radius: 4px; padding: 1px 5px; }
+.secret-change-panel small { color: var(--muted-foreground, #6b7a73); }
