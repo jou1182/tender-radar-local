@@ -33,6 +33,7 @@ import {
   createSessionManager,
 } from "./lib/agent-team.mjs";
 import { runAgentSandboxTest } from "./lib/agent-sandbox.mjs";
+import { createDashboardApi } from "./lib/dashboard-api.mjs";
 import { createAnalysisEngine } from "./lib/analysis-engine.mjs";
 import { createAnalysisApiHandler } from "./lib/analysis-api.mjs";
 import { attachmentStorageRoot } from "./lib/attachment-storage.mjs";
@@ -50,6 +51,7 @@ const serviceVersion = "p4a-local-analysis-1";
 const localUiOrigins = new Set(["http://localhost:3000", "http://127.0.0.1:3000"]);
 const n8nWebhookUrl = process.env.N8N_RADAR_WEBHOOK_URL || "http://127.0.0.1:5678/webhook/radar-sync-5d354757-90d1-4dc3-b7f7-c93e4c50ecb1";
 const repository = await createRadarRepository({ projectRoot });
+const dashboardApi = createDashboardApi({ repository });
 const baselineIds = JSON.parse(await readFile(baselineFile, "utf8"));
 await loadSpecialtyRulebook(); // كاش قواعد تصنيف «خالد»
 repository.seedBaseline(baselineIds);
@@ -750,6 +752,27 @@ const server = http.createServer(async (request, response) => {
       });
     }
     if (request.method === "GET" && request.url === "/status") return send(response, 200, { ...state, progress: repository.getSyncProgress() });
+    // ── P5-DASH: لوحة رؤى الجولة والمناطق والتخزين ──────────────────────────────
+    if (request.method === "GET" && request.url === "/dashboard/last-run") {
+      const summary = dashboardApi.lastRunSummary();
+      if (!summary) return send(response, 200, { available: false, message: "لم تكتمل مزامنة حقيقية بعد." });
+      return send(response, 200, { available: true, ...summary });
+    }
+    if (request.method === "GET" && request.url === "/dashboard/regions") {
+      return send(response, 200, dashboardApi.regionStats());
+    }
+    if (request.method === "GET" && request.url === "/dashboard/storage") {
+      return send(response, 200, dashboardApi.attachmentsOverview());
+    }
+    // مسح المرفقات الأقدم من N يومًا — استباقي (dryRun) أو فعلي مع تأكيد صريح.
+    if (request.method === "POST" && request.url === "/dashboard/storage/purge") {
+      const body = await readJsonBody(request).catch(() => ({}));
+      const olderThanDays = Math.min(365, Math.max(1, Number(body?.olderThanDays ?? 30)));
+      const dryRun = !body?.confirm;
+      const result = repository.purgeOldAttachments({ olderThanDays, dryRun });
+      if (!dryRun) repository.recordAgentActivity({ roleCode: "courier", action: "storage-purge", status: "info", detail: { deleted: result.deleted, freedBytes: result.freedBytes, olderThanDays } });
+      return send(response, 200, result);
+    }
     if (request.method === "GET" && request.url === "/tenders") return send(response, 200, repository.getDashboardSnapshot());
     if (request.method === "GET" && request.url === "/automation/status") return send(response, 200, await loadAutomationStatus());
     if (request.method === "POST" && request.url === "/automation/test") {

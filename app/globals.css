@@ -370,3 +370,35 @@ label { display:block; margin:0 0 7px; font-size:.82rem; color:var(--muted); fon
   .radar-mark-animated .radar-sweep { animation:none; }
 }
 .agent-team-title { display:flex; align-items:center; gap:12px; }
+
+/* ── P5-DASH: رؤى الجولة والتخزين ──────────────────────────────────────────── */
+.insights-panel { background: var(--card, #fff); border: 1px solid rgba(15,61,46,.12); border-radius: 18px; padding: 22px; margin: 18px 0; display: grid; gap: 16px; }
+.insights-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.insights-head h2 { margin: 2px 0 0; }
+.insights-empty { color: var(--muted-foreground, #6b7a73); }
+.summary-table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.summary-table th { text-align: start; color: #0f766e; font-weight: 700; width: 110px; padding: 6px 8px; border-bottom: 1px dashed rgba(15,61,46,.15); vertical-align: top; white-space: nowrap; }
+.summary-table td { padding: 6px 8px; border-bottom: 1px dashed rgba(15,61,46,.15); }
+.summary-table small { color: var(--muted-foreground, #6b7a73); }
+.new-count { color: #047857; } .changed-count { color: #b45309; }
+.insights-chart { border-top: 1px solid rgba(15,61,46,.1); padding-top: 12px; }
+.insights-chart-title { font-weight: 700; margin: 0 0 10px; }
+.insights-chart-title small { color: var(--muted-foreground, #6b7a73); font-weight: 400; }
+.region-bars { display: grid; gap: 6px; }
+.region-row { display: grid; grid-template-columns: 170px 1fr 44px; align-items: center; gap: 10px; }
+.region-name { font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.region-track { height: 14px; background: rgba(15,61,46,.07); border-radius: 7px; overflow: hidden; }
+.region-fill { height: 100%; border-radius: 7px; background: linear-gradient(90deg, #14b8a6, #0f766e); transition: width .6s ease; }
+.region-count { font-weight: 800; font-size: .9rem; text-align: end; font-variant-numeric: tabular-nums; }
+.insights-storage { border-top: 1px solid rgba(15,61,46,.1); padding-top: 12px; display: grid; gap: 12px; }
+.storage-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.storage-files { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; max-height: 260px; overflow: auto; }
+.storage-files li { border: 1px solid rgba(15,61,46,.12); border-radius: 10px; padding: 8px 10px; display: grid; gap: 3px; }
+.storage-files li small { color: var(--muted-foreground, #6b7a73); }
+.storage-files li code { font-size: .72rem; color: #0f766e; word-break: break-all; }
+.storage-empty { color: var(--muted-foreground, #6b7a73); border-style: dashed !important; }
+.storage-purge { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: rgba(245,158,11,.06); border: 1px solid rgba(146,64,14,.2); border-radius: 10px; padding: 10px 12px; }
+.storage-purge select { border: 1px solid rgba(15,61,46,.22); border-radius: 8px; padding: 6px 8px; font: inherit; }
+.danger-button { background: #b91c1c; color: white; border: none; border-radius: 8px; padding: 8px 14px; font: inherit; font-weight: 700; cursor: pointer; }
+.danger-button:hover { background: #991b1b; }
+.storage-note { width: 100%; color: var(--muted-foreground, #6b7a73); }

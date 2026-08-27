@@ -1,5 +1,6 @@
 import path from "node:path";
 import { mkdir } from "node:fs/promises";
+import { statSync, unlinkSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { attachmentAvailabilityStates, defaultSearchProfile, knownEtimadActivityValues, seedActivities, seedSubActivities } from "./activity-catalog-seed.mjs";
@@ -1483,6 +1484,67 @@ export async function createRadarRepository({ projectRoot }) {
     return Number(statements.countObservations.get(runId)?.count || 0) > 0;
   }
 
+  // ── P5-DASH: ملخص آخر جولة مكتملة + إحصاءات المناطق + نظرة التخزين ──────────
+  function getLastCompletedSyncRun() {
+    return database.prepare("SELECT * FROM sync_runs WHERE status = 'complete' ORDER BY started_at DESC LIMIT 1").get() ?? null;
+  }
+
+  function getSyncRegions(runId) {
+    return database.prepare("SELECT region_name, status, checked_count FROM sync_regions WHERE sync_run_id = ? ORDER BY rowid").all(String(runId));
+  }
+
+  function getTenderRegionCounts() {
+    return database.prepare("SELECT region, COUNT(*) as c FROM tenders GROUP BY region").all().map((r) => ({ region: r.region, c: Number(r.c) }));
+  }
+
+  function getAttachmentsStorageOverview() {
+    const rows = database.prepare(`
+      SELECT a.tender_reference, a.display_name, a.download_status, a.local_path, a.size, a.availability_updated_at as fetched_at
+      FROM attachments a WHERE a.local_path IS NOT NULL
+      ORDER BY a.availability_updated_at DESC
+    `).all();
+    const files = rows.map((r) => {
+      let sizeBytes = Number(r.size ?? 0);
+      let modifiedAt = r.fetched_at ?? null;
+      try {
+        const stat = statSync(r.local_path);
+        sizeBytes = stat.size;
+        modifiedAt = stat.mtime.toISOString();
+      } catch { /* الملف حُذف يدويًا من القرص */ }
+      return { tenderReference: r.tender_reference, name: r.display_name, path: r.local_path, sizeBytes, modifiedAt, downloadStatus: r.download_status };
+    });
+    const totalBytes = files.reduce((s, f) => s + f.sizeBytes, 0);
+    return { files, count: files.length, totalBytes };
+  }
+
+  // حذف مرفقات أقدم من N يومًا (افتراضي 30) — من القرص ثم من مسارات القاعدة.
+  // لا يلمس صفوف المرفقات نفسها (تبقى كسجل اكتشاف) بل يفرغ local_path فقط.
+  function purgeOldAttachments({ olderThanDays = 30, dryRun = true } = {}) {
+    const cutoff = Date.now() - olderThanDays * 86_400_000;
+    const overview = getAttachmentsStorageOverview();
+    const victims = overview.files.filter((f) => f.modifiedAt && Date.parse(f.modifiedAt) < cutoff);
+    let freedBytes = 0;
+    let deleted = 0;
+    const errors = [];
+    if (!dryRun) {
+      const clearPath = database.prepare("UPDATE attachments SET local_path = NULL, download_status = 'purged-old', size = NULL, sha256 = NULL WHERE local_path = ?");
+      for (const file of victims) {
+        try {
+          unlinkSync(file.path);
+          freedBytes += file.sizeBytes;
+          deleted += 1;
+          clearPath.run(file.path);
+        } catch (error) {
+          errors.push({ path: file.path, message: String(error?.message ?? error) });
+        }
+      }
+    } else {
+      freedBytes = victims.reduce((s, f) => s + f.sizeBytes, 0);
+      deleted = victims.length;
+    }
+    return { dryRun, olderThanDays, wouldDelete: dryRun ? victims.length : undefined, deleted, freedBytes, errors, victims: victims.map((v) => ({ name: v.name, tenderReference: v.tenderReference, sizeBytes: v.sizeBytes })) };
+  }
+
   function getSyncProgress() {
     const run = statements.latestRun.get();
     if (!run) return null;
@@ -1860,6 +1922,11 @@ export async function createRadarRepository({ projectRoot }) {
     loadDraftObservations,
     hasDraftObservations,
     getSyncProgress,
+    getLastCompletedSyncRun,
+    getSyncRegions,
+    getTenderRegionCounts,
+    getAttachmentsStorageOverview,
+    purgeOldAttachments,
     failSyncRun,
     saveCompletedSync,
     getDashboardSnapshot,
