@@ -1,6 +1,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { TeamSecretManager } from "./team-secret-manager";
+import { RadarMark } from "./radar-mark";
 
 // ── P5-F0: فريق وكلاء الرادار ─────────────────────────────────────────────────
 type AgentRow = {
@@ -149,11 +150,7 @@ export function AgentTeamPanel({ syncState, lastSyncAt }: { syncState: string; l
   return (
     <section className="agent-team" aria-label="فريق وكلاء رادار المنافسات">
       <div className="agent-team-head">
-        <div>
-          <p className="eyebrow">طاقم الوكلاء الأذكياء</p>
-          <h2>فريقك يعمل الآن — كل وكيل بمهمته</h2>
-          <p>اضغط أي وكيل لفتح لوحته الفرعية: إعادة التسمية، التمكين، وربطه بمزود محلي أو خارجي.</p>
-        </div>
+        <div className="agent-team-title"><RadarMark size={44} animate /><div><p className="eyebrow">طاقم الوكلاء الأذكياء</p><h2>فريقك يعمل الآن — كل وكيل بمهمته</h2><p>اضغط أي وكيل لفتح لوحته الفرعية: إعادة التسمية، التمكين، وربطه بمزود محلي أو خارجي.</p></div></div>
         <span className={`team-state ${working ? "busy" : ""}`}>{working ? "الطاقم يعمل…" : "جاهز للأمر"}</span>
       </div>
       <div className="agent-grid">

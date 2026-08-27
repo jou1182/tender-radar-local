@@ -354,3 +354,19 @@ label { display:block; margin:0 0 7px; font-size:.82rem; color:var(--muted); fon
 .secret-recovery-panel pre { background: #0f172a; color: #d1e7dd; border-radius: 8px; padding: 10px; font-size: .78rem; white-space: pre-wrap; word-break: break-all; direction: ltr; text-align: left; overflow: auto; }
 .secret-recovery-panel code { background: rgba(15,61,46,.08); border-radius: 4px; padding: 1px 5px; }
 .secret-change-panel small { color: var(--muted-foreground, #6b7a73); }
+
+/* ── P5-UI: شعار رادار محلي في الواجهة ────────────────────────────────────────────────────── */
+.radar-mark { position:relative; display:grid; place-items:center; border-radius:50%; background:linear-gradient(135deg, #0d9488, #0f766e); box-shadow:0 8px 24px #0f766e33, inset 0 0 0 1px #ffffff45; overflow:hidden; flex-shrink:0; }
+.radar-mark .radar-ring { position:absolute; border:1px solid #ffffff70; border-radius:50%; }
+.radar-mark .radar-ring.ring-one { width:72%; height:72%; }
+.radar-mark .radar-ring.ring-two { width:46%; height:46%; }
+.radar-mark .radar-core { position:relative; z-index:3; display:grid; place-items:center; width:38%; height:38%; border-radius:50%; color:#0f766e; background:white; font-style:normal; font-weight:900; }
+.radar-mark .radar-sweep { position:absolute; z-index:2; bottom:50%; left:50%; width:2px; height:48%; transform-origin:bottom center; background:linear-gradient(transparent,#fff); }
+.radar-mark-animated .radar-sweep { animation:radarSweep 2s linear infinite; }
+.radar-mark-animated .radar-sweep::after { content:""; position:absolute; left:-26px; bottom:0; width:52px; height:52px; background:conic-gradient(from 330deg,transparent 0 78%,#ffffff22 79% 100%); clip-path:polygon(50% 50%,100% 0,100% 50%); }
+.hero-mark { margin:0 auto 14px; }
+.agent-team-head .radar-mark { width:48px !important; height:48px !important; font-size:1rem !important; margin-inline-end:10px; }
+@media (prefers-reduced-motion: reduce) {
+  .radar-mark-animated .radar-sweep { animation:none; }
+}
+.agent-team-title { display:flex; align-items:center; gap:12px; }
