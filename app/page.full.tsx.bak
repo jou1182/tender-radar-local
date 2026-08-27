@@ -5,9 +5,7 @@ import { demoTenders } from "./demo-tenders";
 import { AgentTeamPanel } from "./agent-team";
 import { AgentManagementScreen } from "./agent-management";
 import { RadarMark } from "./radar-mark";
-import { InsightsPanel, StorageSection } from "./insights-panel";
-import { StatusBar } from "./status-bar";
-import { SmartSearch } from "./smart-search";
+import { InsightsPanel } from "./insights-panel";
 
 type TenderStatus = "جديدة" | "قيد المراجعة" | "مناسبة" | "مستبعدة";
 type DocumentStatus = "لم تُفتح" | "الكراسة" | "الكراسة + الكميات" | "مكتملة";
@@ -256,15 +254,6 @@ function RadarLoader({ overlay = false }: { overlay?: boolean }) {
   return <div className={overlay ? "radar-loader radar-loader-overlay" : "radar-loader"} role="status" aria-live="polite"><div className="radar-loader-brand"><div className="radar-loader-mark"><span className="radar-sweep" /><i className="radar-core">ر</i><i className="radar-ring ring-one" /><i className="radar-ring ring-two" /></div><div><b>رادار المنافسات</b><small>نقرأ الإشارة قبل القرار</small></div></div><div className="radar-loader-progress"><span /><span /><span /><span /></div><p>جاري تجهيز أحدث بيانات الرادار…</p></div>;
 }
 
-const SECTIONS = [
-  { id: "tenders", icon: "📋", label: "المنافسات" },
-  { id: "smart-search", icon: "🔍", label: "البحث الذكي" },
-  { id: "dashboard", icon: "📊", label: "لوحة القيادة" },
-  { id: "agents", icon: "🤖", label: "فريق الوكلاء" },
-  { id: "ops", icon: "🔄", label: "التشغيل" },
-  { id: "storage", icon: "🗄️", label: "التخزين" },
-] as const;
-
 export default function Home() {
   const [tenders, setTenders] = useState<Tender[]>([]);
   const [dataMode, setDataMode] = useState<"live" | "demo">("live");
@@ -302,9 +291,10 @@ export default function Home() {
   const [openingFile, setOpeningFile] = useState<FileKind | null>(null);
   const [isInspectingDetails, setIsInspectingDetails] = useState(false);
   const [isInspectingSample, setIsInspectingSample] = useState(false);
+  const [sessionStartedAt, setSessionStartedAt] = useState<number | null>(null);
+  const [remainingMinutes, setRemainingMinutes] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
   const [isBooting, setIsBooting] = useState(true);
-  const [activeSection, setActiveSection] = useState<string>("tenders");
   const [syncMeta, setSyncMeta] = useState<SyncMeta>(defaultSyncMeta);
   const [syncState, setSyncState] = useState<"fresh" | "stale" | "pending">("stale");
   const [helperOnline, setHelperOnline] = useState(false);
@@ -358,6 +348,11 @@ export default function Home() {
       setSelectedProfileId((current) => current || profiles.find((profile) => profile.enabled)?.id || "");
     }).catch(() => setSearchProfiles([]));
   }, []);
+  useEffect(() => {
+    if (!sessionStartedAt) return;
+    const update = () => setRemainingMinutes(Math.max(0, Math.ceil((4 * 60_000 - (Date.now() - sessionStartedAt)) / 60_000)));
+    update(); const handle = window.setInterval(update, 15_000); return () => window.clearInterval(handle);
+  }, [sessionStartedAt]);
   useEffect(() => {
     if (!isSyncing) return;
     const refreshProgress = async () => {
@@ -684,46 +679,29 @@ export default function Home() {
     navigator.clipboard.writeText(report).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1600); });
   }
 
-return (
-    <>
-      {isBooting && <RadarLoader overlay />}
-      <div className="app-shell" dir="rtl">
-        <aside className="app-sidebar">
-          <div className="app-brand">
-            <RadarMark size={40} animate />
-            <div><b>رادار المنافسات</b><small>نقرأ الإشارة قبل القرار</small></div>
-          </div>
-          <nav className="app-nav" aria-label="أقسام المنصة">
-            {SECTIONS.map((section) => (
-              <button key={section.id} type="button"
-                className={`app-nav-btn ${activeSection === section.id ? "active" : ""}`}
-                aria-current={activeSection === section.id ? "page" : undefined}
-                onClick={() => setActiveSection(section.id)}>
-                <span className="app-nav-ico">{section.icon}</span>
-                {section.label}
-              </button>
-            ))}
-          </nav>
-          <div className="app-side-foot">
-            <span>الإصدار <b>v1.0.1-local</b></span>
-            <span>Schema <b>10</b> · 345 اختبارًا</span>
-          </div>
-        </aside>
-        <main className="app-main">
-          <StatusBar
-            helperOnline={helperOnline}
-            lastSyncAt={syncMeta.lastSyncAt}
-            isSyncing={isSyncing}
-            syncState={syncState}
-            onRequestSync={() => void requestSync()}
-          />
-          {SECTIONS.map((section) => (
-            <div key={section.id} data-section={section.id}
-              className="app-section"
-              style={{ display: activeSection === section.id ? "block" : "none" }}>
-              {section.id === "tenders" && <>
-                <div className="tenders-head"><h1>المنافسات</h1><small>مساحة عملك — ابحث، فرّق، قرّر</small></div>
-                <section className="search-studio" aria-label="البحث المتقدم في المنافسات">
+  return <main>
+    {isBooting && <RadarLoader overlay />}
+    <AgentTeamPanel syncState={syncState} lastSyncAt={syncMeta.lastSyncAt} />
+    <AgentManagementScreen />
+    <section className="hero"><div><RadarMark size={96} animate className="hero-mark" /><p className="eyebrow">منصة قرار محلية · نطاق اعتماد الكامل</p><h1>رادار المنافسات</h1><p className="intro">ابحث بدقة، فرّق بين المجاني والمدفوع بأي قيمة، ثم حوّل كل فرصة إلى قرار واضح قبل الشراء أو التسعير أو التقديم.</p></div><div className="session-card"><span>جلسة عمل اعتماد</span>{sessionStartedAt ? <><strong>{remainingMinutes === 0 ? "سجّل الدخول مجددًا عند الحاجة" : `تنبيه بعد ${remainingMinutes} دقيقة`}</strong><button className="quiet" onClick={() => void openEtimadSession()}>إعادة فتح جلسة اعتماد</button></> : <><strong>{helperOnline ? "الخدمة المحلية متصلة" : "تحتاج تشغيل الرادار"}</strong><button onClick={() => void openEtimadSession()}>فتح جلسة اعتماد</button></>}<a className="etimad-link" href="https://tenders.etimad.sa/Tender/AllSuppliersTenders?PageNumber=1" target="_blank" rel="noreferrer">فتح اعتماد العادي</a><small>تسجيل الدخول يتم داخل اعتماد، ولا نخزّن اسم المستخدم أو كلمة المرور.</small></div></section>
+    <section className="operation-center" aria-label="مركز تشغيل الرادار"><div><span className="ready-dot" /> <b>الرادار يعمل محليًا على هذا الجهاز</b><small>بياناتك تبقى محلية، ولا يتم حفظ كلمة مرور اعتماد.</small></div><ol><li><b>1</b> شغّل «تشغيل-الرادار.cmd».</li><li><b>2</b> افتح جلسة اعتماد وسجّل الدخول بنفسك.</li><li><b>3</b> اضغط «مزامنة الآن» دون الحاجة إلى كودكس.</li></ol><button type="button" onClick={() => void openEtimadSession()}>فتح جلسة اعتماد</button></section>
+    <section className={`sync-center ${syncState}`} aria-label="مركز مزامنة اعتماد">
+      <div className="sync-heading"><div><p className="eyebrow">مركز المزامنة المستقلة</p><h2>زر واحد، بلا وسيط</h2><p>يتصل الرادار بخدمة محلية على جهازك، ويفحص آخر النتائج ويضيف الجديد ويحدّث المتغير منذ آخر مزامنة.</p></div><div className="sync-state"><span className="sync-pulse" /><b>{syncState === "fresh" ? "البيانات حديثة" : syncState === "pending" ? "المزامنة تعمل الآن" : "تحتاج مزامنة"}</b><small>{syncMeta.lastSyncAt ? `آخر مزامنة: ${new Date(syncMeta.lastSyncAt).toLocaleString("ar-SA", { dateStyle: "medium", timeStyle: "short" })}` : "لم تكتمل مزامنة حقيقية بعد"}</small></div></div>
+      <div className="sync-stats"><article><strong>{syncMeta.regions}</strong><span>منطقة مستهدفة</span></article><article><strong>{syncMeta.targetPerRegion}</strong><span>منافسة كحد أقصى لكل منطقة</span></article><article><strong>{syncMeta.checked}</strong><span>نتيجة في آخر فحص متاح</span></article><article><strong>{syncMeta.newItems}</strong><span>فرص أُضيفت في آخر جلسة</span></article></div>
+      {syncProgress && syncProgress.status !== "complete" && <div className={`sync-progress ${syncProgress.status}`}><div><b>{syncProgress.status === "partial" ? "جولة محفوظة وقابلة للاستئناف" : "تقدم الجولة الحالية"}</b><span>{syncProgress.regionsCompleted} من {syncProgress.regionsTargeted} منطقة · {syncProgress.checked} ظهور مفحوص{syncProgress.cursor?.pageNumber ? ` · الصفحة ${syncProgress.cursor.pageNumber}` : ""}</span></div><progress max={syncProgress.regionsTargeted} value={syncProgress.regionsCompleted} /></div>}
+      <div className="sync-actions"><div><b><span className={`helper-dot ${helperOnline ? "online" : "offline"}`} /> {helperOnline ? "الخدمة المحلية متصلة" : "الخدمة المحلية غير متصلة"}</b><span>{syncMessage}</span></div><div className="sync-buttons"><button type="button" className="outline-button" onClick={() => void openEtimadSession()}>فتح جلسة اعتماد</button><button type="button" className="outline-button" disabled={isInspectingSample || isSyncing} onClick={() => void inspectDetailsSample()}>{isInspectingSample ? "جارٍ فحص العينة..." : "اختبار تفاصيل عينة (2)"}</button><button type="button" disabled={isSyncing || isInspectingSample} onClick={() => void requestSync()}>{isSyncing ? "جارٍ فحص المناطق..." : syncProgress?.status === "partial" ? "استئناف المزامنة" : "مزامنة الآن"}</button></div></div>
+    </section>
+    <InsightsPanel />
+    <section className={`automation-center ${automation.state}`} aria-label="أتمتة n8n المحلية">
+      <div className="automation-head"><div><p className="eyebrow">المرحلة الأولى · أتمتة محلية</p><h2>n8n يستقبل ويسجّل التغييرات</h2><p>بيانات المنافسة الأساسية فقط؛ دون كلمات مرور أو ملفات أو ذكاء اصطناعي.</p></div><div className="automation-status"><span className={`helper-dot ${automation.online ? "online" : "offline"}`} /><b>{automation.online ? "n8n متصل" : automation.state === "error" ? "n8n يحتاج مراجعة" : "بانتظار الاختبار"}</b><small>{automation.workflow ?? "Radar Phase 1"}</small></div></div>
+      <div className="automation-body"><div className="automation-alert"><b>{automation.state === "changes" ? "تم رصد تغييرات" : automation.state === "duplicate" ? "تم تجاهل تشغيل مكرر" : automation.online ? "الربط جاهز" : "حالة الربط"}</b><span>{automation.message}</span>{automation.lastSuccessAt && <small>آخر استلام ناجح: {new Date(automation.lastSuccessAt).toLocaleString("ar-SA", { dateStyle: "medium", timeStyle: "short" })}</small>}</div><div className="automation-counts"><article><strong>{automation.counts?.new ?? 0}</strong><span>جديدة</span></article><article><strong>{automation.counts?.changed ?? 0}</strong><span>متغيرة</span></article><article><strong>{automation.counts?.unchanged ?? 0}</strong><span>بلا تغيير</span></article></div><button type="button" onClick={() => void testAutomation()} disabled={isTestingAutomation}>{isTestingAutomation ? "جارٍ الاختبار..." : "اختبار ربط n8n"}</button></div>
+    </section>
+    <section className="analysis-engine-strip" aria-label="حالة محرك تحليل المستندات المحلي">
+      <span className={`helper-dot ${analysisHealth.reachable ? "online" : "offline"}`} />
+      <b>محرك تحليل المستندات المحلي: {analysisEngineLabel}</b>
+      <small>{analysisHealth.reachable ? (analysisHealth.model ? `النموذج المحلي: ${analysisHealth.model} · ` : "") + "fixtures اختبارية فقط — لا تحليل لمستند حقيقي في هذه المرحلة" : "خدمة التحليل غير متاحة — شغّل خدمة الرادار المحلية"}</small>
+    </section>
+    <section className="search-studio" aria-label="البحث المتقدم في المنافسات">
       <div className="search-studio-head">
         <div><p className="eyebrow">محرك الرصد المتقدم</p><h2>ابحث بطريقتك، لا بطريقة المنصة</h2><p>نفس نطاق اعتماد، لكن بمعايير أوضح وسعر كراسة بالقيمة الدقيقة أو بالنطاق.</p></div>
         <div className="search-tools"><span>{activeFilterCount} معيار نشط</span><button type="button" onClick={saveSearch}>{searchSaved ? "تم حفظ البحث" : "حفظ البحث"}</button><button type="button" className="outline-button" onClick={resetSearch}>مسح الكل</button></div>
@@ -837,68 +815,29 @@ return (
         <div className="review-panel"><h3>مراجعة أولية</h3><div className="review-grid"><label>مطابقة نطاق العمل<select value={(selected.review ?? initialReview).scopeFit} onChange={(event) => updateReview("scopeFit", event.target.value as Review["scopeFit"])}><option>غير مقيم</option><option>مطابق</option><option>بحاجة مراجعة</option><option>غير مطابق</option></select></label><label>التصنيف والأهلية<select value={(selected.review ?? initialReview).classification} onChange={(event) => updateReview("classification", event.target.value as Review["classification"])}><option>غير مقيم</option><option>مطابق</option><option>بحاجة مراجعة</option><option>غير مطابق</option></select></label><label>الضمان الابتدائي<select value={(selected.review ?? initialReview).guarantee} onChange={(event) => updateReview("guarantee", event.target.value as Review["guarantee"])}><option>غير معروف</option><option>لا يوجد</option><option>متاح</option><option>غير متاح</option></select></label><label>الشروط الخاصة<select value={(selected.review ?? initialReview).specialTerms} onChange={(event) => updateReview("specialTerms", event.target.value as Review["specialTerms"])}><option>لم تُراجع</option><option>تمت المراجعة</option><option>توجد ملاحظة حرجة</option></select></label></div><label className="notes">ملاحظاتك أو خلاصة الفحص<textarea placeholder="مثلًا: زيارة موقع إلزامية، تصنيف مطلوب، أو بند تسعير غير واضح." value={(selected.review ?? initialReview).notes} onChange={(event) => updateReview("notes", event.target.value)} /></label></div>
         <div className={`decision-card ${assessment.tone}`}><p>قرار الرادار المبدئي</p><h3>{assessment.decision}</h3><div><b>الوثائق الناقصة</b><span>{assessment.missing.length ? assessment.missing.join("، ") : "لا يوجد"}</span></div><div><b>المخاطر</b><span>{assessment.risks.length ? assessment.risks.join(" ") : "لا توجد ملاحظة حرجة مسجلة"}</span></div><div><b>الخطوة التالية</b><span>{assessment.next}</span></div><button onClick={copyReport}>{copied ? "تم نسخ التقرير" : "نسخ تقرير القرار"}</button></div></div></section>
     </> : <section className="empty-database"><p className="eyebrow">قاعدة المنافسات</p><h2>لا توجد منافسات حقيقية محفوظة بعد</h2><p>شغّل الخدمة المحلية وابدأ أول مزامنة، أو افتح وضع العرض لتجربة شكل الرادار دون خلط الأمثلة ببيانات اعتماد.</p><div><button type="button" onClick={showDemoData}>عرض بيانات تجريبية</button><button type="button" className="outline-button" onClick={() => void openEtimadSession()}>فتح جلسة اعتماد</button></div></section>}
-              </>}
-              {section.id === "smart-search" && <>
-                <SmartSearch
-                  tenders={tenders}
-                  onJump={(reference) => { setSelectedId(tenders.find((t) => t.reference === reference)?.id ?? ""); const el = document.getElementById("tender-detail"); el?.scrollIntoView({ behavior: "smooth" }); }}
-                  onApply={() => {}}
-                />
-                {tenders.length > 0 && <section className="metrics"><article><span>النتائج في القاعدة</span><strong>{tenders.length}</strong><small>افتح قسم المنافسات للفلاتر الكاملة</small></article></section>}
-              </>}
-              {section.id === "dashboard" && <>
-                <InsightsPanel />
-              </>}
-              {section.id === "agents" && <>
-                <AgentTeamPanel syncState={syncState} lastSyncAt={syncMeta.lastSyncAt} />
-                <AgentManagementScreen />
-              </>}
-              {section.id === "ops" && <>
-                <section className="operation-center" aria-label="مركز تشغيل الرادار"><div><span className="ready-dot" /> <b>الرادار يعمل محليًا على هذا الجهاز</b><small>بياناتك تبقى محلية، ولا يتم حفظ كلمة مرور اعتماد.</small></div><ol><li><b>1</b> شغّل «تشغيل-الرادار.cmd».</li><li><b>2</b> افتح جلسة اعتماد وسجّل الدخول بنفسك.</li><li><b>3</b> اضغط «مزامنة الآن» دون الحاجة إلى كودكس.</li></ol><button type="button" onClick={() => void openEtimadSession()}>فتح جلسة اعتماد</button></section>
-    <section className={`sync-center ${syncState}`} aria-label="مركز مزامنة اعتماد">
-      <div className="sync-heading"><div><p className="eyebrow">مركز المزامنة المستقلة</p><h2>زر واحد، بلا وسيط</h2><p>يتصل الرادار بخدمة محلية على جهازك، ويفحص آخر النتائج ويضيف الجديد ويحدّث المتغير منذ آخر مزامنة.</p></div><div className="sync-state"><span className="sync-pulse" /><b>{syncState === "fresh" ? "البيانات حديثة" : syncState === "pending" ? "المزامنة تعمل الآن" : "تحتاج مزامنة"}</b><small>{syncMeta.lastSyncAt ? `آخر مزامنة: ${new Date(syncMeta.lastSyncAt).toLocaleString("ar-SA", { dateStyle: "medium", timeStyle: "short" })}` : "لم تكتمل مزامنة حقيقية بعد"}</small></div></div>
-      <div className="sync-stats"><article><strong>{syncMeta.regions}</strong><span>منطقة مستهدفة</span></article><article><strong>{syncMeta.targetPerRegion}</strong><span>منافسة كحد أقصى لكل منطقة</span></article><article><strong>{syncMeta.checked}</strong><span>نتيجة في آخر فحص متاح</span></article><article><strong>{syncMeta.newItems}</strong><span>فرص أُضيفت في آخر جلسة</span></article></div>
-      {syncProgress && syncProgress.status !== "complete" && <div className={`sync-progress ${syncProgress.status}`}><div><b>{syncProgress.status === "partial" ? "جولة محفوظة وقابلة للاستئناف" : "تقدم الجولة الحالية"}</b><span>{syncProgress.regionsCompleted} من {syncProgress.regionsTargeted} منطقة · {syncProgress.checked} ظهور مفحوص{syncProgress.cursor?.pageNumber ? ` · الصفحة ${syncProgress.cursor.pageNumber}` : ""}</span></div><progress max={syncProgress.regionsTargeted} value={syncProgress.regionsCompleted} /></div>}
-      <div className="sync-actions"><div><b><span className={`helper-dot ${helperOnline ? "online" : "offline"}`} /> {helperOnline ? "الخدمة المحلية متصلة" : "الخدمة المحلية غير متصلة"}</b><span>{syncMessage}</span></div><div className="sync-buttons"><button type="button" className="outline-button" onClick={() => void openEtimadSession()}>فتح جلسة اعتماد</button><button type="button" className="outline-button" disabled={isInspectingSample || isSyncing} onClick={() => void inspectDetailsSample()}>{isInspectingSample ? "جارٍ فحص العينة..." : "اختبار تفاصيل عينة (2)"}</button><button type="button" disabled={isSyncing || isInspectingSample} onClick={() => void requestSync()}>{isSyncing ? "جارٍ فحص المناطق..." : syncProgress?.status === "partial" ? "استئناف المزامنة" : "مزامنة الآن"}</button></div></div>
-    </section>
-    <section className={`automation-center ${automation.state}`} aria-label="أتمتة n8n المحلية">
-      <div className="automation-head"><div><p className="eyebrow">المرحلة الأولى · أتمتة محلية</p><h2>n8n يستقبل ويسجّل التغييرات</h2><p>بيانات المنافسة الأساسية فقط؛ دون كلمات مرور أو ملفات أو ذكاء اصطناعي.</p></div><div className="automation-status"><span className={`helper-dot ${automation.online ? "online" : "offline"}`} /><b>{automation.online ? "n8n متصل" : automation.state === "error" ? "n8n يحتاج مراجعة" : "بانتظار الاختبار"}</b><small>{automation.workflow ?? "Radar Phase 1"}</small></div></div>
-      <div className="automation-body"><div className="automation-alert"><b>{automation.state === "changes" ? "تم رصد تغييرات" : automation.state === "duplicate" ? "تم تجاهل تشغيل مكرر" : automation.online ? "الربط جاهز" : "حالة الربط"}</b><span>{automation.message}</span>{automation.lastSuccessAt && <small>آخر استلام ناجح: {new Date(automation.lastSuccessAt).toLocaleString("ar-SA", { dateStyle: "medium", timeStyle: "short" })}</small>}</div><div className="automation-counts"><article><strong>{automation.counts?.new ?? 0}</strong><span>جديدة</span></article><article><strong>{automation.counts?.changed ?? 0}</strong><span>متغيرة</span></article><article><strong>{automation.counts?.unchanged ?? 0}</strong><span>بلا تغيير</span></article></div><button type="button" onClick={() => void testAutomation()} disabled={isTestingAutomation}>{isTestingAutomation ? "جارٍ الاختبار..." : "اختبار ربط n8n"}</button></div>
-    </section>
-    <section className="analysis-engine-strip" aria-label="حالة محرك تحليل المستندات المحلي">
-      <span className={`helper-dot ${analysisHealth.reachable ? "online" : "offline"}`} />
-      <b>محرك تحليل المستندات المحلي: {analysisEngineLabel}</b>
-      <small>{analysisHealth.reachable ? (analysisHealth.model ? `النموذج المحلي: ${analysisHealth.model} · ` : "") + "fixtures اختبارية فقط — لا تحليل لمستند حقيقي في هذه المرحلة" : "خدمة التحليل غير متاحة — شغّل خدمة الرادار المحلية"}</small>
-    </section>
-              </>}
-              {section.id === "storage" && <StorageSection />}
-            </div>
-          ))}
-        </main>
-      </div>
-      {downloadDialogOpen && selected && <div className="download-gate-overlay" role="dialog" aria-modal="true" aria-label="تأكيد طلب تنزيل الملفات">
-        <div className="download-gate-dialog">
-          <h3>تأكيد طلب تنزيل الملفات</h3>
-          <dl className="download-gate-facts">
-            <div><dt>المرجع</dt><dd>{selected.reference}</dd></div>
-            <div><dt>اسم المنافسة</dt><dd>{selected.title}</dd></div>
-            <div><dt>قيمة الكراسة</dt><dd>{feeEvidenceLabel(selected)}</dd></div>
-            <div><dt>حالة الإتاحة</dt><dd>{[...new Set(downloadableMeta.map((meta) => availabilityLabels[meta.availability]))].join(" · ") || "غير معروفة"}</dd></div>
-          </dl>
-          <div className="download-gate-files"><b>الملفات المحددة: {selectedDownloadMeta.length} (الحد الأقصى 5)</b>
-            <ul>{downloadableMeta.map((meta) => <li key={meta.displayName}><label><input type="checkbox" checked={selectedDownloadNames.includes(meta.displayName)} disabled={!selectedDownloadNames.includes(meta.displayName) && selectedDownloadNames.length >= 5} onChange={(event) => setSelectedDownloadNames((current) => event.target.checked ? [...current, meta.displayName] : current.filter((name) => name !== meta.displayName))} /> 📄 {meta.displayName}</label> <small>الحجم غير ظاهر في المنصة</small></li>)}</ul>
-            {blockedMetaCount > 0 && <small>{blockedMetaCount} ملفات أخرى لا يظهر لها خيار الموافقة لحالة إتاحتها (أسماء فقط / غير معروفة / مقيدة).</small>}
-          </div>
-          <label className="download-gate-consent"><input type="checkbox" checked={downloadConsentChecked} onChange={(event) => setDownloadConsentChecked(event.target.checked)} /> {downloadConsentPhrase}</label>
-          {selected.fee > 0 && <label className="download-gate-consent"><input type="checkbox" checked={downloadPurchaseChecked} onChange={(event) => setDownloadPurchaseChecked(event.target.checked)} /> {purchaseConsentPhrase}</label>}
-          {downloadGateMessage && <p className="download-gate-message">{downloadGateMessage}</p>}
-          {feeUnverifiedHint(selected) && <p className="download-gate-message">{feeUnverifiedHint(selected)}</p>}
-          <div className="download-gate-actions">
-            <button type="button" disabled={!selectedDownloadMeta.length || selectedDownloadMeta.length > 5 || !downloadConsentChecked || (selected.fee > 0 && !downloadPurchaseChecked) || Boolean(feeUnverifiedHint(selected)) || downloadRequestBusy} onClick={() => void submitDownloadApproval()}>{downloadRequestBusy ? "جارٍ تسجيل الموافقة..." : "تأكيد الموافقة"}</button>
-            <button type="button" className="outline-button" onClick={closeDownloadDialog}>إلغاء</button>
-          </div>
+    <section className="flow"><div><p className="eyebrow">طريقة التشغيل اليومية</p><h2>جلسة واضحة، بلا تخمين</h2></div><ol><li><b>1</b><span>تسجّل دخولك أنت إلى اعتماد في Chrome، ثم تبدأ مؤقت الجلسة.</span></li><li><b>2</b><span>نبحث بالفلاتر ونضيف فقط الفرص التي تستحق المتابعة.</span></li><li><b>3</b><span>بعد موافقتك: نحمّل الكراسة والكميات، ثم ترفع الملفات هنا وفي المحادثة للتحليل.</span></li><li><b>4</b><span>نراجع تقرير القرار، ثم نصدر Excel قبل أي إجراء مالي أو تقديم عرض.</span></li></ol></section>
+    {downloadDialogOpen && selected && <div className="download-gate-overlay" role="dialog" aria-modal="true" aria-label="تأكيد طلب تنزيل الملفات">
+      <div className="download-gate-dialog">
+        <h3>تأكيد طلب تنزيل الملفات</h3>
+        <dl className="download-gate-facts">
+          <div><dt>المرجع</dt><dd>{selected.reference}</dd></div>
+          <div><dt>اسم المنافسة</dt><dd>{selected.title}</dd></div>
+          <div><dt>قيمة الكراسة</dt><dd>{feeEvidenceLabel(selected)}</dd></div>
+          <div><dt>حالة الإتاحة</dt><dd>{[...new Set(downloadableMeta.map((meta) => availabilityLabels[meta.availability]))].join(" · ") || "غير معروفة"}</dd></div>
+        </dl>
+        <div className="download-gate-files"><b>الملفات المحددة: {selectedDownloadMeta.length} (الحد الأقصى 5)</b>
+          <ul>{downloadableMeta.map((meta) => <li key={meta.displayName}><label><input type="checkbox" checked={selectedDownloadNames.includes(meta.displayName)} disabled={!selectedDownloadNames.includes(meta.displayName) && selectedDownloadNames.length >= 5} onChange={(event) => setSelectedDownloadNames((current) => event.target.checked ? [...current, meta.displayName] : current.filter((name) => name !== meta.displayName))} /> 📄 {meta.displayName}</label> <small>الحجم غير ظاهر في المنصة</small></li>)}</ul>
+          {blockedMetaCount > 0 && <small>{blockedMetaCount} ملفات أخرى لا يظهر لها خيار الموافقة لحالة إتاحتها (أسماء فقط / غير معروفة / مقيدة).</small>}
         </div>
-      </div>}
-    </>
-  );
+        <label className="download-gate-consent"><input type="checkbox" checked={downloadConsentChecked} onChange={(event) => setDownloadConsentChecked(event.target.checked)} /> {downloadConsentPhrase}</label>
+        {selected.fee > 0 && <label className="download-gate-consent"><input type="checkbox" checked={downloadPurchaseChecked} onChange={(event) => setDownloadPurchaseChecked(event.target.checked)} /> {purchaseConsentPhrase}</label>}
+        {downloadGateMessage && <p className="download-gate-message">{downloadGateMessage}</p>}
+        {feeUnverifiedHint(selected) && <p className="download-gate-message">{feeUnverifiedHint(selected)}</p>}
+        <div className="download-gate-actions">
+          <button type="button" disabled={!selectedDownloadMeta.length || selectedDownloadMeta.length > 5 || !downloadConsentChecked || (selected.fee > 0 && !downloadPurchaseChecked) || Boolean(feeUnverifiedHint(selected)) || downloadRequestBusy} onClick={() => void submitDownloadApproval()}>{downloadRequestBusy ? "جارٍ تسجيل الموافقة..." : "تأكيد الموافقة"}</button>
+          <button type="button" className="outline-button" onClick={closeDownloadDialog}>إلغاء</button>
+        </div>
+      </div>
+    </div>}
+  </main>;
 }

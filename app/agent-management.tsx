@@ -28,6 +28,7 @@ export function AgentManagementScreen() {
   const [authError, setAuthError] = useState("");
   const [needsSetup, setNeedsSetup] = useState(false);
   const [openRole, setOpenRole] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"name" | "training" | "test" | "binding">("name");
   const [nameDraft, setNameDraft] = useState("");
   const [nameEnDraft, setNameEnDraft] = useState("");
   const [instructionsDraft, setInstructionsDraft] = useState("");
@@ -82,7 +83,7 @@ export function AgentManagementScreen() {
     setInstructionsSaved("");
     setProviderDraft(agent.provider);
     setBaseUrlDraft(""); setModelDraft(""); setApiKeyDraft("");
-    setExternalConfirmed(false); setTestInput(""); setTestResult(null); setTestError(""); setFlash("");
+    setExternalConfirmed(false); setTestInput(""); setTestResult(null); setTestError(""); setFlash(""); setActiveTab("name");
   }
 
   async function post(path: string, payload: Record<string, unknown>) {
@@ -183,18 +184,27 @@ export function AgentManagementScreen() {
               </button>
 
               {openRole === agent.roleCode && (
+                <div className="management-tabs" role="tablist" aria-label="أقسام لوحة الوكيل">
+                  <button type="button" role="tab" aria-selected={activeTab === "name"} className={`management-tab ${activeTab === "name" ? "active" : ""}`} onClick={() => setActiveTab("name")}>✏️ الاسم</button>
+                  <button type="button" role="tab" aria-selected={activeTab === "training"} className={`management-tab ${activeTab === "training" ? "active" : ""}`} onClick={() => setActiveTab("training")}>🎓 التدريب</button>
+                  <button type="button" role="tab" aria-selected={activeTab === "test"} className={`management-tab ${activeTab === "test" ? "active" : ""}`} onClick={() => setActiveTab("test")}>🧪 الاختبار</button>
+                  <button type="button" role="tab" aria-selected={activeTab === "binding"} className={`management-tab ${activeTab === "binding" ? "active" : ""}`} onClick={() => setActiveTab("binding")}>🔌 الربط</button>
+                </div>
+              )}
+              {openRole === agent.roleCode && activeTab === "name" && (
                 <div className="management-controls">
-                  {/* 1) الاسم */}
-                  <fieldset><legend>1 · الاسم (عربي + إنجليزي)</legend>
+                  <fieldset><legend>✏️ الاسم (عربي + إنجليزي)</legend>
                     <input placeholder="الاسم العربي" value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} />
                     <input placeholder="الاسم الإنجليزي (Latin)" value={nameEnDraft} onChange={(e) => setNameEnDraft(e.target.value)} dir="ltr" />
                     <div className="inline-row">
                       <button type="button" onClick={() => void saveName(agent)}>حفظ الاسم</button>
                     </div>
                   </fieldset>
-
-                  {/* 2) التدريب — تعليمات السلوك */}
-                  <fieldset><legend>2 · التدريب (تعليمات السلوك)</legend>
+                </div>
+              )}
+              {openRole === agent.roleCode && activeTab === "training" && (
+                <div className="management-controls">
+                  <fieldset><legend>🎓 التدريب (تعليمات السلوك)</legend>
                     <textarea
                       rows={5}
                       placeholder={`مثال: أنت ${agent.nameAr}، مهمتك ${agent.roleLabel}. اتبع هذه القواعد...`}
@@ -207,9 +217,11 @@ export function AgentManagementScreen() {
                       {instructionsSaved && <em className="panel-msg">{instructionsSaved}</em>}
                     </div>
                   </fieldset>
-
-                  {/* 3) الاختبار المعزول */}
-                  <fieldset><legend>3 · اختبار معزول (بلا أي أثر على البيانات الحقيقية)</legend>
+                </div>
+              )}
+              {openRole === agent.roleCode && activeTab === "test" && (
+                <div className="management-controls">
+                  <fieldset><legend>🧪 اختبار معزول (بلا أي أثر على البيانات الحقيقية)</legend>
                     <textarea
                       rows={3}
                       placeholder="اكتب مدخلًا تجريبيًا، مثال: نص منافسة وهمي..."
@@ -226,9 +238,11 @@ export function AgentManagementScreen() {
                       <pre className="test-output">{testResult.response}</pre>
                     )}
                   </fieldset>
-
-                  {/* 4) مزود الخدمة */}
-                  <fieldset><legend>4 · مزود الخدمة (مستقل لكل وكيل)</legend>
+                </div>
+              )}
+              {openRole === agent.roleCode && activeTab === "binding" && (
+                <div className="management-controls">
+                  <fieldset><legend>🔌 مزود الخدمة (مستقل لكل وكيل)</legend>
                     <select value={providerDraft} onChange={(e) => setProviderDraft(e.target.value)}>
                       <option value="stub">محاكاة آمنة (افتراضي)</option>
                       <option value="ollama">محلي (Ollama)</option>

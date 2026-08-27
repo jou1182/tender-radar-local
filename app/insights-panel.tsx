@@ -36,27 +36,18 @@ function timeAgoAr(iso: string | null): string {
   return `قبل ${Math.round(hours / 24)} يوم`;
 }
 
-export function InsightsPanel() {
-  const [lastRun, setLastRun] = useState<LastRun | null>(null);
-  const [regions, setRegions] = useState<Regions | null>(null);
+export function StorageSection() {
   const [storage, setStorage] = useState<Storage | null>(null);
   const [purgePreview, setPurgePreview] = useState<{ deleted: number; freedBytes: number } | null>(null);
   const [purgeDays, setPurgeDays] = useState(30);
   const [purgeMessage, setPurgeMessage] = useState("");
   const [showFiles, setShowFiles] = useState(false);
 
-  const load = useCallback(async () => {
-    try {
-      const [run, reg, stor] = await Promise.all([
-        fetch(`${SYNC_BASE}/dashboard/last-run`).then((r) => r.json()),
-        fetch(`${SYNC_BASE}/dashboard/regions`).then((r) => r.json()),
-        fetch(`${SYNC_BASE}/dashboard/storage`).then((r) => r.json()),
-      ]);
-      setLastRun(run); setRegions(reg); setStorage(stor);
-    } catch { /* الخدمة غير متاحة — القسم يختفي بهدوء */ }
+  const loadStorage = useCallback(async () => {
+    try { setStorage(await fetch(`${SYNC_BASE}/dashboard/storage`).then((r) => r.json())); } catch { /* الخدمة غير متاحة */ }
   }, []);
 
-  useEffect(() => { const t = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(t); }, [load]);
+  useEffect(() => { const t = window.setTimeout(() => void loadStorage(), 0); return () => window.clearTimeout(t); }, [loadStorage]);
 
   async function previewPurge() {
     setPurgeMessage("");
@@ -78,8 +69,80 @@ export function InsightsPanel() {
       ? `تم حذف ${data.deleted} ملفًا وتحرير ${fmtBytes(data.freedBytes)} ✓`
       : "لا توجد ملفات ضمن هذا العمر.");
     setPurgePreview(null);
-    void load();
+    void loadStorage();
   }
+
+  return (
+    <section className="insights-panel" aria-label="التخزين">
+      <div className="insights-head">
+        <div><p className="eyebrow">ملفات التنزيل والتنظيف</p><h2>🗄️ التخزين</h2></div>
+      </div>
+      {!storage && <p className="insights-empty">الخدمة غير متاحة — شغّل تشغيل-الرادار.cmd.</p>}
+      {storage && (
+        <div className="insights-storage">
+          <div className="insights-storage">
+            <div className="storage-head">
+              <b>🗄️ ملفات التنزيل</b>
+              <span>{storage.count} ملفًا · {fmtBytes(storage.totalBytes)}</span>
+              <button type="button" className="quiet" onClick={() => setShowFiles(!showFiles)}>{showFiles ? "إخفاء القائمة" : "استعراض الملفات"}</button>
+            </div>
+            {showFiles && (
+              <ul className="storage-files">
+                {storage.files.length === 0 && <li className="storage-empty">لا توجد ملفات منزّلة بعد — أول تنزيل حي يتطلب موافقتك.</li>}
+                {storage.files.map((f) => (
+                  <li key={f.path}>
+                    <b>{f.name}</b>
+                    <small>منافسة {f.tenderReference} · {fmtBytes(f.sizeBytes)} · {fmtDateAr(f.modifiedAt)}</small>
+                    <code dir="ltr">{f.path}</code>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="storage-purge">
+              <b>🧹 التنظيف التلقائي</b>
+              <span>حذف المرفقات الأقدم من</span>
+              <select value={purgeDays} onChange={(e) => { setPurgeDays(Number(e.target.value)); setPurgePreview(null); setPurgeMessage(""); }}>
+                <option value={7}>7 أيام</option>
+                <option value={14}>14 يومًا</option>
+                <option value={30}>30 يومًا (موصى به)</option>
+                <option value={60}>60 يومًا</option>
+                <option value={90}>90 يومًا</option>
+              </select>
+              <div className="inline-row">
+                <button type="button" className="outline-button" onClick={() => void previewPurge()}>معاينة المسح</button>
+                {purgePreview && purgePreview.deleted > 0 && (
+                  <button type="button" className="danger-button" onClick={() => void confirmPurge()}>
+                    تأكيد حذف {purgePreview.deleted} ملفًا ({fmtBytes(purgePreview.freedBytes)})
+                  </button>
+                )}
+              </div>
+              {purgePreview && <small className="panel-msg">المعاينة: سيُحذف {purgePreview.deleted} ملفًا ويُحرَّر {fmtBytes(purgePreview.freedBytes)}.</small>}
+              {purgeMessage && <em className="panel-msg">{purgeMessage}</em>}
+              <small className="storage-note">المسح لا يمسّ بيانات المنافسات في القاعدة — يفرغ مسارات الملفات فقط. يُسجَّل في نشاط الوكيل عبدالله.</small>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+export function InsightsPanel() {
+  const [lastRun, setLastRun] = useState<LastRun | null>(null);
+  const [regions, setRegions] = useState<Regions | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const [run, reg, stor] = await Promise.all([
+        fetch(`${SYNC_BASE}/dashboard/last-run`).then((r) => r.json()),
+        fetch(`${SYNC_BASE}/dashboard/regions`).then((r) => r.json()),
+        fetch(`${SYNC_BASE}/dashboard/storage`).then((r) => r.json()),
+      ]);
+      setLastRun(run); setRegions(reg); setStorage(stor);
+    } catch { /* الخدمة غير متاحة — القسم يختفي بهدوء */ }
+  }, []);
+
+  useEffect(() => { const t = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(t); }, [load]);
 
   if (!lastRun || !regions) return null;
   const maxCount = Math.max(...regions.single.map((r) => r.count), 1);
@@ -128,47 +191,6 @@ export function InsightsPanel() {
             </div>
           )}
 
-          <div className="insights-storage">
-            <div className="storage-head">
-              <b>🗄️ ملفات التنزيل</b>
-              <span>{storage.count} ملفًا · {fmtBytes(storage.totalBytes)}</span>
-              <button type="button" className="quiet" onClick={() => setShowFiles(!showFiles)}>{showFiles ? "إخفاء القائمة" : "استعراض الملفات"}</button>
-            </div>
-            {showFiles && (
-              <ul className="storage-files">
-                {storage.files.length === 0 && <li className="storage-empty">لا توجد ملفات منزّلة بعد — أول تنزيل حي يتطلب موافقتك.</li>}
-                {storage.files.map((f) => (
-                  <li key={f.path}>
-                    <b>{f.name}</b>
-                    <small>منافسة {f.tenderReference} · {fmtBytes(f.sizeBytes)} · {fmtDateAr(f.modifiedAt)}</small>
-                    <code dir="ltr">{f.path}</code>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <div className="storage-purge">
-              <b>🧹 التنظيف التلقائي</b>
-              <span>حذف المرفقات الأقدم من</span>
-              <select value={purgeDays} onChange={(e) => { setPurgeDays(Number(e.target.value)); setPurgePreview(null); setPurgeMessage(""); }}>
-                <option value={7}>7 أيام</option>
-                <option value={14}>14 يومًا</option>
-                <option value={30}>30 يومًا (موصى به)</option>
-                <option value={60}>60 يومًا</option>
-                <option value={90}>90 يومًا</option>
-              </select>
-              <div className="inline-row">
-                <button type="button" className="outline-button" onClick={() => void previewPurge()}>معاينة المسح</button>
-                {purgePreview && purgePreview.deleted > 0 && (
-                  <button type="button" className="danger-button" onClick={() => void confirmPurge()}>
-                    تأكيد حذف {purgePreview.deleted} ملفًا ({fmtBytes(purgePreview.freedBytes)})
-                  </button>
-                )}
-              </div>
-              {purgePreview && <small className="panel-msg">المعاينة: سيُحذف {purgePreview.deleted} ملفًا ويُحرَّر {fmtBytes(purgePreview.freedBytes)}.</small>}
-              {purgeMessage && <em className="panel-msg">{purgeMessage}</em>}
-              <small className="storage-note">المسح لا يمسّ بيانات المنافسات في القاعدة — يفرغ مسارات الملفات فقط. يُسجَّل في نشاط الوكيل عبدالله.</small>
-            </div>
-          </div>
         </>
       )}
     </section>
