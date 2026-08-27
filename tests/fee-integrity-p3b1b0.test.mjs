@@ -159,20 +159,17 @@ test("verified paid details correct false zero and revoke false free availabilit
   });
 });
 
-test("live preflight rejects unverified zero before any acquisition", () => {
+test("P5-B0PRE v2: live preflight is fee/verification-neutral (informational only)", () => {
+  // قرار المالك: لا شرط "detail-verified zero" على مسار التنزيل الحي —
+  // الحارس هو الموافقة الصريحة وقائمة السماح. تصنيف "مجاني مؤكد" يبقى معلوماتيًا في القاعدة.
   const tender = {
-    fee: 0,
-    feeVerification: "unknown",
-    feeVerifiedAt: null,
-    details: { sourceUrl: trustedUrl("260000001006") },
-    attachmentsMeta: [{ displayName: "كراسة.pdf", remoteVisible: true, availability: "free-available" }],
+    fee: 200,
+    feeVerification: "card-observed",
+    attachmentsMeta: [{ displayName: "كراسة.pdf", availability: "purchased-available", remoteVisible: true }],
   };
-  assert.throws(
-    () => assertLivePreconditions({ tender, displayName: "كراسة.pdf" }),
-    (error) => error.code === "FEE_NOT_DETAIL_VERIFIED",
-  );
+  const meta = assertLivePreconditions({ tender, displayName: "كراسة.pdf" });
+  assert.equal(meta.displayName, "كراسة.pdf", "paid+observed passes preconditions");
 });
-
 test("appearance merging keeps the strongest visible fee evidence", () => {
   const merged = mergeTenderAppearances([
     { ...item("260000001007"), regionName: "منطقة الرياض" },
