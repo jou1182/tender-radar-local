@@ -17,7 +17,7 @@ import {
 import { assertDownloadFeeGate, cardFeeEvidence, detailFeeEvidence, mergeSyncFeeEvidence } from "./fee-evidence.mjs";
 import { defaultAgents } from "./agent-team.mjs";
 
-const migrationVersion = 9;
+const migrationVersion = 10;
 const trackedTenderFields = ["title", "agency", "fee", "region", "deadline", "publishedAt", "platformStatus", "activity", "etimadUrl"];
 
 function safeJson(value, fallback) {
@@ -506,6 +506,7 @@ export async function createRadarRepository({ projectRoot }) {
       enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
       display_order INTEGER NOT NULL DEFAULT 99,
       binding_json TEXT NOT NULL DEFAULT '{"provider":"stub"}',
+      system_instructions TEXT NOT NULL DEFAULT '',
       updated_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS agent_activity (
@@ -530,6 +531,8 @@ export async function createRadarRepository({ projectRoot }) {
       agent.roleLabel, agent.displayOrder, new Date().toISOString(),
     );
   }
+
+  ensureColumn("agents", "system_instructions", "system_instructions TEXT NOT NULL DEFAULT ''");
 
   // موافقات v4 لم تكن مرتبطة بنطاق أو مدة؛ تُبطل صراحة ولا يمكن توريثها إلى مسار تنزيل حي.
   database.prepare(`
@@ -578,6 +581,9 @@ export async function createRadarRepository({ projectRoot }) {
     updateAgentById: database.prepare(`
       UPDATE agents SET name_ar = ?, name_en = ?, enabled = ?, display_order = ?, updated_at = ?
       WHERE role_code = ?
+    `),
+    updateAgentInstructions: database.prepare(`
+      UPDATE agents SET system_instructions = ?, updated_at = ? WHERE role_code = ?
     `),
     updateAgentBinding: database.prepare(`
       UPDATE agents SET binding_json = ?, updated_at = ? WHERE role_code = ?
@@ -1797,6 +1803,15 @@ export async function createRadarRepository({ projectRoot }) {
     return getAgentByRole(roleCode);
   }
 
+  // P5-F1: تعليمات السلوك (system instructions) لكل وكيل — نص حر يخزن كما أدخله المالك.
+  function setAgentInstructions(roleCode, instructions) {
+    const current = statements.getAgentByRole.get(String(roleCode));
+    if (!current) throw new Error(`وكيل غير معروف: ${roleCode}`);
+    const text = String(instructions ?? "").slice(0, 8000); // حد 8 آلاف حرف
+    statements.updateAgentInstructions.run(text, new Date().toISOString(), String(roleCode));
+    return getAgentByRole(roleCode);
+  }
+
   function recordAgentActivity({ roleCode, action, status = "info", detail = null }) {
     statements.insertAgentActivity.run(
       String(roleCode), String(action), String(status),
@@ -1829,6 +1844,7 @@ export async function createRadarRepository({ projectRoot }) {
     getAgentByRole,
     updateAgentProfile,
     setAgentBinding,
+    setAgentInstructions,
     recordAgentActivity,
     listRecentAgentActivity,
     getPolicySettingRaw,

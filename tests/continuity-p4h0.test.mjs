@@ -58,7 +58,7 @@ test("3) القيم الأساسية في CURRENT_STATE.json صحيحة (بني�
   }, "سياسة أساس المهمة بالقيم الأربع");
   assert.equal(state.lastApprovedFunctionalPhase, "P4-M0AMRM");
   assert.equal(state.continuityPackagePhase, "P4-H1B");
-  assert.equal(state.databaseSchemaVersion, 9, "schemaVersion 9");
+  assert.equal(state.databaseSchemaVersion, 10, "schemaVersion 10");
   // أعداد الاختبارات: بنية واضحة تفصل الأساس الوظيفي عن الحزمة.
   assert.equal(state.testBaselines.functionalBaseline.passed, 219);
   assert.equal(state.testBaselines.functionalBaseline.failed, 0);

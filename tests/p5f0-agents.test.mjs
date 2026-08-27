@@ -19,11 +19,11 @@ async function makeProjectRoot(prefix) {
   return mkdtemp(path.join(os.tmpdir(), prefix));
 }
 
-test("P5-F0-1: fresh database seeds the default seven-agent team at schema v9", async () => {
+test("P5-F0-1: fresh database seeds the default seven-agent team at schema v10", async () => {
   const projectRoot = await makeProjectRoot("radar-p5f0-fresh-");
   try {
     const repo = await createRadarRepository({ projectRoot });
-    assert.equal(repo.schemaVersion, 9);
+    assert.equal(repo.schemaVersion, 10);
     const agents = repo.listAgents();
     assert.equal(agents.length, defaultAgents.length);
     assert.equal(agents[0].name_ar, "يوسف");

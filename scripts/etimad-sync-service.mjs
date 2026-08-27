@@ -32,6 +32,7 @@ import {
   verifyTeamPassphrase,
   createSessionManager,
 } from "./lib/agent-team.mjs";
+import { runAgentSandboxTest } from "./lib/agent-sandbox.mjs";
 import { createAnalysisEngine } from "./lib/analysis-engine.mjs";
 import { createAnalysisApiHandler } from "./lib/analysis-api.mjs";
 import { attachmentStorageRoot } from "./lib/attachment-storage.mjs";
@@ -593,6 +594,7 @@ async function handleAgentsApi(request, response, pathname) {
       displayOrder: agent.display_order,
       provider: agent.binding?.provider || "stub",
       external: Boolean(agent.binding?.baseUrl && !/^http(s)?:\/\/(127\.0\.0\.1|localhost|\[::1\])/.test(agent.binding.baseUrl)),
+      systemInstructions: agent.system_instructions || "",
       updatedAt: agent.updated_at,
     }));
     return send(response, 200, { agents, activity: repository.listRecentAgentActivity(12) });
@@ -661,6 +663,48 @@ async function handleAgentsApi(request, response, pathname) {
       return send(response, 200, { ok: true, agent: repository.getAgentByRole(roleCode) });
     } catch (error) {
       const code = error?.code || "AGENT_BINDING_INVALID";
+      return send(response, 400, { error: code, message: String(error?.message || error) });
+    }
+  }
+
+  // ── P5-F1: حفظ تعليمات السلوك (يتطلب توكنًا) ──────────────────────────────
+  if (request.method === "POST" && pathname === "/agents/instructions") {
+    const body = await readJsonBody(request);
+    const roleCode = String(body?.roleCode || "").trim();
+    if (!roleCode) return send(response, 400, { error: "ROLE_REQUIRED", message: "معرف الدور مطلوب." });
+    try {
+      const agent = repository.setAgentInstructions(roleCode, body.instructions);
+      repository.recordAgentActivity({
+        roleCode, action: "instructions-updated", status: "info",
+        detail: { length: String(body?.instructions ?? "").length },
+      });
+      return send(response, 200, { ok: true, agent });
+    } catch (error) {
+      return send(response, 404, { error: "AGENT_NOT_FOUND", message: String(error?.message || error) });
+    }
+  }
+
+  // ── P5-F1: اختبار معزول للوكيل (يتطلب توكنًا) ─────────────────────────────
+  // لا كتابة في أي جدول بيانات؛ فقط استدعاء مزود الوكيل (أو محاكاة stub) وإرجاع الاستجابة.
+  if (request.method === "POST" && pathname === "/agents/test") {
+    const body = await readJsonBody(request);
+    const roleCode = String(body?.roleCode || "").trim();
+    if (!roleCode) return send(response, 400, { error: "ROLE_REQUIRED", message: "معرف الدور مطلوب." });
+    try {
+      const agent = repository.getAgentByRole(roleCode);
+      if (!agent) return send(response, 404, { error: "AGENT_NOT_FOUND", message: "الوكيل غير موجود." });
+      const result = await runAgentSandboxTest({
+        agent,
+        teamSecret: body.teamSecret,
+        testInput: body.testInput,
+      });
+      repository.recordAgentActivity({
+        roleCode, action: "sandbox-test", status: "info",
+        detail: { provider: result.provider, inputLength: String(body?.testInput ?? "").length },
+      });
+      return send(response, 200, { ok: true, result });
+    } catch (error) {
+      const code = error?.code || "AGENT_TEST_FAILED";
       return send(response, 400, { error: code, message: String(error?.message || error) });
     }
   }

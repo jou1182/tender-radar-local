@@ -322,3 +322,23 @@ label { display:block; margin:0 0 7px; font-size:.82rem; color:var(--muted); fon
 .feed-dot { width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; flex-shrink: 0; align-self: center; }
 .feed-dot.success { background: #10b981; } .feed-dot.warning { background: #f59e0b; } .feed-dot.error { background: #ef4444; }
 .agent-feed time { margin-inline-start: auto; color: var(--muted-foreground, #6b7a73); }
+
+/* ── P5-F1: شاشة إدارة الوكلاء ─────────────────────────────────────────────── */
+.agent-management { background: var(--card, #fff); border: 1px solid rgba(15, 61, 46, .12); border-radius: 18px; padding: 22px; margin: 18px 0; }
+.management-auth { max-width: 420px; display: grid; gap: 8px; margin: 12px 0; }
+.management-auth input { border: 1px solid rgba(15,61,46,.22); border-radius: 8px; padding: 8px 10px; font: inherit; }
+.management-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+.management-card { border: 1px solid rgba(15,61,46,.12); border-inline-start: 4px solid #14b8a6; border-radius: 12px; padding: 14px; display: grid; gap: 10px; align-content: start; }
+.management-card-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.management-agent-name { font-size: 1.1rem; font-weight: 800; }
+.management-toggle { justify-self: start; }
+.management-controls { display: grid; gap: 12px; border-top: 1px dashed rgba(15,61,46,.18); padding-top: 10px; }
+.management-controls fieldset { border: 1px solid rgba(15,61,46,.12); border-radius: 10px; padding: 10px; display: grid; gap: 8px; }
+.management-controls legend { font-size: .82rem; font-weight: 700; color: #0f766e; padding: 0 6px; }
+.management-controls input, .management-controls select, .management-controls textarea { border: 1px solid rgba(15,61,46,.22); border-radius: 8px; padding: 7px 9px; font: inherit; width: 100%; }
+.management-controls textarea { resize: vertical; }
+.inline-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.inline-row small { color: var(--muted-foreground, #6b7a73); }
+.test-output { background: #0f172a; color: #d1e7dd; border-radius: 8px; padding: 10px; font-size: .82rem; white-space: pre-wrap; max-height: 220px; overflow: auto; direction: rtl; text-align: start; }
+.test-error { color: #b91c1c; font-style: normal; }
+.agent-provider.external { background: rgba(245, 158, 11, .16); color: #92400e; }
