@@ -88,14 +88,14 @@ test("the free filter bucket never overrides the visible card fee", async () => 
   });
 });
 
-test("missing card fee stays unknown and cannot enter the free approval gate", async () => {
+test("P5-B0PRE: missing card fee stays unknown (informational) and no longer blocks downloads", async () => {
   await withRepository(async (repository) => {
     const unknown = item("260000001003");
     save(repository, [unknown]);
     const stored = repository.getTender(unknown.reference);
     assert.equal(stored.fee, 0);
     assert.equal(stored.feeVerification, "unknown");
-    assert.throws(() => assertDownloadFeeGate(stored), (error) => error.code === "FEE_NOT_DETAIL_VERIFIED");
+    assert.equal(assertDownloadFeeGate(stored), true, "P5-B0PRE: fee gate deprecated — never blocks");
   });
 });
 

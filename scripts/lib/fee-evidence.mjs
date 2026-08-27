@@ -84,15 +84,11 @@ export function detailFeeEvidence({ rawText, sourceUrl, verifiedAt }) {
   };
 }
 
+// ── DEPRECATED (P5-B0PRE — قرار د. جو 2026-08-25): ──────────────────────────
+// قيمة الكراسة معلوماتية فقط ولا تؤثر على التنزيل: كل ملفات أي منافسة على
+// اعتماد قابلة للتنزيل دائمًا؛ الرسوم تخص تقديم العروض (خارج نطاق المنصة).
+// الدالة تُبقى كـwrapper ليتوافق الكود القديم، لكنها لا تمنع شيئًا.
 export function assertDownloadFeeGate(tender) {
-  if (Number(tender?.fee) !== 0) return true;
-  const verified = tender?.feeVerification === "detail-verified"
-    && Number.isFinite(Date.parse(tender?.feeVerifiedAt || ""))
-    && isTrustedEtimadDetailsUrl(tender?.details?.sourceUrl || "");
-  if (!verified) {
-    const error = new Error("قيمة الكراسة الصفرية غير مؤكدة؛ تحقق من قيمة الكراسة في صفحة التفاصيل أولًا.");
-    error.code = "FEE_NOT_DETAIL_VERIFIED";
-    throw error;
-  }
+  void tender; // deprecated: معلوماتي فقط — لا شرط
   return true;
 }

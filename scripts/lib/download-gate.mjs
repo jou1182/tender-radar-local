@@ -9,7 +9,9 @@ export const maxFilesPerBatch = 5;
 export const maxFileBytes = 100 * 1024 * 1024;
 export const maxBatchBytes = 300 * 1024 * 1024;
 export const allowedDownloadExtensions = ["pdf", "xls", "xlsx", "doc", "docx", "ppt", "pptx", "zip", "rar", "7z"];
-export const downloadableAvailability = ["free-available", "purchased-available"];
+export const downloadableAvailability = ["metadata-only", "free-available", "purchased-available", "restricted", "unknown"];
+// P5-B0PRE: حالات الإتاحة صارت معلوماتية — كل ملف ظاهر الاسم قابل للطلب،
+// والموافقة الصريحة (عبارة النص الكامل) هي الحارس الوحيد.
 export const downloadConsentPhrase = "أوافق على تنزيل الملفات المحددة الآن من هذه المنافسة فقط";
 export const purchaseConsentPhrase = "أؤكد أنني أتممت شراء الكراسة بنفسي داخل منصة اعتماد";
 
@@ -84,13 +86,15 @@ export function validateDownloadRequest({ tenderReference, files, attachmentsMet
   return manifest;
 }
 
-// الموافقة بشرية صريحة فقط: النص الكامل مطابق حرفيًا، وللكراسة المدفوعة تأكيد إتمام الشراء الذاتي داخل اعتماد.
+// الموافقة بشرية صريحة فقط: النص الكامل مطابق حرفيًا. — v2 (P5-B0PRE)
+// قرار د. جو: قيمة الكراسة معلوماتية لا شرط تنزيل؛ شراء الكراسة داخل اعتماد
+// يخص تقديم العروض وهو خارج نطاق هذه المنصة كليًا. الحارس الوحيد: عبارة الموافقة.
+// purchaseConfirmed وbookletFee يقبلان للتوافق الخلفي ويُتجاهلان.
 export function verifyDownloadConsent({ consentText, purchaseConfirmed, bookletFee } = {}) {
+  void purchaseConfirmed;
+  void bookletFee;
   if (String(consentText || "").trim() !== downloadConsentPhrase) {
     throw downloadGateError("CONSENT_REQUIRED", "نص الموافقة الصريح الكامل مطلوب لإنشاء موافقة التنزيل؛ لا موافقة ضمنية أو آلية.");
-  }
-  if (Number(bookletFee) > 0 && purchaseConfirmed !== true) {
-    throw downloadGateError("PURCHASE_CONFIRMATION_REQUIRED", "الكراسة المدفوعة تحتاج تأكيدًا أن المستخدم أتمم شراءها بنفسه داخل منصة اعتماد.");
   }
   return true;
 }

@@ -52,7 +52,7 @@ function engineWith(repository, env = {}, extra = {}) {
   return createAnalysisEngine({ repository, fixtureRoot, env, ...extra });
 }
 
-test("1-2) migration v6→v7 preserves existing data and is idempotent", async () => {
+test("1-2) migration v6→v9 preserves existing data and is idempotent", async () => {
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), "radar-v6-"));
   let repository;
   try {
@@ -401,7 +401,8 @@ test("19) P3-B1B/P3-B1C and live download stay stopped and disabled by default",
   assert.equal(readLiveAcquisitionConfig({}).enabled, false, "live download stays disabled by default");
   const service = await readFile(new URL("../scripts/etimad-sync-service.mjs", import.meta.url), "utf8");
   assert.match(service, /createDisabledProductionDownloadAdapter/, "the production download adapter stays disabled");
-  assert.match(service, /FEE_NOT_DETAIL_VERIFIED/, "the P3-B1B0 fee gate stays enforced");
+  // P5-B0PRE: بوابة الرسوم أُلغيت بقرار د. جو — خدمة الاخطاء تحتفظ بالكود قائمة توافقًا فقط.
+  assert.match(service, /FEE_NOT_DETAIL_VERIFIED/, "legacy error code still listed (informational, unenforced)");
   // مسارا المزامنة والموافقات لا يحتويان أي إشارة إلى محرك التحليل أو الذكاء الاصطناعي.
   const syncRoute = service.slice(service.indexOf('request.url === "/sync"'), service.indexOf('pathname === "/analysis/health"'));
   assert.doesNotMatch(syncRoute, /analysis|ollama/i, "the sync route never touches analysis or AI");

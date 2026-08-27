@@ -10,7 +10,6 @@ import {
   allowedDownloadExtensions,
   downloadConsentPhrase,
   hashDownloadManifest,
-  purchaseConsentPhrase,
   validateDownloadRequest,
 } from "../scripts/lib/download-gate.mjs";
 import { attachmentTenderDir, resolveAttachmentStoragePath } from "../scripts/lib/attachment-storage.mjs";
@@ -143,10 +142,9 @@ test("Schema v7 migration preserves v4 tenders, details, attachments, and legacy
     );
     assert.deepEqual(repository.listDownloadJobs(), []);
 
-    assert.throws(
-      () => repository.requestDownloadApprovalIntent({ tenderReference: tender.reference, files: approvalInput.files }),
-      (error) => error.code === "FEE_NOT_DETAIL_VERIFIED",
-    );
+    // P5-B0PRE: بوابة الرسوم أُلغيت — الطلب ينجح الآن قبل أي قراءة تفاصيل.
+    const earlyIntent = repository.requestDownloadApprovalIntent({ tenderReference: tender.reference, files: approvalInput.files });
+    assert.ok(earlyIntent.id, "intent succeeds without detail verification (fee-neutral)");
     repository.saveTenderDetails({
       reference: tender.reference, status: "complete", inspectedAt: "2026-08-13T21:05:00.000Z",
       sourceUrl: tender.etimadUrl, pageTitle: "", sections: [],
@@ -257,7 +255,7 @@ test("a changed manifest fingerprint invalidates the approval", async () => {
   }
 });
 
-test("metadata-only, unknown, and restricted files cannot be requested", async () => {
+test("P5-B0PRE: availability states are informational — every listed file requestable with full consent phrase", async () => {
   const { projectRoot, repository } = await repositoryWithTender({
     attachmentStates: {
       "أسماء فقط.pdf": "metadata-only",
@@ -267,65 +265,47 @@ test("metadata-only, unknown, and restricted files cannot be requested", async (
     },
   });
   try {
-    for (const blocked of ["أسماء فقط.pdf", "غير معروف.pdf", "مقيد.pdf"]) {
-      assert.throws(
-        () => repository.requestDownloadApprovalIntent({
-          tenderReference: tender.reference,
-          files: [{ displayName: blocked }],
-        }),
-        (error) => error.code === "AVAILABILITY_NOT_ALLOWED",
-        `${blocked} must be rejected`,
-      );
+    for (const name of ["أسماء فقط.pdf", "غير معروف.pdf", "مقيد.pdf", "متاح.pdf"]) {
+      const approval = approve(repository, {
+        tenderReference: tender.reference,
+        files: [{ displayName: name }],
+        consentText: downloadConsentPhrase,
+      });
+      assert.equal(approval.status, "approved", name);
     }
-    const approval = approve(repository, {
-      tenderReference: tender.reference,
-      files: [{ displayName: "متاح.pdf" }],
-      consentText: downloadConsentPhrase,
-    });
-    assert.equal(approval.status, "approved");
   } finally {
     repository.close();
     await rm(projectRoot, { recursive: true, force: true });
   }
 });
 
-test("free-available and purchased-available both require explicit consent, and paid booklets require purchase confirmation", async () => {
-  const free = await repositoryWithTender({ attachmentStates: { "مجاني.pdf": "free-available" } });
+test("P5-B0PRE: explicit consent phrase gates every download — paid and free identically", async () => {
+  const { projectRoot, repository } = await repositoryWithTender({
+    fee: 200,
+    attachmentStates: { "كراسة.pdf": "metadata-only" },
+  });
   try {
-    const freeIntent = free.repository.requestDownloadApprovalIntent({ tenderReference: tender.reference, files: [{ displayName: "مجاني.pdf" }] });
-    assert.throws(
-      () => free.repository.confirmDownloadApprovalIntent(freeIntent.id, {}),
-      (error) => error.code === "CONSENT_REQUIRED",
-      "even free files need the explicit consent phrase",
-    );
-    assert.throws(
-      () => free.repository.confirmDownloadApprovalIntent(freeIntent.id, { consentText: "موافق" }),
-      (error) => error.code === "CONSENT_REQUIRED",
-      "a paraphrased consent is not accepted",
-    );
-  } finally {
-    free.repository.close();
-    await rm(free.projectRoot, { recursive: true, force: true });
-  }
-
-  const paid = await repositoryWithTender({ fee: 300, attachmentStates: { "مدفوع.pdf": "purchased-available" } });
-  try {
-    const paidIntent = paid.repository.requestDownloadApprovalIntent({ tenderReference: tender.reference, files: [{ displayName: "مدفوع.pdf" }] });
-    assert.throws(
-      () => paid.repository.confirmDownloadApprovalIntent(paidIntent.id, {
-        consentText: downloadConsentPhrase,
-      }),
-      (error) => error.code === "PURCHASE_CONFIRMATION_REQUIRED",
-    );
-    const approval = paid.repository.confirmDownloadApprovalIntent(paidIntent.id, {
+    // المدفوعة: العبارة الصريحة تكفي — لا شرط شراء (قرار د. جو: الرسوم تخص تقديم العروض)
+    const paid = approve(repository, {
+      tenderReference: tender.reference,
+      files: [{ displayName: "كراسة.pdf" }],
       consentText: downloadConsentPhrase,
-      purchaseConfirmed: true,
+      // purchaseConfirmed مقصود عدم تمريره
     });
-    assert.equal(approval.status, "approved");
-    assert.match(purchaseConsentPhrase, /أتممت شراء الكراسة بنفسي داخل منصة اعتماد/);
+    assert.equal(paid.status, "approved");
+
+    // بدون العبارة الحرفية: يُرفض دائمًا
+    assert.throws(
+      () => approve(repository, {
+        tenderReference: tender.reference,
+        files: [{ displayName: "كراسة.pdf" }],
+        consentText: "موافقة غير حرفية",
+      }),
+      (error) => error.code === "CONSENT_REQUIRED",
+    );
   } finally {
-    paid.repository.close();
-    await rm(paid.projectRoot, { recursive: true, force: true });
+    repository.close();
+    await rm(projectRoot, { recursive: true, force: true });
   }
 });
 
