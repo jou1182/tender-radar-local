@@ -12,6 +12,7 @@
   "lastApprovedFunctionalPhase": "P4-M0AMRM",
   "continuityPackagePhase": "P4-H1B",
   "databaseSchemaVersion": 10,
+  "feePolicy": "P5-B0PRE (قرار د. جو 2026-08-25): قيمة الكراسة معلوماتية فقط — كل مرفقات أي منافسة قابلة للتنزيل دائمًا؛ بوابة الرسوم وشرط الشراء أُهملوا؛ عبارة الموافقة الصريحة هي الحارس الوحيد",
   "testBaselines": {
     "functionalBaseline": {
       "commit": "2677e0099ef95bd6077e785f60a18fb43e7723e1",
@@ -43,7 +44,9 @@
     },
     "p5c0": { "phase": "P5-C0", "commit": "3dfbbcf", "passed": 320, "failed": 0 },
     "p5a1": { "phase": "P5-A1", "commit": "5021b16", "passed": 325, "failed": 0 },
-    "p5d0": { "phase": "P5-D0", "commit": "4a8bbb7", "passed": 329, "failed": 0 }
+    "p5d0": { "phase": "P5-D0", "commit": "4a8bbb7", "passed": 329, "failed": 0 },
+    "p5b0pre": { "phase": "P5-B0PRE", "commit": "45588a6", "passed": 333, "failed": 0 },
+    "p5f1": { "phase": "P5-F1", "commit": "f56f558", "passed": 337, "failed": 0 }
   },
   "agentTeam": {
     "phase": "P5-F0",

@@ -75,6 +75,8 @@
 | P4-O0BM | دمج `14eb224` (checkpoint تلقائي للـWAL بعد الجولات المكتملة — fast-forward) | approved |
 | P5-A0M | دمج `d543b8b` (Schema v8: download_queue + tender_classification + policy_settings + واجهة Repository — fast-forward) | approved |
 | P5-F0M | دمج `29e1094` (طاقم الوكلاء السبعة: Schema v9 + مسارات محمية + واجهة أفاتار متحرك — fast-forward) | approved |
+| P5-B0PRE-M | دمج `45588a6` (حياد الرسوم: كل الملفات قابلة للتنزيل، العبارة الصريحة الحارس الوحيد — fast-forward) | approved |
+| P5-F1M | دمج `f56f558` (شاشة إدارة الوكلاء: تعليمات + اختبار معزول + ربط مستقل — Schema v10 — fast-forward) | approved |
 | P5-C0M | دمج `3dfbbcf` (التصنيف الحتمي بـ11 تخصصًا مربوط بالجولات — fast-forward) | approved |
 | P5-A1M | دمج `5021b16` (مقيّم طابور التحميل وفق السياسة — fast-forward) | approved |
 | P5-D0M | دمج `4a8bbb7` (مخطط n8n الليلي 02:00 القصيم أولًا، غير مفعّل افتراضيًا — fast-forward) | approved |
