@@ -27,6 +27,14 @@ function normalizeArabicText(value) {
     .toLocaleLowerCase("ar");
 }
 
+// اعتماد يعرض أسماء المرفقات غالبًا بدون الامتداد — نطابق على الجذر
+function attachmentNameStems(displayName) {
+  const normalized = normalizeArabicText(displayName);
+  const stem = normalized.replace(/\.(pdf|zip|rar|docx?|xlsx?|pptx?)$/u, "").trim();
+  const stems = [...new Set([normalized, stem].filter((v) => v && v.length >= 4))];
+  return stems;
+}
+
 let cdpMessageId = 0;
 async function sendCdp(ws, method, params = {}, timeoutMs = CDP_TIMEOUT_MS) {
   const id = ++cdpMessageId;
@@ -74,32 +82,50 @@ export function createEtimadLiveDriver({ cdpPort = 9333, downloadPollMs = 250 } 
       try {
         // تنقل موثوق: نفس etimadUrl المخزن (مصادق عليه في assertTrustedTenderUrl سابقًا)
         await sendCdp(ws, "Page.navigate", { url: trustedTenderUrl });
-        await sleep(2_500); // انتظار تحميل معقول — التحقق النهائي عبر DOM
-        const evalResult = await sendCdp(ws, "Runtime.evaluate", {
-          expression: `(() => {
-            const needle = ${JSON.stringify(normalizeArabicText(displayName))};
-            const anchors = [...document.querySelectorAll("a")];
-            const rows = [...document.querySelectorAll("tr, li, .attachment-row, .files-row")];
-            const candidates = [...anchors, ...rows].map((el) => ({
-              tag: el.tagName,
-              text: (el.innerText ?? el.textContent ?? "").slice(0, 300),
-              aria: el.getAttribute("aria-label") ?? "",
-              title: el.getAttribute("title") ?? "",
-              href: el.getAttribute("href") ?? "",
-              rect: (() => { const r = el.getBoundingClientRect?.(); return r ? { x: r.x, y: r.y, w: r.width, h: r.height } : null; })(),
-            }));
-            const match = candidates.find((c) =>
-              (c.text && c.text.includes(needle)) ||
-              (c.aria && c.aria.includes(needle)) ||
-              (c.title && c.title.includes(needle)) ||
-              (c.href && decodeURIComponent(c.href).includes(needle)));
-            return JSON.stringify({ url: location.href, ready: document.readyState, match });
-          })()`,
-          returnByValue: true,
-        });
-        const info = JSON.parse(evalResult.result.value ?? "{}");
-        if (!info.match) {
-          throw liveAcquisitionError("LIVE_TARGET_MISMATCH", `لم يُعثر على عنصر تنزيل يطابق: ${displayName}`);
+        // انتظار جاهزية الصفحة (اعتماد ثقيل Angular) حتى 12 ثانية
+        const stems = attachmentNameStems(displayName);
+        let info = null;
+        const deadline = Date.now() + 12_000;
+        for (;;) {
+          await sleep(1_200);
+          const ready = await sendCdp(ws, "Runtime.evaluate", {
+            expression: "document.readyState",
+            returnByValue: true,
+          });
+          if ((ready.result?.value ?? "") === "complete" || Date.now() > deadline) break;
+        }
+        // حتى 4 محاولات فحص DOM بفواصل — قسم المرفقات قد يتأخر تحميله
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+          await sleep(attempt === 0 ? 800 : 2_200);
+          const evalResult = await sendCdp(ws, "Runtime.evaluate", {
+            expression: `(() => {
+              const stems = ${JSON.stringify(stems)};
+              const anchors = [...document.querySelectorAll("a, button, [role=button]")];
+              const rows = [...document.querySelectorAll("tr, li, .attachment-row, .files-row")];
+              const candidates = [...anchors, ...rows].map((el) => ({
+                tag: el.tagName,
+                text: (el.innerText ?? el.textContent ?? "").slice(0, 300),
+                aria: el.getAttribute("aria-label") ?? "",
+                title: el.getAttribute("title") ?? "",
+                href: el.getAttribute("href") ?? "",
+                rect: (() => { const r = el.getBoundingClientRect?.(); return r ? { x: r.x, y: r.y, w: r.width, h: r.height } : null; })(),
+              }));
+              const hits = (c) => {
+                const hay = [c.text, c.aria, c.title].filter(Boolean).join(" ").replace(/\s+/g, " ");
+                const href = c.href ? decodeURIComponent(c.href) : "";
+                return stems.some((s) => hay.includes(s) || href.includes(s));
+              };
+              const match = candidates.find(hits);
+              return JSON.stringify({ url: location.href, ready: document.readyState, match,
+                attachmentsHint: (document.body.innerText.match(/المرفقات|الملفات/g) || []).length });
+            })()`,
+            returnByValue: true,
+          });
+          info = JSON.parse(evalResult.result.value ?? "{}");
+          if (info.match) break;
+        }
+        if (!info?.match) {
+          throw liveAcquisitionError("LIVE_TARGET_MISMATCH", `لم يُعثر على عنصر تنزيل يطابق: ${displayName} (بعد انتظار وإعادة فحص صفحة المنافسة)`);
         }
         return {
           ready: info.ready === "complete",
@@ -137,26 +163,32 @@ export function createEtimadLiveDriver({ cdpPort = 9333, downloadPollMs = 250 } 
         });
         await sendCdp(ws, "Page.navigate", { url: trustedTenderUrl });
         await sleep(2_000);
-        // النقر على العنصر المطابق displayName فقط — محصور بالنص، بلا selectors شراء
-        const needle = normalizeArabicText(displayName);
-        await sendCdp(ws, "Runtime.evaluate", {
-          expression: `(() => {
-            const needle = ${JSON.stringify(needle)};
-            const anchors = [...document.querySelectorAll("a")];
-            const target = anchors.find((a) => {
-              const hay = [a.innerText, a.textContent, a.getAttribute("aria-label"), a.getAttribute("title"), a.getAttribute("href")]
-                .map((x) => (x ?? "").toString()).join(" ");
-              return hay.includes(needle);
-            });
-            if (!target) return "NO_MATCH";
-            target.scrollIntoView({ block: "center" });
-            target.click();
-            return "CLICKED";
-          })()`,
-          returnByValue: true,
-        }).then((r) => {
-          if (r.result.value !== "CLICKED") throw liveAcquisitionError("LIVE_TARGET_MISMATCH", "تعذر النقر على عنصر التنزيل المطابق.");
-        });
+        // النقر على العنصر المطابق displayName فقط — محصور بمطابقة الجذر، بلا selectors شراء
+        const stems = attachmentNameStems(displayName);
+        let clicked = "NO_MATCH";
+        for (let attempt = 0; attempt < 3 && clicked !== "CLICKED"; attempt += 1) {
+          await sleep(attempt === 0 ? 800 : 2_200);
+          const clickEval = await sendCdp(ws, "Runtime.evaluate", {
+            expression: `(() => {
+              const stems = ${JSON.stringify(stems)};
+              const els = [...document.querySelectorAll("a, button, [role=button], tr")];
+              const target = els.find((el) => {
+                const hay = [el.innerText, el.textContent, el.getAttribute("aria-label"), el.getAttribute("title"), el.getAttribute("href")]
+                  .map((x) => (x ?? "").toString()).join(" ").replace(/\s+/g, " ");
+                return stems.some((s) => hay.includes(s));
+              });
+              if (!target) return "NO_MATCH";
+              target.scrollIntoView({ block: "center" });
+              target.click();
+              return "CLICKED";
+            })()`,
+            returnByValue: true,
+          });
+          clicked = clickEval.result?.value ?? "NO_MATCH";
+        }
+        if (clicked !== "CLICKED") {
+          throw liveAcquisitionError("LIVE_TARGET_MISMATCH", "تعذر النقر على عنصر التنزيل المطابق بعد إعادة الفحص.");
+        }
 
         // مراقبة الملف في الحجر حتى يكتمل أو يتجاوز الحجم أو تنتهي المهلة
         const deadline = Date.now() + timeoutMs;

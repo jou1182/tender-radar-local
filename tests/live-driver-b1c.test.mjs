@@ -70,6 +70,11 @@ wss.on("connection", (ws) => {
         }
         return;
       }
+      // طلب readyState المباشر (سطر بسيط بلا needle)
+      if (expr.trim() === "document.readyState") {
+        ws.send(JSON.stringify({ id, result: { result: { value: "complete" } } }));
+        return;
+      }
       // طلب preflight — المحاكاة تطابق دائمًا (سلوك الصفحة الحقيقية بعد رصد المرفق)
       const matched = true;
       ws.send(JSON.stringify({
