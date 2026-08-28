@@ -11,7 +11,7 @@
 // 4) نقل ذري: من quarantine إلى المسار النهائي hard-link (لا استبدال ملف قائم).
 // السائق لا يقرأ كلمات سر ولا يفتح جلسات جديدة ولا ينفذ أي purchase flow.
 import path from "node:path";
-import { mkdir, readdir, copyFile, rm } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 import { liveAcquisitionError } from "./live-attachment-acquisition.mjs";
 
@@ -69,7 +69,7 @@ async function fetchVersionAndTarget(port) {
   return { browser: version.Browser ?? "", target: page };
 }
 
-export function createEtimadLiveDriver({ cdpPort = 9333, downloadPollMs = 250 } = {}) {
+export function createEtimadLiveDriver({ cdpPort = 9333 } = {}) {
   return {
     kind: "etimad-human-chrome-cdp",
     async preflight({ tender, trustedTenderUrl, displayName }) {
@@ -122,7 +122,7 @@ export function createEtimadLiveDriver({ cdpPort = 9333, downloadPollMs = 250 } 
                 rect: (() => { const r = el.getBoundingClientRect?.(); return r ? { x: r.x, y: r.y, w: r.width, h: r.height } : null; })(),
               }));
               const hits = (c) => {
-                const hay = [c.text, c.aria, c.title].filter(Boolean).join(" ").replace(/\s+/g, " ").toLowerCase();
+                const hay = [c.text, c.aria, c.title].filter(Boolean).join(" ").toLowerCase();
                 const href = c.href ? decodeURIComponent(c.href).toLowerCase() : "";
                 return stems.some((s) => hay.includes(s) || href.includes(s));
               };
@@ -155,7 +155,7 @@ export function createEtimadLiveDriver({ cdpPort = 9333, downloadPollMs = 250 } 
       }
     },
 
-    async acquire({ tender, trustedTenderUrl, displayName, target, quarantinePath, signal, maxBytes, timeoutMs }) {
+    async acquire({ trustedTenderUrl, displayName, target, quarantinePath, signal, maxBytes, timeoutMs }) {
       void target;
       const { target: page } = await fetchVersionAndTarget(cdpPort);
       const ws = new WebSocket(page.webSocketDebuggerUrl);
@@ -163,86 +163,79 @@ export function createEtimadLiveDriver({ cdpPort = 9333, downloadPollMs = 250 } 
         ws.onopen = resolve;
         ws.onerror = () => reject(liveAcquisitionError("LIVE_CDP_ERROR", "تعذر الاتصال بصفحة Chrome للتنزيل."));
       });
-      const quarantineDir = path.dirname(quarantinePath);
-      const chromeQuarantineDir = quarantinePath;
-      await mkdir(quarantineDir, { recursive: true });
+      const deadline = Date.now() + timeoutMs;
       try {
-        // توجيه التنزيلات إلى مجلد الحجر (مطلق بنفس مسار الحجر)
-        await sendCdp(ws, "Page.setDownloadBehavior", {
-          behavior: "allow",
-          downloadPath: quarantineDir,
-        });
+        await sendCdp(ws, "Page.enable");
         await sendCdp(ws, "Page.navigate", { url: trustedTenderUrl });
+        for (;;) {
+          await sleep(1_500);
+          if (signal?.aborted) throw liveAcquisitionError("LIVE_ADAPTER_DISABLED", "أُلغيت عملية التنزيل.");
+          const ready = await sendCdp(ws, "Runtime.evaluate", { expression: "document.readyState", returnByValue: true });
+          if ((ready.result?.value ?? "") === "complete" || Date.now() > deadline) break;
+        }
         await sleep(2_000);
-        // مرفقات اعتماد داخل تبويب «المرفق» — انقره قبل البحث عن الملف
         await sendCdp(ws, "Runtime.evaluate", {
           expression: `(() => {
             const tabs = [...document.querySelectorAll('.mat-tab-label, .mdc-tab, [role=tab]')];
             const att = tabs.find((t) => (t.innerText || '').includes('المرفق'));
-            att?.click();
-            return att ? 'TAB_CLICKED' : 'TAB_NOT_FOUND';
+            att && att.click();
           })()`,
           returnByValue: true,
         });
-        // النقر على العنصر المطابق displayName فقط — محصور بمطابقة الجذر، بلا selectors شراء
+        await sleep(3_000);
+
         const stems = attachmentNameStems(displayName);
-        let clicked = "NO_MATCH";
-        for (let attempt = 0; attempt < 3 && clicked !== "CLICKED"; attempt += 1) {
-          await sleep(attempt === 0 ? 800 : 2_200);
-          const clickEval = await sendCdp(ws, "Runtime.evaluate", {
-            expression: `(() => {
-              const stems = ${JSON.stringify(stems)};
-              const els = [...document.querySelectorAll("a, button, [role=button], tr")];
-              const target = els.find((el) => {
-                const hay = [el.innerText, el.textContent, el.getAttribute("aria-label"), el.getAttribute("title"), el.getAttribute("href")]
-                  .map((x) => (x ?? "").toString()).join(" ").replace(/\s+/g, " ").toLowerCase();
-                return stems.some((s) => hay.includes(s));
-              });
-              if (!target) return "NO_MATCH";
-              target.scrollIntoView({ block: "center" });
-              target.click();
-              return "CLICKED";
-            })()`,
-            returnByValue: true,
-          });
-          clicked = clickEval.result?.value ?? "NO_MATCH";
+        const anchorInfo = await sendCdp(ws, "Runtime.evaluate", {
+          expression: `(() => {
+            const stems = ${JSON.stringify(stems)};
+            const a = [...document.querySelectorAll("a")].find((el) => {
+              const hay = [el.innerText, el.textContent].map((x) => (x || "").toString()).join(" ").toLowerCase();
+              return stems.some((s) => hay.includes(s));
+            });
+            if (!a) return "NO_MATCH";
+            const onclick = a.getAttribute("onclick") || "";
+            const m = onclick.match(/RedirectURL\\s*\\(\\s*'([^']+)'\\s*,\\s*'([^']+)'\\s*\\)/);
+            if (!m) return JSON.stringify({ noRedirect: true, outer: a.outerHTML.slice(0, 200) });
+            return JSON.stringify({ guid: m[1], fileName: m[2] });
+          })()`,
+          returnByValue: true,
+        });
+        const anchorRaw = anchorInfo.result?.value;
+        if (anchorRaw === "NO_MATCH") {
+          throw liveAcquisitionError("LIVE_TARGET_MISMATCH", `لم يُعثر على رابط تنزيل يطابق: ${displayName}`);
         }
-        if (clicked !== "CLICKED") {
-          throw liveAcquisitionError("LIVE_TARGET_MISMATCH", "تعذر النقر على عنصر التنزيل المطابق بعد إعادة الفحص.");
+        const anchor = JSON.parse(anchorRaw);
+        if (anchor.noRedirect) {
+          throw liveAcquisitionError("LIVE_TARGET_MISMATCH", "رابط الملف لا يحمل نمط RedirectURL المعروف — قد تكون الواجهة تغيرت.");
         }
 
-        // مراقبة الملف في الحجر حتى يكتمل أو يتجاوز الحجم أو تنتهي المهلة
-        const deadline = Date.now() + timeoutMs;
-        let lastSize = -1;
-        let stableTicks = 0;
-        for (;;) {
-          if (signal?.aborted) throw liveAcquisitionError("LIVE_ADAPTER_DISABLED", "أُلغيت عملية التنزيل.");
-          await sleep(downloadPollMs, undefined, { signal });
-          const files = await readdir(quarantineDir).catch(() => []);
-          const partFiles = files.filter((f) => f.endsWith(".crdownload") || f.endsWith(".tmp") || f === "download");
-          const doneFiles = files.filter((f) => !f.endsWith(".crdownload") && !f.endsWith(".tmp"));
-          let totalSize = 0;
-          for (const f of [...partFiles, ...doneFiles]) {
-            const s = await import("node:fs/promises").then((fs) => fs.stat(path.join(quarantineDir, f)).catch(() => null));
-            if (s) totalSize += s.size;
-          }
-          if (totalSize > maxBytes) throw liveAcquisitionError("LIVE_FILE_TOO_LARGE", `تجاوز الملف ${maxBytes} بايت أثناء النقل.`);
-          if (doneFiles.length > 0 && partFiles.length === 0) {
-            // اكتمل التنزيل: انسخ الملف المكتمل إلى quarantinePath المتوقع
-            const src = path.join(quarantineDir, doneFiles[0]);
-            await copyFile(src, quarantinePath);
-            await rm(src, { force: true }).catch(() => {});
-            return { contentType: null, bytes: totalSize, completedAt: new Date().toISOString() };
-          }
-          if (totalSize === lastSize) stableTicks += 1; else stableTicks = 0;
-          lastSize = totalSize;
-          if (Date.now() > deadline) {
-            throw liveAcquisitionError("LIVE_DOWNLOAD_TIMEOUT", `تجاوزت محاولة الملف ${Math.round(timeoutMs / 1000)} ثانية.`);
-          }
-          if (stableTicks > 40 && partFiles.length === 0 && doneFiles.length === 0) {
-            throw liveAcquisitionError("LIVE_DOWNLOAD_TIMEOUT", "لم يبدأ التنزيل إطلاقًا خلال المهلة.");
-          }
-        }
+        const fetchRes = await sendCdp(ws, "Runtime.evaluate", {
+          expression: `(async () => {
+            const resp = await fetch('/Upload/getfile/' + ${JSON.stringify(anchor.guid)} + ':' + ${JSON.stringify(anchor.fileName)}, { credentials: 'include' });
+            const ct = resp.headers.get('content-type');
+            const cd = resp.headers.get('content-disposition');
+            if (!resp.ok) return JSON.stringify({ err: resp.status, ct });
+            const buf = await resp.arrayBuffer();
+            const bytes = new Uint8Array(buf);
+            if (bytes.length > ${Math.min(maxBytes, 80 * 1024 * 1024)}) return JSON.stringify({ err: 'TOO_LARGE', bytes: bytes.length });
+            let bin = '';
+            const chunk = 0x8000;
+            for (let i = 0; i < bytes.length; i += chunk) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+            return JSON.stringify({ ct, cd, bytes: bytes.length, b64: btoa(bin) });
+          })()`,
+          returnByValue: true,
+          awaitPromise: true,
+        });
+        const inner = fetchRes.result?.value;
+        if (!inner) throw liveAcquisitionError("LIVE_DOWNLOAD_FAILED", "لم تُعد الصفحة نتيجة الجلب.");
+        const fetched = JSON.parse(inner);
+        if (fetched.err === "TOO_LARGE") throw liveAcquisitionError("LIVE_FILE_TOO_LARGE", "تجاوز الملف الحد المسموح.");
+        if (fetched.err) throw liveAcquisitionError("LIVE_DOWNLOAD_FAILED", `رفض الخادم الطلب: ${fetched.err} ${fetched.ct ?? ""}`);
+        const bytes = Buffer.from(fetched.b64, "base64");
+        if (bytes.length > maxBytes) throw liveAcquisitionError("LIVE_FILE_TOO_LARGE", `تجاوز الملف ${maxBytes} بايت.`);
+        await mkdir(path.dirname(quarantinePath), { recursive: true });
+        await writeFile(quarantinePath, bytes);
+        return { contentType: fetched.ct ?? null, bytes: bytes.length, completedAt: new Date().toISOString() };
       } finally {
         try { ws.close(); } catch { /* تجاهل */ }
       }

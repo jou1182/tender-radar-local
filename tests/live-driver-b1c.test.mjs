@@ -3,10 +3,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdtemp, mkdir, writeFile, readFile, stat, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { WebSocketServer, WebSocket } from "ws";
+import { WebSocketServer } from "ws";
 
 process.env.RADAR_DB_ROOT = await mkdtemp(path.join(os.tmpdir(), "radar-b1c-"));
 
@@ -49,6 +49,10 @@ wss.on("connection", (ws) => {
     }
     if (method === "Runtime.evaluate") {
       const expr = String(params.expression ?? "");
+      if (expr.includes("RedirectURL")) {
+        ws.send(JSON.stringify({ id, result: { result: { value: JSON.stringify({ guid: "idd_sim-1234", fileName: "نطاق العمل.pdf" }) } } }));
+        return;
+      }
       if (expr.includes("CLICKED") || expr.includes("NO_MATCH")) {
         // طلب النقر — حلّل ما إذا كنا نسمح بالنقر أم نرفض
         if (clickResult === "CLICKED") {
@@ -78,6 +82,19 @@ wss.on("connection", (ws) => {
       // نقر تبويب المرفقات — المحاكاة تقبله بصمت
       if (expr.includes("TAB_CLICKED") || expr.includes("TAB_NOT_FOUND")) {
         ws.send(JSON.stringify({ id, result: { result: { value: "TAB_CLICKED" } } }));
+        return;
+      }
+      // استخراج RedirectURL — المحاكاة تعيد guid/fileName وهميين
+      if (expr.includes("RedirectURL")) {
+        ws.send(JSON.stringify({ id, result: { result: { value: JSON.stringify({ guid: "idd_sim-1234", fileName: "نطاق العمل.pdf" }) } } }));
+        return;
+      }
+      // fetch داخل الصفحة — المحاكاة تعيد PDF وهمي base64
+      if (expr.includes("btoa") || expr.includes("credentials: 'include'")) {
+        const pdf = Buffer.from("%PDF-1.4\nsim-bytes".repeat(30));
+        ws.send(JSON.stringify({ id, result: { result: { value: JSON.stringify({
+          ct: "application/pdf", cd: "attachment", bytes: pdf.length, b64: pdf.toString("base64"),
+        }) } } }));
         return;
       }
       // طلب preflight — المحاكاة تطابق دائمًا (سلوك الصفحة الحقيقية بعد رصد المرفق)

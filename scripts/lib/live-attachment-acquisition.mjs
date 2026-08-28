@@ -5,7 +5,6 @@ import { link, mkdir, open, readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { allowedDownloadExtensions, fileExtension, hashDownloadManifest, maxFileBytes } from "./download-gate.mjs";
-import { isTrustedEtimadDetailsUrl } from "./fee-evidence.mjs";
 import { resolveAttachmentStoragePath } from "./attachment-storage.mjs";
 
 export const liveEnabledEnvName = "RADAR_LIVE_DOWNLOAD_ENABLED";
