@@ -122,8 +122,8 @@ export function createEtimadLiveDriver({ cdpPort = 9333, downloadPollMs = 250 } 
                 rect: (() => { const r = el.getBoundingClientRect?.(); return r ? { x: r.x, y: r.y, w: r.width, h: r.height } : null; })(),
               }));
               const hits = (c) => {
-                const hay = [c.text, c.aria, c.title].filter(Boolean).join(" ").replace(/\s+/g, " ");
-                const href = c.href ? decodeURIComponent(c.href) : "";
+                const hay = [c.text, c.aria, c.title].filter(Boolean).join(" ").replace(/\s+/g, " ").toLowerCase();
+                const href = c.href ? decodeURIComponent(c.href).toLowerCase() : "";
                 return stems.some((s) => hay.includes(s) || href.includes(s));
               };
               const match = candidates.find(hits);
@@ -195,7 +195,7 @@ export function createEtimadLiveDriver({ cdpPort = 9333, downloadPollMs = 250 } 
               const els = [...document.querySelectorAll("a, button, [role=button], tr")];
               const target = els.find((el) => {
                 const hay = [el.innerText, el.textContent, el.getAttribute("aria-label"), el.getAttribute("title"), el.getAttribute("href")]
-                  .map((x) => (x ?? "").toString()).join(" ").replace(/\s+/g, " ");
+                  .map((x) => (x ?? "").toString()).join(" ").replace(/\s+/g, " ").toLowerCase();
                 return stems.some((s) => hay.includes(s));
               });
               if (!target) return "NO_MATCH";
