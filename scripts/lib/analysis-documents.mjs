@@ -169,9 +169,16 @@ function utf16beToString(bytes) {
   return String.fromCharCode(...codes);
 }
 
-function decodePdfString(token) {
+function decodePdfString(token, cidMap = null) {
   if (token.startsWith("<")) {
     const hex = token.slice(1, -1).replace(/\s+/g, "");
+    if (cidMap && hex.length % 4 === 0 && hex.length > 0) {
+      let out = "";
+      for (let i = 0; i + 1 < hex.length; i += 4) {
+        out += cidMap.get(parseInt(hex.slice(i, i + 4), 16)) ?? "";
+      }
+      return out;
+    }
     const bytes = Buffer.from(hex, "hex");
     if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) return utf16beToString(bytes.subarray(2));
     return bytes.toString("latin1");
@@ -179,17 +186,77 @@ function decodePdfString(token) {
   return token.slice(1, -1).replace(/\\([()\\])/g, "$1").replace(/\\n/g, "\n");
 }
 
-function extractPdfTextFromStream(content) {
+function extractPdfTextFromStream(content, pageFonts = null, cidMaps = null) {
   const texts = [];
-  const pattern = /(<[0-9A-Fa-f\s]+>|\((?:[^()\\]|\\.)*\))\s*Tj|\[((?:[\s\S]*?))\]\s*TJ/g;
+  let currentFont = null;
+  const pattern = /\/(F\d+)\s+[\d.]+\s+Tf|(<[0-9A-Fa-f\s]+>|\((?:[^()\\]|\\.)*\))\s*Tj|\[((?:[\s\S]*?))\]\s*TJ/g;
   for (const match of content.matchAll(pattern)) {
-    if (match[1]) texts.push(decodePdfString(match[1]));
-    else if (match[2]) {
-      const parts = [...match[2].matchAll(/(<[0-9A-Fa-f\s]+>|\((?:[^()\\]|\\.)*\))/g)].map((part) => decodePdfString(part[1]));
+    if (match[1]) { currentFont = pageFonts ? (pageFonts.get(match[1]) ?? null) : null; continue; }
+    const cidMap = cidMaps && currentFont ? (cidMaps.get(currentFont) ?? null) : null;
+    if (match[2]) texts.push(decodePdfString(match[2], cidMap));
+    else if (match[3]) {
+      const parts = [...match[3].matchAll(/(<[0-9A-Fa-f\s]+>|\((?:[^()\\]|\\.)*\))/g)].map((part) => decodePdfString(part[1], cidMap));
       texts.push(parts.join(""));
     }
   }
   return texts.filter((line) => line.trim());
+}
+
+
+// ---------- فك ToUnicode CMap (P5-B1): النص العربي في خطوط CID ----------
+// خطوط PDF العربية تُخزن CIDs، والنص الحقيقي في جدول ToUnicode لكل خط. بلا فكه
+// تخرج الحروف العربية مكسورة (\u0003...). الخريطة تُبنى مرة لكل مستند وتُستخدم
+// من decodePdfString عبر سياق الخط الحالي الممرر. الملفات بلا CMap تسلك السلوك القديم.
+function buildCidMaps(objects) {
+  const maps = new Map();
+  for (const [id, body] of objects) {
+    if (!/\/Type\s*\/Font/.test(body)) continue;
+    const toUnicodeRef = body.match(/ToUnicode\s+(\d+)\s+0\s+R/);
+    if (!toUnicodeRef) continue;
+    const streamObj = objects.get(Number(toUnicodeRef[1])) || "";
+    const sm = streamObj.match(/stream\r?\n([\s\S]*?)\r?\n?endstream/);
+    if (!sm) continue;
+    const rawCmap = Buffer.from(sm[1], "latin1");
+    let cmapText;
+    try { cmapText = inflateSync(rawCmap).toString("latin1"); } catch { cmapText = rawCmap.toString("latin1"); }
+    const map = new Map();
+    for (const section of cmapText.matchAll(/beginbfchar([\s\S]*?)endbfchar/g)) {
+      for (const r of section[1].matchAll(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g)) {
+        const cid = parseInt(r[1], 16);
+        const dst = r[2].match(/.{1,4}/g).map((h) => String.fromCharCode(parseInt(h, 16))).join("");
+        map.set(cid, dst);
+      }
+    }
+    for (const section of cmapText.matchAll(/beginbfrange([\s\S]*?)endbfrange/g)) {
+      for (const r of section[1].matchAll(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g)) {
+        const lo = parseInt(r[1], 16), hi = parseInt(r[2], 16), dstStart = parseInt(r[3], 16);
+        if (Number.isFinite(dstStart) && hi >= lo && hi - lo < 65536) {
+          for (let c = lo; c <= hi; c++) map.set(c, String.fromCharCode(dstStart + (c - lo)));
+        }
+      }
+      for (const r of section[1].matchAll(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*\[([^\]]*)\]/g)) {
+        const lo = parseInt(r[1], 16);
+        const items = [...r[3].matchAll(/<([0-9A-Fa-f]+)>/g)].map((x) =>
+          x[1].match(/.{1,4}/g).map((h) => String.fromCharCode(parseInt(h, 16))).join(""));
+        for (let i = 0; i < items.length; i++) map.set(lo + i, items[i]);
+      }
+    }
+    maps.set(id, map);
+  }
+  return maps;
+}
+
+function buildPageFontMaps(objects) {
+  const pageFonts = new Map(); // pageObjId -> Map(F1 -> fontObjId)
+  for (const [id, body] of objects) {
+    if (!/\/Type\s*\/Page\b/.test(body)) continue;
+    const fonts = new Map();
+    const resRef = body.match(/\/Resources\s+(\d+)\s+0\s+R/);
+    const resBody = resRef ? objects.get(Number(resRef[1])) || "" : body;
+    for (const m of resBody.matchAll(/\/(F\d+)\s+(\d+)\s+0\s+R/g)) fonts.set(m[1], Number(m[2]));
+    pageFonts.set(id, fonts);
+  }
+  return pageFonts;
 }
 
 function extractPdfDocument(buffer, maxStreamBytes = defaultMaxPdfStreamBytes) {
@@ -201,6 +268,8 @@ function extractPdfDocument(buffer, maxStreamBytes = defaultMaxPdfStreamBytes) {
   const pagesObject = [...objects.values()].find((body) => /\/Type\s*\/Pages\b/.test(body));
   if (!pagesObject) throw documentError("DOCUMENT_CORRUPT", "ملف PDF بلا شجرة صفحات.");
   const kidOrder = [...pagesObject.matchAll(/(\d+)\s+0\s+R/g)].map((match) => Number(match[1]));
+  const cidMaps = buildCidMaps(objects);
+  const pageFontMaps = buildPageFontMaps(objects);
   const blocks = [];
   kidOrder.forEach((pageId, pageIndex) => {
     const page = objects.get(pageId);
@@ -225,7 +294,14 @@ function extractPdfDocument(buffer, maxStreamBytes = defaultMaxPdfStreamBytes) {
         }
       }
     }
-    const lines = extractPdfTextFromStream(streamContent.toString("latin1"));
+    const pageFonts = pageFontMaps.get(pageId) ?? new Map();
+    const lines = extractPdfTextFromStream(streamContent.toString("latin1"), pageFonts, cidMaps)
+      .map((line) => line
+        .replace(/\bar-SA\b/g, " ")
+        .replace(/[\u2022\u25AA\u25E6\u00B7]/g, " ")
+        .replace(/\s{2,}/g, " ")
+        .trim())
+      .filter(Boolean);
     if (!lines.length) warnings.push(`الصفحة ${pageIndex + 1} بلا نص قابل للاستخراج`);
     lines.forEach((text, lineIndex) => {
       blocks.push({
@@ -237,6 +313,21 @@ function extractPdfDocument(buffer, maxStreamBytes = defaultMaxPdfStreamBytes) {
     });
   });
   if (!blocks.length) throw documentError("DOCUMENT_NO_TEXT", "لم يُستخرج أي نص من ملف PDF.");
+  // P5-B1C: تطبيع NFKC (أشكال العرض العربية FB50–FEFF → حروف قياسية) + إصلاح ترتيب
+  // الأسطر العربية الخالصة المستخرجة بصريًا (visual order → logical order).
+  for (const block of blocks) {
+    const original = block.text;
+    const hadPresentationForms = /[\uFB50-\uFEFF]/.test(original);
+    const normalized = original.normalize("NFKC");
+    const arabicChars = (normalized.match(/[\u0600-\u06FF]/g) || []).length;
+    const totalChars = normalized.replace(/\s/g, "").length;
+    block.text = hadPresentationForms && totalChars > 0 && arabicChars / totalChars > 0.6
+      ? [...normalized].reverse().join("")
+          .replace(/ا‏/g, "") 
+          .replace(/األ/g, "الأ").replace(/اإل/g, "الإ").replace(/اآل/g, "الآ")
+          .replace(/\s{2,}/g, " ")
+      : normalized;
+  }
   return { blocks, tables: [], warnings };
 }
 
