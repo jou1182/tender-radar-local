@@ -75,6 +75,11 @@ wss.on("connection", (ws) => {
         ws.send(JSON.stringify({ id, result: { result: { value: "complete" } } }));
         return;
       }
+      // نقر تبويب المرفقات — المحاكاة تقبله بصمت
+      if (expr.includes("TAB_CLICKED") || expr.includes("TAB_NOT_FOUND")) {
+        ws.send(JSON.stringify({ id, result: { result: { value: "TAB_CLICKED" } } }));
+        return;
+      }
       // طلب preflight — المحاكاة تطابق دائمًا (سلوك الصفحة الحقيقية بعد رصد المرفق)
       const matched = true;
       ws.send(JSON.stringify({

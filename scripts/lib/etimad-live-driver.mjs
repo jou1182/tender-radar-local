@@ -94,6 +94,17 @@ export function createEtimadLiveDriver({ cdpPort = 9333, downloadPollMs = 250 } 
           });
           if ((ready.result?.value ?? "") === "complete" || Date.now() > deadline) break;
         }
+        // مرفقات اعتماد داخل تبويب «المرفق» — انقره أولًا (قد يكون MDC أو mat)
+        await sendCdp(ws, "Runtime.evaluate", {
+          expression: `(() => {
+            const tabs = [...document.querySelectorAll('.mat-tab-label, .mdc-tab, [role=tab]')];
+            const att = tabs.find((t) => (t.innerText || '').includes('المرفق'));
+            att?.click();
+            return att ? 'TAB_CLICKED' : 'TAB_NOT_FOUND';
+          })()`,
+          returnByValue: true,
+        });
+
         // حتى 4 محاولات فحص DOM بفواصل — قسم المرفقات قد يتأخر تحميله
         for (let attempt = 0; attempt < 4; attempt += 1) {
           await sleep(attempt === 0 ? 800 : 2_200);
@@ -163,6 +174,16 @@ export function createEtimadLiveDriver({ cdpPort = 9333, downloadPollMs = 250 } 
         });
         await sendCdp(ws, "Page.navigate", { url: trustedTenderUrl });
         await sleep(2_000);
+        // مرفقات اعتماد داخل تبويب «المرفق» — انقره قبل البحث عن الملف
+        await sendCdp(ws, "Runtime.evaluate", {
+          expression: `(() => {
+            const tabs = [...document.querySelectorAll('.mat-tab-label, .mdc-tab, [role=tab]')];
+            const att = tabs.find((t) => (t.innerText || '').includes('المرفق'));
+            att?.click();
+            return att ? 'TAB_CLICKED' : 'TAB_NOT_FOUND';
+          })()`,
+          returnByValue: true,
+        });
         // النقر على العنصر المطابق displayName فقط — محصور بمطابقة الجذر، بلا selectors شراء
         const stems = attachmentNameStems(displayName);
         let clicked = "NO_MATCH";
