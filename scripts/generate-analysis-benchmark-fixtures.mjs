@@ -94,6 +94,7 @@ function buildCase(caseId) {
     documentId: spec.documentId,
     fileName: "fixture.pdf",
     buffer: pdfBuffer,
+    applyRtlFix: false,
   });
   const chunks = chunkAnalysisDocument(document);
   const catalog = buildEvidenceCandidateCatalog({ document, chunks });

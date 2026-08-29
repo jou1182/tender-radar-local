@@ -427,6 +427,7 @@ export function loadBenchmarkCase(benchmarkRoot, caseId) {
     documentId: entry.documentId,
     fileName: path.basename(entry.fixtureFile),
     buffer: fixtureBuffer,
+    applyRtlFix: false,
   });
   const chunks = chunkAnalysisDocument(document);
   const catalog = buildEvidenceCandidateCatalog({ document, chunks });

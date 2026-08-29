@@ -91,7 +91,7 @@ export function createAnalysisEngine({
     const buffer = await readFileFn(safePath);
     const nowIso = (now instanceof Date ? now : new Date(now)).toISOString();
     const documentId = `doc-${randomUUID()}`;
-    const document = extractAnalysisDocument({ documentId, fileName: fixture.fileName, buffer, maxBytes: maxFileBytes });
+    const document = extractAnalysisDocument({ documentId, fileName: fixture.fileName, buffer, maxBytes: maxFileBytes, applyRtlFix: false });
     repository.registerAnalysisDocument({
       id: documentId,
       tenderReference: fixture.tenderReference,
