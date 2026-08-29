@@ -9,7 +9,7 @@ import { runTrustedDocumentAnalysis } from "./trusted-document-cli.mjs";
 import { extractAnalysisDocument } from "./analysis-documents.mjs";
 import { isFragmentedDocument, assessCoverageBalance, coverageWarningMessage } from "./analysis-quality-gates.mjs";
 
-const TENDER = "260839003247";
+const TENDER = process.argv[2] || "260839003247";
 const env = {
   ...process.env,
   RADAR_AI_ENABLED: "true",
