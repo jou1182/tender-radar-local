@@ -28,10 +28,14 @@ async function serviceBusy() {
 
 // إيجاد صفحة اعتماد في جلسة Chrome البشرية
 async function findEtimadTarget() {
-  const targets = await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`, { signal: AbortSignal.timeout(3_000) }).then((r) => r.json());
-  const page = targets.find((t) => t.type === "page" && (t.url ?? "").includes("etimad.sa"))
-    ?? targets.find((t) => t.type === "page");
-  return page?.webSocketDebuggerUrl ?? null;
+  try {
+    const targets = await fetch(`http://127.0.0.1:${CDP_PORT}/json/list`, { signal: AbortSignal.timeout(3_000) }).then((r) => r.json());
+    const page = targets.find((t) => t.type === "page" && (t.url ?? "").includes("etimad.sa"))
+      ?? targets.find((t) => t.type === "page");
+    return page?.webSocketDebuggerUrl ?? null;
+  } catch {
+    return null; // Chrome غير مفتوح بعد — نعود null بلا انهيار
+  }
 }
 
 let msgId = 0;
