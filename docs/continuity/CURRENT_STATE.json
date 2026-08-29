@@ -9,7 +9,7 @@
     "functionalBaselineMustBeAncestor": true,
     "doNotRequireHeadToEqualFunctionalBaseline": true
   },
-  "lastApprovedFunctionalPhase": "P4-M0AMRM",
+  "lastApprovedFunctionalPhase": "P5-KEEPALIVE",
   "continuityPackagePhase": "P4-H1B",
   "databaseSchemaVersion": 10,
   "feePolicy": "P5-B0PRE (قرار د. جو 2026-08-25): قيمة الكراسة معلوماتية فقط — كل مرفقات أي منافسة قابلة للتنزيل دائمًا؛ بوابة الرسوم وشرط الشراء أُهملوا؛ عبارة الموافقة الصريحة هي الحارس الوحيد",
@@ -46,7 +46,9 @@
     "p5a1": { "phase": "P5-A1", "commit": "5021b16", "passed": 325, "failed": 0 },
     "p5d0": { "phase": "P5-D0", "commit": "4a8bbb7", "passed": 329, "failed": 0 },
     "p5b0pre": { "phase": "P5-B0PRE", "commit": "45588a6", "passed": 333, "failed": 0 },
-    "p5f1": { "phase": "P5-F1", "commit": "f56f558", "passed": 337, "failed": 0 }
+    "p5f1": { "phase": "P5-F1", "commit": "f56f558", "passed": 337, "failed": 0 },
+    "p5b1": { "phase": "P5-B1+RTL2", "commit": "9b0c094", "passed": 353, "failed": 0 },
+    "p5keepalive": { "phase": "P5-KEEPALIVE", "commit": "efd6d97", "passed": 353, "failed": 0 }
   },
   "agentTeam": {
     "phase": "P5-F0",
@@ -194,6 +196,9 @@
   ],
   "authoritativeDocuments": [
     "AGENTS.md",
+    "docs/continuity/SSOT.md",
+    "docs/continuity/USER_GUIDE.md",
+    "docs/continuity/DEVELOPER_GUIDE.md",
     "docs/continuity/PROJECT_HANDOFF.md",
     "docs/continuity/CURRENT_STATE.json",
     "docs/continuity/PHASE_LEDGER.md",
