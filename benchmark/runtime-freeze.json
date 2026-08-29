@@ -4,13 +4,13 @@
   "files": {
     "scripts/lib/analysis-api.mjs": "1d6f18094bf8af98c3ced1cf9061c93fb84521dd100e268f393ebacd4b0561c1",
     "scripts/lib/analysis-chunking.mjs": "7bbc8dcbcc388a7675c44be6e175051d0a2565240610bbb969f263ad9c49bc0f",
-    "scripts/lib/analysis-documents.mjs": "e375eb5f36e9041bec78563efae9cbd2d212d08d3896b77f4753a282a54103b4",
-    "scripts/lib/analysis-engine.mjs": "554697752623558e81b5fb02a31a04802268e7892d912b38c5a04d4b8f6dd047",
+    "scripts/lib/analysis-documents.mjs": "eada95ea1f5023fbe3e57d79dd3430ac53b71934371daf4c6f7917637f56b703",
+    "scripts/lib/analysis-engine.mjs": "7b16a828c81c28e757eda6d29d4a4575b906518ca7a4de54b416f6383240b093",
     "scripts/lib/analysis-evidence-candidates.mjs": "973908242634f5273754890eaec77fcb74c612c86653464bc6c6abf8f1ed0769",
     "scripts/lib/analysis-fixtures.mjs": "83ef120e6e39eef1816087da1ac0a7f76a8feaffbe92094f921b4c39b4a33943",
     "scripts/lib/analysis-model-selection.mjs": "1be8e957e35ee39e526ee7793e3ac0ed64fda98eaff5a6a3d42ada3347932ea4",
     "scripts/lib/analysis-providers.mjs": "f5f06e35e0c20b8d3f0db136b932ab15321b795e0497655697c85c81bc3dc77f",
     "scripts/lib/analysis-report.mjs": "da09e84c07f14776451293f1c96664bf9d72a1f34bb4d925d07deae63b8a4f56"
   },
-  "note": " | P5-B1: analysis-documents.mjs حدث بفك ToUnicode CMap بموافقة المالك (إصلاح النص العربي المكسور) — سلوك fixtures اللاتينية ثابت."
+  "note": " | P5-B1: analysis-documents.mjs حدث بفك ToUnicode CMap بموافقة المالك (إصلاح النص العربي المكسور) — سلوك fixtures اللاتينية ثابت. | P5-POPPLER: أضيف مسار poppler-fallback للـPDF المجزأ بموافقة المالك + حقل extractionMethod في analysis-documents.mjs وanalysis-engine.mjs — سلوك fixtures اللاتينية ثابت (لا تحويل لأن متوسط كتلتها سليم)."
 }

@@ -535,6 +535,9 @@ export async function createRadarRepository({ projectRoot }) {
 
   ensureColumn("agents", "system_instructions", "system_instructions TEXT NOT NULL DEFAULT ''");
 
+  // P5-POPPLER: تسجيل طريقة الاستخراج لكل مستند تحليل (pdfjs | poppler-fallback | pdfjs-fragmented).
+  ensureColumn("analysis_documents", "extraction_method", "extraction_method TEXT NOT NULL DEFAULT 'pdfjs'");
+
   // موافقات v4 لم تكن مرتبطة بنطاق أو مدة؛ تُبطل صراحة ولا يمكن توريثها إلى مسار تنزيل حي.
   database.prepare(`
     UPDATE approvals SET status = 'revoked', revoked_at = COALESCE(revoked_at, ?)
@@ -845,8 +848,8 @@ export async function createRadarRepository({ projectRoot }) {
     insertAnalysisDocument: database.prepare(`
       INSERT INTO analysis_documents (
         id, tender_reference, document_type, original_file_name, local_stored_name,
-        checksum, mime_type, size_bytes, source_kind, fixture_id, registered_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'fixture', ?, ?)
+        checksum, mime_type, size_bytes, source_kind, fixture_id, registered_at, extraction_method
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'fixture', ?, ?, ?)
     `),
     getAnalysisDocument: database.prepare("SELECT * FROM analysis_documents WHERE id = ?"),
     insertAnalysisJob: database.prepare(`
@@ -1648,11 +1651,11 @@ export async function createRadarRepository({ projectRoot }) {
   }
 
   // ---------- P4-A0: تحليل المستندات المحلي ----------
-  function registerAnalysisDocument({ id, tenderReference, documentType, originalFileName, localStoredName, checksum, mimeType, sizeBytes, fixtureId, now }) {
+  function registerAnalysisDocument({ id, tenderReference, documentType, originalFileName, localStoredName, checksum, mimeType, sizeBytes, fixtureId, now, extractionMethod }) {
     const nowIso = now instanceof Date ? now.toISOString() : String(now || new Date().toISOString());
     statements.insertAnalysisDocument.run(
       id, tenderReference || "", documentType, originalFileName, localStoredName,
-      checksum, mimeType, Number(sizeBytes), fixtureId || "", nowIso,
+      checksum, mimeType, Number(sizeBytes), fixtureId || "", nowIso, extractionMethod || "pdfjs",
     );
     return statements.getAnalysisDocument.get(id);
   }
@@ -1671,6 +1674,7 @@ export async function createRadarRepository({ projectRoot }) {
       sourceKind: row.source_kind,
       fixtureId: row.fixture_id,
       registeredAt: row.registered_at,
+      extractionMethod: row.extraction_method ?? "pdfjs",
     };
   }
 

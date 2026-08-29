@@ -221,6 +221,7 @@ export function createAnalysisEngine({
       sizeBytes: document.sizeBytes,
       fixtureId: "",
       now: nowIso,
+      extractionMethod: document.extractionMethod ?? "pdfjs",
     });
     const config = readAnalysisAiConfig(env);
     const jobId = `analysis-job-${randomUUID()}`;

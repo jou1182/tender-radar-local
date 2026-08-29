@@ -4,6 +4,9 @@
 // لا تنفذ أي macros أو روابط أو محتوى مضمن؛ القراءة نصية حتمية فقط.
 import { createHash } from "node:crypto";
 import { inflateRawSync, inflateSync } from "node:zlib";
+import { writeFileSync, rmSync, mkdtempSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import os from "node:os";
 import path from "node:path";
 
 export const supportedDocumentTypes = ["pdf", "xlsx", "docx"];
@@ -353,6 +356,59 @@ function extractPdfDocument(buffer, { maxStreamBytes = defaultMaxPdfStreamBytes,
   return { blocks, tables: [], warnings };
 }
 
+// ---------- مسار بديل P5-POPPLER: استخراج PDF عبر pdftotext -enc UTF-8 ----------
+// بعض كراسات اعتماد مولّدة من Word/Excel LTSC تُصدَّر PDF بخطوط Type0 بلا
+// ToUnicode CMap، فيخرج المستخرج المضمّن نصها حروفًا منفردة. pdftotext (poppler)
+// يقرأ هذه الخطوط عبر جدول الترميز الداخلي، لكنه يخرج الكلمات معكوسة الحروف
+// (visual order). نستدعيه خارجيًا ثم نطبّق fixArabicVisualOrder (نفس منطق RTL-2)
+// لعكس ترتيب الكلمات وعكس حروف كل كلمة عربية فقط.
+// ملاحظة أمان: المُدخل buffer يُكتب إلى ملف مؤقت في مجلد نظام، ويُحذف فورًا بعد
+// القراءة. لا يُمرَّر أي مسار من المستدعي؛ اسم الملف المؤقت مولّد ذاتيًا.
+export function extractPdfViaPoppler(buffer, { applyRtlFix = true, pdftotextPath = "pdftotext", maxStreamBytes = defaultMaxPdfStreamBytes } = {}) {
+  const warnings = [];
+  const tmpDir = mkdtempSync(path.join(os.tmpdir(), "radar-pdf-"));
+  const tmpFile = path.join(tmpDir, "document.pdf");
+  let stdout = "";
+  try {
+    writeFileSync(tmpFile, buffer);
+    // -raw يحافظ على الأسطر بترتيبها البصري؛ -enc UTF-8 يفرض فك الترميز العربي.
+    stdout = execFileSync(pdftotextPath, ["-enc", "UTF-8", "-raw", tmpFile, "-"], {
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+      windowsHide: true,
+      timeout: 60_000,
+    });
+  } catch (error) {
+    warnings.push(`poppler فشل: ${String(error?.message || error).slice(0, 200)}`);
+  } finally {
+    try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* تجاهل فشل الحذف */ }
+  }
+  if (!stdout.trim()) {
+    throw documentError("DOCUMENT_NO_TEXT", "لم يُستخرج أي نص من ملف PDF عبر poppler.");
+  }
+  // الصفحات يفصلها حرف Form Feed (\f). نجزّئ إلى صفحات ثم أسطر ثم كتل.
+  const blocks = [];
+  stdout.split(/\f/).forEach((pageText, pageIndex) => {
+    pageText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).forEach((line, lineIndex) => {
+      let text = line.normalize("NFKC").trim();
+      if (applyRtlFix) {
+        text = fixArabicVisualOrder(text);
+        text = text.replace(/األ/g, "الأ").replace(/اإل/g, "الإ").replace(/اآل/g, "الآ");
+      }
+      text = text.replace(/\s{2,}/g, " ").trim();
+      if (!text) return;
+      blocks.push({
+        blockId: `p${pageIndex + 1}-l${lineIndex + 1}`,
+        kind: "page-text",
+        text,
+        source: { pageNumber: pageIndex + 1 },
+      });
+    });
+  });
+  if (!blocks.length) throw documentError("DOCUMENT_NO_TEXT", "لم يُستخرج أي نص من ملف PDF عبر poppler.");
+  return { blocks, tables: [], warnings, extractionMethod: "poppler-fallback" };
+}
+
 // ---------- مستخرج XLSX: أوراق مسماة وخلايا ذات عناوين ----------
 function extractXlsxDocument(buffer) {
   const warnings = [];
@@ -464,11 +520,33 @@ function extractDocxDocument(buffer) {
 }
 
 // ---------- نقطة الدخول الموحدة ----------
-export function extractAnalysisDocument({ documentId, fileName, buffer, maxBytes, maxStreamBytes, applyRtlFix = true }) {
+export function extractAnalysisDocument({ documentId, fileName, buffer, maxBytes, maxStreamBytes, applyRtlFix = true, allowPopplerFallback = true }) {
   const inspected = inspectDocumentBuffer({ fileName, buffer, maxBytes });
   let extracted;
-  if (inspected.documentType === "pdf") extracted = extractPdfDocument(buffer, { maxStreamBytes: maxStreamBytes ?? defaultMaxPdfStreamBytes, applyRtlFix });
-  else if (inspected.documentType === "xlsx") extracted = extractXlsxDocument(buffer);
+  if (inspected.documentType === "pdf") {
+    extracted = extractPdfDocument(buffer, { maxStreamBytes: maxStreamBytes ?? defaultMaxPdfStreamBytes, applyRtlFix });
+    // P5-POPPLER: التحويل التلقائي. المستخرج المضمّن نجح لكن نصه مجزأ حرفيًا
+    // (متوسط طول الكتلة <2 حرف) — مؤشر خطوط بلا ToUnicode. نحوّل لـpoppler كبديل.
+    // الملفات التي تنجح أصلًا (متوسط كتلة سليم) تبقى على مسارها ولا تُحوَّل.
+    if (allowPopplerFallback && extracted?.blocks?.length) {
+      const avg = extracted.blocks.reduce((s, b) => s + (String(b?.text ?? "").trim().length), 0) / extracted.blocks.length;
+      if (avg < 2) {
+        try {
+          const fallback = extractPdfViaPoppler(buffer, { applyRtlFix });
+          extracted = { blocks: fallback.blocks, tables: fallback.tables, warnings: [...extracted.warnings, ...fallback.warnings] };
+          extracted.extractionMethod = "poppler-fallback";
+        } catch {
+          // poppler غير متاح أو فشل — نبقى على النتيجة المجزأة ونعلّمها تحذيرًا.
+          extracted.extractionMethod = "pdfjs-fragmented";
+          extracted.warnings.push("النص مجزأ ولم يتوفر مسار poppler البديل.");
+        }
+      } else {
+        extracted.extractionMethod = "pdfjs";
+      }
+    } else {
+      extracted.extractionMethod = "pdfjs";
+    }
+  } else if (inspected.documentType === "xlsx") extracted = extractXlsxDocument(buffer);
   else extracted = extractDocxDocument(buffer);
   return {
     documentId,
@@ -480,5 +558,6 @@ export function extractAnalysisDocument({ documentId, fileName, buffer, maxBytes
     blocks: extracted.blocks,
     tables: extracted.tables,
     warnings: extracted.warnings,
+    extractionMethod: extracted.extractionMethod ?? "pdfjs",
   };
 }
