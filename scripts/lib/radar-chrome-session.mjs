@@ -38,7 +38,7 @@ export function createRadarChromeSession({ privateDir, startUrl, chromePath = pr
         "--start-maximized",
         "--disable-features=Translate",
         startUrl,
-      ], { detached: false, stdio: "ignore", windowsHide: false });
+      ], { detached: true, stdio: "ignore", windowsHide: false });
       launchedProcess.unref();
       if (!(await waitForEndpoint(endpoint))) {
         throw new Error("تعذر فتح Chrome المخصص للرادار. أغلق نافذة الرادار القديمة ثم أعد المحاولة.");

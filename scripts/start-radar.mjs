@@ -66,6 +66,9 @@ if (!existingHealth && existingSite) {
 
 const service = existingHealth ? null : spawn(process.execPath, ["scripts/etimad-sync-service.mjs"], { stdio: "inherit" });
 const site = spawn(command, ["run", "start"], { stdio: "inherit", shell: process.platform === "win32" });
+// P5-KEEPALIVE: نبضة إبقاء جلسة اعتماد حيّة — تبدأ مع المنصة وتتوقف معها.
+// تحمي الجلسة من طرد اعتماد بعد الخمول (توفير إعادة إدخال كلمة سر + OTP).
+const keepalive = spawn(process.execPath, ["scripts/lib/session-keepalive.mjs"], { stdio: "inherit" });
 
 let closing = false;
 function shutdown(code = 0) {
@@ -73,10 +76,12 @@ function shutdown(code = 0) {
   closing = true;
   service?.kill("SIGTERM");
   site.kill("SIGTERM");
+  keepalive.kill("SIGTERM");
   setTimeout(() => process.exit(code), 500);
 }
 
 service?.on("exit", (code) => { if (!closing) shutdown(code ?? 1); });
 site.on("exit", (code) => { if (!closing) shutdown(code ?? 1); });
+keepalive.on("exit", (code) => { /* النبضة عملية مساعدة — لا تُسقط المنصة إن خرجت وحدها */ void code; });
 process.on("SIGINT", () => shutdown(0));
 process.on("SIGTERM", () => shutdown(0));
