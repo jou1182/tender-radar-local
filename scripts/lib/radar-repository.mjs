@@ -1815,6 +1815,28 @@ export async function createRadarRepository({ projectRoot }) {
     }
   }
 
+  // P5-KEEPALIVE: فترة نبضة إبقاء جلسة اعتماد — بالثواني، بحدود آمنة.
+  const keepalivePolicyKey = "keepaliveIntervalSeconds";
+  const keepaliveMinSeconds = 30;
+  const keepaliveMaxSeconds = 300;
+  function getKeepaliveInterval() {
+    const stored = getPolicySetting(keepalivePolicyKey, null);
+    const n = Number(stored);
+    return Number.isFinite(n) && n >= keepaliveMinSeconds && n <= keepaliveMaxSeconds
+      ? Math.round(n)
+      : 60; // الافتراضي دقيقة
+  }
+  function setKeepaliveInterval(seconds) {
+    const n = Number(seconds);
+    if (!Number.isFinite(n) || n < keepaliveMinSeconds || n > keepaliveMaxSeconds) {
+      const error = new Error(`فترة النبضة يجب أن تكون بين ${keepaliveMinSeconds} و${keepaliveMaxSeconds} ثانية.`);
+      error.code = "KEEPALIVE_INTERVAL_INVALID";
+      throw error;
+    }
+    setPolicySetting(keepalivePolicyKey, Math.round(n));
+    return { keepaliveIntervalSeconds: Math.round(n) };
+  }
+
   function saveTenderClassification({ tenderReference, specialtyCode, confidence, method = "rulebook" }) {
     statements.upsertClassification.run(
       String(tenderReference), String(specialtyCode), Number(confidence) || 0,
@@ -1901,6 +1923,8 @@ export async function createRadarRepository({ projectRoot }) {
     updateDownloadQueueState,
     setPolicySetting,
     getPolicySetting,
+    getKeepaliveInterval,
+    setKeepaliveInterval,
     saveTenderClassification,
     getTenderClassification,
     listAgents,

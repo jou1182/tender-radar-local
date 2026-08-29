@@ -4,9 +4,22 @@
 // لا تنزيل ولا تحليل ولا كتابة بيانات — مجرد نشاط خفيف في صفحة اعتماد.
 const CDP_PORT = Number(process.env.RADAR_LIVE_CDP_PORT ?? 9333);
 const SERVICE_URL = process.env.RADAR_SERVICE_URL ?? "http://127.0.0.1:4318";
-const INTERVAL_MS = Number(process.env.KEEPALIVE_INTERVAL_MS ?? 60_000); // كل دقيقة
+const DEFAULT_INTERVAL_MS = Number(process.env.KEEPALIVE_INTERVAL_MS ?? 60_000); // fallback إن تعذر الوصول للخدمة
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// قراءة فترة النبضة الحالية من الخدمة (قابلة للتعديل من لوحة القيادة).
+async function currentIntervalMs() {
+  try {
+    const res = await fetch(`${SERVICE_URL}/keepalive/interval`, { signal: AbortSignal.timeout(2_000) });
+    if (!res.ok) return DEFAULT_INTERVAL_MS;
+    const data = await res.json();
+    const n = Number(data?.keepaliveIntervalSeconds);
+    return Number.isFinite(n) && n > 0 ? n * 1000 : DEFAULT_INTERVAL_MS;
+  } catch {
+    return DEFAULT_INTERVAL_MS;
+  }
+}
 
 // فحص قفل التشابك: هل الخدمة في مزامنة/تنزيل نشط؟
 const busyPhases = new Set(["starting", "scanning", "resuming", "captcha-required", "login-required"]);
@@ -85,9 +98,12 @@ async function pulse() {
   }
 }
 
-console.log(`نبضة إبقاء جلسة اعتماد — كل ${INTERVAL_MS / 1000} ثانية، CDP:${CDP_PORT}، قفل تشابك عبر ${SERVICE_URL}/status`);
+console.log(`نبضة إبقاء جلسة اعتماد — الفترة تُقرأ من الخدمة، CDP:${CDP_PORT}، قفل تشابك عبر ${SERVICE_URL}/status`);
 // لا نبدأ الحلقة عند الاستيراد (للاختبار) — فقط عند التشغيل المباشر.
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, "/").split("/").pop())) {
-  await pulse(); // نبضة فورية عند البدء
-  setInterval(pulse, INTERVAL_MS);
+  // حلقة ذاتية: تُقرأ الفترة من الخدمة قبل كل نبضة فيسري التغيير فورًا.
+  for (;;) {
+    await pulse();
+    await sleep(await currentIntervalMs());
+  }
 }

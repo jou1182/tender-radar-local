@@ -5,7 +5,7 @@ import { demoTenders } from "./demo-tenders";
 import { AgentTeamPanel } from "./agent-team";
 import { AgentManagementScreen } from "./agent-management";
 import { RadarMark } from "./radar-mark";
-import { InsightsPanel, StorageSection } from "./insights-panel";
+import { InsightsPanel, KeepaliveControl, StorageSection } from "./insights-panel";
 import { StatusBar } from "./status-bar";
 import { SmartSearch } from "./smart-search";
 
@@ -848,6 +848,7 @@ return (
               </>}
               {section.id === "dashboard" && <>
                 <InsightsPanel />
+                <KeepaliveControl />
               </>}
               {section.id === "agents" && <>
                 <AgentTeamPanel syncState={syncState} lastSyncAt={syncMeta.lastSyncAt} />

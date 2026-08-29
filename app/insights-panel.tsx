@@ -127,6 +127,63 @@ export function StorageSection() {
   );
 }
 
+// ── P5-KEEPALIVE: خانة ضبط فترة نبضة إبقاء جلسة اعتماد ────────────────────────
+export function KeepaliveControl() {
+  const [interval, setIntervalSec] = useState<number | null>(null);
+  const [input, setInput] = useState("");
+  const [message, setMessage] = useState("");
+
+  const load = useCallback(async () => {
+    try {
+      const d = await fetch(`${SYNC_BASE}/keepalive/interval`).then((r) => r.json());
+      setIntervalSec(d.keepaliveIntervalSeconds ?? 60);
+      setInput(String(d.keepaliveIntervalSeconds ?? 60));
+    } catch { /* الخدمة غير متاحة */ }
+  }, []);
+
+  useEffect(() => { const t = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(t); }, [load]);
+
+  async function save() {
+    setMessage("");
+    const n = Number(input);
+    const res = await fetch(`${SYNC_BASE}/keepalive/interval`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ keepaliveIntervalSeconds: n }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setIntervalSec(data.keepaliveIntervalSeconds);
+      setInput(String(data.keepaliveIntervalSeconds));
+      setMessage(`✓ حُفظت: نبضة كل ${data.keepaliveIntervalSeconds} ثانية — تسري فورًا.`);
+    } else {
+      setMessage(`⚠ ${data.message || "قيمة غير صالحة"}`);
+    }
+  }
+
+  return (
+    <section className="insights-panel" aria-label="نبضة إبقاء الجلسة">
+      <div className="insights-head">
+        <div><p className="eyebrow">إبقاء جلسة اعتماد</p><h2>♥ نبضة البقاء</h2></div>
+        {interval !== null && <span className="team-state">{interval < 60 ? "⚡ كثيفة" : interval > 120 ? "💤 هادئة" : "✓ طبيعية"}</span>}
+      </div>
+      <div className="storage-purge">
+        <b>فترة النبضة (بالثواني)</b>
+        <span>تحفظ الجلسة من طرد اعتماد بعد الخمول.</span>
+        <div className="inline-row">
+          <input
+            type="number" min={30} max={300} step={15} value={input}
+            onChange={(e) => { setInput(e.target.value); setMessage(""); }}
+            style={{ width: "7em", fontFamily: "inherit" }}
+          />
+          <button type="button" className="outline-button" onClick={() => void save()}>حفظ الفترة</button>
+        </div>
+        <small className="storage-note">المدى المسموح: 30–300 ثانية (دقيقة حتى 5 دقائق). الافتراضي 60 ثانية.</small>
+        {message && <em className="panel-msg">{message}</em>}
+      </div>
+    </section>
+  );
+}
+
 export function InsightsPanel() {
   const [lastRun, setLastRun] = useState<LastRun | null>(null);
   const [regions, setRegions] = useState<Regions | null>(null);

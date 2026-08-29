@@ -755,6 +755,21 @@ const server = http.createServer(async (request, response) => {
       });
     }
     if (request.method === "GET" && request.url === "/status") return send(response, 200, { ...state, progress: repository.getSyncProgress() });
+    // ── P5-KEEPALIVE: قراءة/ضبط فترة نبضة إبقاء جلسة اعتماد ────────────────────
+    if (request.method === "GET" && request.url === "/keepalive/interval") {
+      return send(response, 200, {
+        keepaliveIntervalSeconds: repository.getKeepaliveInterval(),
+        limits: { min: 30, max: 300 },
+      });
+    }
+    if (request.method === "POST" && request.url === "/keepalive/interval") {
+      const body = await readJsonBody(request);
+      try {
+        return send(response, 200, repository.setKeepaliveInterval(Number(body.keepaliveIntervalSeconds)));
+      } catch (error) {
+        return send(response, 400, { error: error?.code || "KEEPALIVE_INTERVAL_INVALID", message: String(error?.message || error) });
+      }
+    }
     // ── P5-DASH: لوحة رؤى الجولة والمناطق والتخزين ──────────────────────────────
     if (request.method === "GET" && request.url === "/dashboard/last-run") {
       const summary = dashboardApi.lastRunSummary();
