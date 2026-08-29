@@ -35,6 +35,46 @@ function attachmentNameStems(displayName) {
   return stems;
 }
 
+// اعتماد يعيد توجيه صفحة التفاصيل من `Details` إلى `DetailsForSupplier` (رؤية المورّد).
+// الاعتماد على readyState وحده خطأ: قد يُعلن "complete" على الصفحة الوسيطة قبل اكتمال
+// إعادة التوجيه، فينقر السائق تبويب المرفق على صفحة خاطئة فيفشل المطابقة. ننتظر هنا
+// استقرار عنوان الصفحة النهائي (DetailsForSupplier) مكتمل التحميل.
+export function isDetailsForSupplierUrl(url) {
+  return /tenders\.etimad\.sa\/Tender\/DetailsForSupplier/i.test(String(url || ""));
+}
+
+export async function waitForSettledTenderPage({
+  getState,
+  sleepFn = sleep,
+  pollMs = 1_200,
+  deadlineMs = 15_000,
+  stability = 2,
+}) {
+  const deadline = Date.now() + deadlineMs;
+  let prevUrl = null;
+  let stableCount = 0;
+  for (;;) {
+    if (Date.now() > deadline) {
+      throw liveAcquisitionError("LIVE_CDP_TIMEOUT", "لم تستقر صفحة المنافسة على DetailsForSupplier خلال المهلة (إعادة توجيه لم تكتمل).");
+    }
+    const { url, readyState } = await getState();
+    const settled = isDetailsForSupplierUrl(url) && readyState === "complete";
+    if (settled) {
+      if (url === prevUrl) {
+        stableCount += 1;
+        if (stableCount >= stability) return { url, readyState };
+      } else {
+        stableCount = 1;
+        prevUrl = url;
+      }
+    } else {
+      stableCount = 0;
+      prevUrl = url;
+    }
+    await sleepFn(pollMs);
+  }
+}
+
 let cdpMessageId = 0;
 async function sendCdp(ws, method, params = {}, timeoutMs = CDP_TIMEOUT_MS) {
   const id = ++cdpMessageId;
@@ -82,18 +122,19 @@ export function createEtimadLiveDriver({ cdpPort = 9333 } = {}) {
       try {
         // تنقل موثوق: نفس etimadUrl المخزن (مصادق عليه في assertTrustedTenderUrl سابقًا)
         await sendCdp(ws, "Page.navigate", { url: trustedTenderUrl });
-        // انتظار جاهزية الصفحة (اعتماد ثقيل Angular) حتى 12 ثانية
         const stems = attachmentNameStems(displayName);
         let info = null;
-        const deadline = Date.now() + 12_000;
-        for (;;) {
-          await sleep(1_200);
-          const ready = await sendCdp(ws, "Runtime.evaluate", {
-            expression: "document.readyState",
-            returnByValue: true,
-          });
-          if ((ready.result?.value ?? "") === "complete" || Date.now() > deadline) break;
-        }
+        // انتظار استقرار الصفحة النهائية (DetailsForSupplier مكتملة) بدل readyState وحده —
+        // اعتماد يعيد التوجيه Details→DetailsForSupplier؛ النقر قبل الاستقرار يفشل المطابقة.
+        await waitForSettledTenderPage({
+          getState: async () => {
+            const r = await sendCdp(ws, "Runtime.evaluate", {
+              expression: "JSON.stringify({ url: location.href, readyState: document.readyState })",
+              returnByValue: true,
+            });
+            return JSON.parse(r.result?.value ?? "{}");
+          },
+        });
         // مرفقات اعتماد داخل تبويب «المرفق» — انقره أولًا (قد يكون MDC أو mat)
         await sendCdp(ws, "Runtime.evaluate", {
           expression: `(() => {
@@ -164,17 +205,25 @@ export function createEtimadLiveDriver({ cdpPort = 9333 } = {}) {
         ws.onopen = resolve;
         ws.onerror = () => reject(liveAcquisitionError("LIVE_CDP_ERROR", "تعذر الاتصال بصفحة Chrome للتنزيل."));
       });
-      const deadline = Date.now() + timeoutMs;
       try {
         await sendCdp(ws, "Page.enable");
         await sendCdp(ws, "Page.navigate", { url: trustedTenderUrl });
-        for (;;) {
-          await sleep(1_500);
-          if (signal?.aborted) throw liveAcquisitionError("LIVE_ADAPTER_DISABLED", "أُلغيت عملية التنزيل.");
-          const ready = await sendCdp(ws, "Runtime.evaluate", { expression: "document.readyState", returnByValue: true });
-          if ((ready.result?.value ?? "") === "complete" || Date.now() > deadline) break;
-        }
-        await sleep(2_000);
+        // انتظار استقرار الصفحة النهائية (DetailsForSupplier مكتملة) قبل نقر تبويب المرفق.
+        await waitForSettledTenderPage({
+          deadlineMs: Math.max(timeoutMs, 15_000),
+          getState: async () => {
+            const r = await sendCdp(ws, "Runtime.evaluate", {
+              expression: "JSON.stringify({ url: location.href, readyState: document.readyState })",
+              returnByValue: true,
+            });
+            return JSON.parse(r.result?.value ?? "{}");
+          },
+          sleepFn: async (ms) => {
+            await sleep(ms);
+            if (signal?.aborted) throw liveAcquisitionError("LIVE_ADAPTER_DISABLED", "أُلغيت عملية التنزيل.");
+          },
+        });
+        await sleep(1_000);
         await sendCdp(ws, "Runtime.evaluate", {
           expression: `(() => {
             const tabs = [...document.querySelectorAll('.mat-tab-label, .mdc-tab, [role=tab]')];

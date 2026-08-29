@@ -23,7 +23,7 @@ const PDF = Buffer.concat([Buffer.from("%PDF-1.4\n"), Buffer.from("radar-test-by
 const cdpPort = 9700;
 let downloadDirRef = { dir: null };
 let clickResult = "CLICKED";
-let pageUrl = "https://tenders.etimad.sa/Tender/Details/260839005042";
+let pageUrl = "https://tenders.etimad.sa/Tender/DetailsForSupplier/260839005042";
 
 const httpServer = createServer((req, res) => {
   if (req.url === "/json/version") {
@@ -77,6 +77,11 @@ wss.on("connection", (ws) => {
       // طلب readyState المباشر (سطر بسيط بلا needle)
       if (expr.trim() === "document.readyState") {
         ws.send(JSON.stringify({ id, result: { result: { value: "complete" } } }));
+        return;
+      }
+      // انتظار استقرار الصفحة (waitForSettledTenderPage) — المحاكاة تُرجع الصفحة النهائية
+      if (expr.includes("readyState: document.readyState") && expr.includes("location.href")) {
+        ws.send(JSON.stringify({ id, result: { result: { value: JSON.stringify({ url: pageUrl, readyState: "complete" }) } } }));
         return;
       }
       // نقر تبويب المرفقات — المحاكاة تقبله بصمت

@@ -74,7 +74,7 @@ test("3) القيم الأساسية في CURRENT_STATE.json صحيحة (بني�
   assert.equal(state.nextPlannedPhase, "P4-O0");
   assert.ok(Array.isArray(state.pendingHumanGates) && state.pendingHumanGates.length > 0);
   assert.ok(Array.isArray(state.knownRisks) && state.knownRisks.length > 0);
-  assert.ok(Array.isArray(state.authoritativeDocuments) && state.authoritativeDocuments.length === 10);
+  assert.ok(Array.isArray(state.authoritativeDocuments) && state.authoritativeDocuments.length === 13);
   // حالة المراحل الحية للمرفقات: توقف آمن معتمد وليس نجاحًا وظيفيًا.
   const stages = state.attachmentLiveStages;
   assert.equal(stages.p3b1b.status, "approved_safe_stop", "P3-B1B توقف آمن معتمد");
