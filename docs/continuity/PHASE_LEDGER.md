@@ -85,6 +85,7 @@
 | P5-B0 | أول تنزيل حي ناجح ✅ — نطاق العمل.pdf من 260839005042 (رسوم 200) عبر جلسة Chrome البشرية: 601,423 بايت، %PDF-1.7، SHA-256 مثبت في القاعدة (downloaded). المسار المُثبت: تبويب المرفقات → RedirectURL(guid,name) → fetch داخلي بنفس الجلسة → حجر → فحص → تخزين ذري | owner-approved live |
 | P5-B1 | دمج فك ToUnicode CMap (نص عربي سليم من خطوط CID) + NFKC/RTL normalization + جولة UAT حية على كراسة منزلة: nemotron أنجز قرار enter مؤسسًا بـ4 أدلة (33ث)؛ qwen2.5 أسرع (19ث) لكن امتنع/فشل الالتزام بالمخطط — التوصيل اليومي يبقى nemotron افتراضيًا | owner-approved live |
 | P5-D0 | استيراد مخطط الخط الليلي في n8n + تفعيله (02:00، القصيم أولًا، سقف 30) بموافقة المالك — n8n بات بمصادقة owner | owner-approved live |
+| P5-AGENTS | ربط الطاقم السبعة بـnemotron المحلي (loopback) + تعليمات سلوك عربية لكل دور — UAT حي مؤكد | owner-approved live |
 | P5-C0M | دمج `3dfbbcf` (التصنيف الحتمي بـ11 تخصصًا مربوط بالجولات — fast-forward) | approved |
 | P5-A1M | دمج `5021b16` (مقيّم طابور التحميل وفق السياسة — fast-forward) | approved |
 | P5-D0M | دمج `4a8bbb7` (مخطط n8n الليلي 02:00 القصيم أولًا، غير مفعّل افتراضيًا — fast-forward) | approved |
