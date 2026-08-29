@@ -28,12 +28,16 @@ export function isBusyPhase(phase) {
   return busyPhases.has(String(phase ?? ""));
 }
 
+// P5-KEEPALIVE: الانشغال = مزامنة نشطة أو تنزيل حي جارٍ.
+export function isServiceBusy(status) {
+  return isBusyPhase(status?.phase) || status?.downloading === true;
+}
+
 async function serviceBusy() {
   try {
     const res = await fetch(`${SERVICE_URL}/status`, { signal: AbortSignal.timeout(2_000) });
     if (!res.ok) return false;
-    const st = await res.json();
-    return isBusyPhase(st?.phase);
+    return isServiceBusy(await res.json());
   } catch {
     return false; // إن تعذر الوصول للخدمة، نفترض عدم انشغال (النبضة لا تؤذي)
   }

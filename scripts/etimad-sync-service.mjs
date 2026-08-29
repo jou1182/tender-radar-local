@@ -75,6 +75,7 @@ const analysisEngine = createAnalysisEngine({
 const handleAnalysisRequest = createAnalysisApiHandler({ engine: analysisEngine });
 
 let syncPromise;
+let liveDownloading = false; // P5-KEEPALIVE: علم تنزيل حي جارٍ — تقرؤه النبضة لقفل التشابك
 let state = { phase: "idle", region: null, checked: 0, message: "جاهز", progress: repository.getSyncProgress() };
 
 class LoginRequiredError extends Error {
@@ -754,7 +755,7 @@ const server = http.createServer(async (request, response) => {
         database: { online: true, schemaVersion: repository.schemaVersion },
       });
     }
-    if (request.method === "GET" && request.url === "/status") return send(response, 200, { ...state, progress: repository.getSyncProgress() });
+    if (request.method === "GET" && request.url === "/status") return send(response, 200, { ...state, progress: repository.getSyncProgress(), downloading: liveDownloading });
     // ── P5-KEEPALIVE: قراءة/ضبط فترة نبضة إبقاء جلسة اعتماد ────────────────────
     if (request.method === "GET" && request.url === "/keepalive/interval") {
       return send(response, 200, {
@@ -921,6 +922,7 @@ const server = http.createServer(async (request, response) => {
         status: "running",
       });
       try {
+        liveDownloading = true;
         const result = await liveAcquisitionAdapter.execute({ id: job.id, approvalId: approval.id, manifest: approval.scope });
         const finished = repository.updateDownloadJob(job.id, { status: "complete", finished: true });
         return send(response, 200, { job: finished, result, adapter: liveAcquisitionAdapter.kind });
@@ -943,6 +945,8 @@ const server = http.createServer(async (request, response) => {
           error: adapterError?.code || "LIVE_DOWNLOAD_FAILED",
           message: adapterError?.message || "تعذر تنفيذ التنزيل الحي المحكوم؛ لا إعادة محاولة تلقائية.",
         });
+      } finally {
+        liveDownloading = false;
       }
     }
     if (request.method === "POST" && request.url === "/sync") {
