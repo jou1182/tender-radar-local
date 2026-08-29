@@ -121,9 +121,10 @@ export function createEtimadLiveDriver({ cdpPort = 9333 } = {}) {
                 href: el.getAttribute("href") ?? "",
                 rect: (() => { const r = el.getBoundingClientRect?.(); return r ? { x: r.x, y: r.y, w: r.width, h: r.height } : null; })(),
               }));
+              const norm = (v) => String(v || "").replaceAll("ـ", "").replace(/[أإآ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه").trim().toLowerCase();
               const hits = (c) => {
-                const hay = [c.text, c.aria, c.title].filter(Boolean).join(" ").toLowerCase();
-                const href = c.href ? decodeURIComponent(c.href).toLowerCase() : "";
+                const hay = norm([c.text, c.aria, c.title].filter(Boolean).join(" "));
+                const href = c.href ? norm(decodeURIComponent(c.href)) : "";
                 return stems.some((s) => hay.includes(s) || href.includes(s));
               };
               const match = candidates.find(hits);
@@ -188,8 +189,9 @@ export function createEtimadLiveDriver({ cdpPort = 9333 } = {}) {
         const anchorInfo = await sendCdp(ws, "Runtime.evaluate", {
           expression: `(() => {
             const stems = ${JSON.stringify(stems)};
+            const norm = (v) => String(v || "").replaceAll("ـ", "").replace(/[أإآ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه").trim().toLowerCase();
             const a = [...document.querySelectorAll("a")].find((el) => {
-              const hay = [el.innerText, el.textContent].map((x) => (x || "").toString()).join(" ").toLowerCase();
+              const hay = norm([el.innerText, el.textContent].map((x) => (x || "").toString()).join(" "));
               return stems.some((s) => hay.includes(s));
             });
             if (!a) return "NO_MATCH";
