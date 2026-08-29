@@ -8,6 +8,7 @@ import { writeFileSync, rmSync, mkdtempSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
+import { isFragmentedDocument } from "./analysis-quality-gates.mjs";
 
 export const supportedDocumentTypes = ["pdf", "xlsx", "docx"];
 export const defaultMaxFileBytes = 30 * 1024 * 1024;
@@ -526,22 +527,17 @@ export function extractAnalysisDocument({ documentId, fileName, buffer, maxBytes
   if (inspected.documentType === "pdf") {
     extracted = extractPdfDocument(buffer, { maxStreamBytes: maxStreamBytes ?? defaultMaxPdfStreamBytes, applyRtlFix });
     // P5-POPPLER: التحويل التلقائي. المستخرج المضمّن نجح لكن نصه مجزأ حرفيًا
-    // (متوسط طول الكتلة <2 حرف) — مؤشر خطوط بلا ToUnicode. نحوّل لـpoppler كبديل.
-    // الملفات التي تنجح أصلًا (متوسط كتلة سليم) تبقى على مسارها ولا تُحوَّل.
-    if (allowPopplerFallback && extracted?.blocks?.length) {
-      const avg = extracted.blocks.reduce((s, b) => s + (String(b?.text ?? "").trim().length), 0) / extracted.blocks.length;
-      if (avg < 2) {
-        try {
-          const fallback = extractPdfViaPoppler(buffer, { applyRtlFix });
-          extracted = { blocks: fallback.blocks, tables: fallback.tables, warnings: [...extracted.warnings, ...fallback.warnings] };
-          extracted.extractionMethod = "poppler-fallback";
-        } catch {
-          // poppler غير متاح أو فشل — نبقى على النتيجة المجزأة ونعلّمها تحذيرًا.
-          extracted.extractionMethod = "pdfjs-fragmented";
-          extracted.warnings.push("النص مجزأ ولم يتوفر مسار poppler البديل.");
-        }
-      } else {
-        extracted.extractionMethod = "pdfjs";
+    // (نفس بوابة الجودة: نسبة الكتل المفردة ≤2 حرف >90%) — مؤشر خطوط بلا ToUnicode.
+    // نحوّل لـpoppler كبديل. الملفات التي تنجح أصلًا (نص سليم) تبقى على مسارها ولا تُحوَّل.
+    if (allowPopplerFallback && extracted?.blocks?.length && isFragmentedDocument(extracted.blocks, { ratio: 0.9 })) {
+      try {
+        const fallback = extractPdfViaPoppler(buffer, { applyRtlFix });
+        extracted = { blocks: fallback.blocks, tables: fallback.tables, warnings: [...extracted.warnings, ...fallback.warnings] };
+        extracted.extractionMethod = "poppler-fallback";
+      } catch {
+        // poppler غير متاح أو فشل — نبقى على النتيجة المجزأة ونعلّمها تحذيرًا.
+        extracted.extractionMethod = "pdfjs-fragmented";
+        extracted.warnings.push("النص مجزأ ولم يتوفر مسار poppler البديل.");
       }
     } else {
       extracted.extractionMethod = "pdfjs";
