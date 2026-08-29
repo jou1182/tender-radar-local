@@ -13,7 +13,7 @@ test("P5-SHELL-1: page declares the flex RTL shell (sidebar first in DOM = right
 
 test("P5-SHELL-2: page declares the six sections in the mandated order with tenders default", async () => {
   const src = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
-  const order = ["tenders", "smart-search", "dashboard", "agents", "ops", "storage"];
+  const order = ["ops", "tenders", "smart-search", "dashboard", "agents", "storage"];
   let prev = -1;
   for (const id of order) {
     const i = src.indexOf(`id: "${id}"`);

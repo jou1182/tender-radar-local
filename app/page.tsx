@@ -257,11 +257,11 @@ function RadarLoader({ overlay = false }: { overlay?: boolean }) {
 }
 
 const SECTIONS = [
+  { id: "ops", icon: "🔄", label: "التشغيل" },
   { id: "tenders", icon: "📋", label: "المنافسات" },
   { id: "smart-search", icon: "🔍", label: "البحث الذكي" },
   { id: "dashboard", icon: "📊", label: "لوحة القيادة" },
   { id: "agents", icon: "🤖", label: "فريق الوكلاء" },
-  { id: "ops", icon: "🔄", label: "التشغيل" },
   { id: "storage", icon: "🗄️", label: "التخزين" },
 ] as const;
 
