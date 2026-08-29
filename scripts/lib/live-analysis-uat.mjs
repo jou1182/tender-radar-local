@@ -15,11 +15,11 @@ const env = {
   ...process.env,
   RADAR_AI_ENABLED: "true",
   RADAR_AI_PROVIDER: "ollama",
-  OLLAMA_MODEL: "qwen2.5:14b",
+  OLLAMA_MODEL: "nemotron-3.5-lightning:latest",
   OLLAMA_URL: "http://127.0.0.1:11434",
 };
 
-console.log("\n=== بدء التحليل الحي بـ qwen2.5:14b (بعد إصلاح CMap) ===");
+console.log("\n=== بدء التحليل الحي بـ nemotron-3.5-lightning (بعد إصلاح CMap + RTL-2 + TdrDelay) ===");
 const t0 = Date.now();
 try {
   const result = await runTrustedDocumentAnalysis({
@@ -35,11 +35,9 @@ try {
   const report = result.report ?? result;
   console.log("preliminaryDecision:", report.preliminaryDecision);
   console.log("confidence:", report.confidence);
-  const evidence = report.evidenceCatalog ?? [];
-  console.log("أدلة:", evidence.length);
-  for (const e of evidence.slice(0, 6)) {
-    console.log("  -", (e.excerpt || "").replace(/\s+/g, " ").slice(0, 90));
-  }
+  const evidenceIds = report.decisionEvidenceIds ?? [];
+  console.log("أدلة (decisionEvidenceIds):", evidenceIds.length);
+  for (const eid of evidenceIds.slice(0, 9)) console.log("  -", eid);
   const unc = report.unclearItems ?? [];
   console.log("نقاط غير واضحة:", unc.length);
   for (const u of unc.slice(0, 4)) console.log("  -", (u.statement || "").replace(/\s+/g, " ").slice(0, 100));

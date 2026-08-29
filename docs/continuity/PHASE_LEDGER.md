@@ -91,6 +91,7 @@
 | P5-C0M | دمج `3dfbbcf` (التصنيف الحتمي بـ11 تخصصًا مربوط بالجولات — fast-forward) | approved |
 | P5-A1M | دمج `5021b16` (مقيّم طابور التحميل وفق السياسة — fast-forward) | approved |
 | P5-D0M | دمج `4a8bbb7` (مخطط n8n الليلي 02:00 القصيم أولًا، غير مفعّل افتراضيًا — fast-forward) | approved |
+| P5-TDR-LIVE1 | **أول محاولة حية بعد رفع TdrDelay 8→20ث** — سيناريو **نجاح**: تحليل نطاق العمل.pdf (260839005042) عبر nemotron-3.5-lightning اكتمل في 40ث **بلا أي TDR**، قرار `enter` بثقة `high` مؤسسًا بـ**9 أدلة حرفية** (`decisionEvidenceIds` ev-…-1..9)؛ النص العربي سليم بعد RTL-2. السكربت طبّع «أدلة: 0» خطأً لقراءته `evidenceCatalog` بدل `decisionEvidenceIds` — الحقيقة 9 أدلة في القاعدة | owner-approved live |
 
 ## مراحل لم تبدأ
 
