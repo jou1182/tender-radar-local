@@ -6,19 +6,50 @@ const CDP_PORT = Number(process.env.RADAR_LIVE_CDP_PORT ?? 9333);
 const SERVICE_URL = process.env.RADAR_SERVICE_URL ?? "http://127.0.0.1:4318";
 const DEFAULT_INTERVAL_MS = Number(process.env.KEEPALIVE_INTERVAL_MS ?? 60_000); // fallback إن تعذر الوصول للخدمة
 
+export const DEFAULT_MIN_INTERVAL_SEC = 60;   // دقيقة واحدة (60 ثانية)
+export const DEFAULT_MAX_INTERVAL_SEC = 300;  // 5 دقائق (300 ثانية)
+
+// دالة نقية قابلة للاختبار لاختيار فاصل عشوائي بالثواني بين min و max (غير ثابت)
+export function computeVariableIntervalSeconds({
+  minSeconds = DEFAULT_MIN_INTERVAL_SEC,
+  maxSeconds = DEFAULT_MAX_INTERVAL_SEC,
+  stepSeconds = 15,
+  random = Math.random,
+} = {}) {
+  const safeMin = Math.max(30, Math.min(minSeconds, maxSeconds));
+  const safeMax = Math.min(300, Math.max(minSeconds, maxSeconds));
+  if (safeMin === safeMax) return safeMin;
+  const steps = Math.floor((safeMax - safeMin) / stepSeconds);
+  if (steps <= 0) return safeMin;
+  const chosenStep = Math.floor(random() * (steps + 1));
+  const result = safeMin + chosenStep * stepSeconds;
+  return Math.max(safeMin, Math.min(safeMax, result));
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// قراءة فترة النبضة الحالية من الخدمة (قابلة للتعديل من لوحة القيادة).
-async function currentIntervalMs() {
+// حساب فترة النبضة التالية: متغيرة عشوائيًا بحدود 5 دقائق (60 إلى 300 ثانية)
+export async function currentIntervalMs() {
+  if (process.env.KEEPALIVE_INTERVAL_MS) {
+    const forced = Number(process.env.KEEPALIVE_INTERVAL_MS);
+    if (Number.isFinite(forced) && forced > 0) return forced;
+  }
+  let minSec = DEFAULT_MIN_INTERVAL_SEC;
+  let maxSec = DEFAULT_MAX_INTERVAL_SEC;
   try {
     const res = await fetch(`${SERVICE_URL}/keepalive/interval`, { signal: AbortSignal.timeout(2_000) });
-    if (!res.ok) return DEFAULT_INTERVAL_MS;
-    const data = await res.json();
-    const n = Number(data?.keepaliveIntervalSeconds);
-    return Number.isFinite(n) && n > 0 ? n * 1000 : DEFAULT_INTERVAL_MS;
+    if (res.ok) {
+      const data = await res.json();
+      const configuredSec = Number(data?.keepaliveIntervalSeconds);
+      if (Number.isFinite(configuredSec) && configuredSec > DEFAULT_MIN_INTERVAL_SEC) {
+        maxSec = Math.min(300, Math.round(configuredSec));
+      }
+    }
   } catch {
-    return DEFAULT_INTERVAL_MS;
+    // fallback في حال تعذر الاتصال بالخدمة: استخدام المدى الافتراضي [60, 300]
   }
+  const chosenSeconds = computeVariableIntervalSeconds({ minSeconds: minSec, maxSeconds: maxSec });
+  return chosenSeconds * 1000;
 }
 
 // فحص قفل التشابك: هل الخدمة في مزامنة/تنزيل نشط؟
@@ -76,12 +107,12 @@ function makeCdp(ws) {
 async function pulse() {
   if (await serviceBusy()) {
     console.log(`[${new Date().toISOString()}] ⏭ تخطّي: خدمة الرادار منشغلة (مزامنة/تنزيل حي)`);
-    return;
+    return "busy";
   }
   const wsUrl = await findEtimadTarget();
   if (!wsUrl) {
     console.log(`[${new Date().toISOString()}] ⚠ لا توجد صفحة اعتماد مفتوحة في جلسة Chrome`);
-    return;
+    return "no-target";
   }
   const ws = new WebSocket(wsUrl);
   await new Promise((res, rej) => { ws.onopen = res; ws.onerror = () => rej(new Error("ws connect")); });
@@ -95,19 +126,35 @@ async function pulse() {
     // إعادة تحميل صامتة للصفحة الحالية (نشاط على مستوى الخادم)
     await cdp("Page.reload", { ignoreCache: true });
     console.log(`[${new Date().toISOString()}] ♥ نبضة: تمرير + إعادة تحميل لصفحة اعتماد`);
+    return "pulsed";
   } catch (error) {
     console.log(`[${new Date().toISOString()}] ✖ خطأ النبضة: ${error.message}`);
+    return "error";
   } finally {
     try { ws.close(); } catch {}
   }
 }
 
-console.log(`نبضة إبقاء جلسة اعتماد — الفترة تُقرأ من الخدمة، CDP:${CDP_PORT}، قفل تشابك عبر ${SERVICE_URL}/status`);
+console.log(`نبضة إبقاء جلسة اعتماد — فواصل متغيرة (بين دقيقة و5 دقائق)، CDP:${CDP_PORT}، قفل تشابك عبر ${SERVICE_URL}/status`);
 // لا نبدأ الحلقة عند الاستيراد (للاختبار) — فقط عند التشغيل المباشر.
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, "/").split("/").pop())) {
-  // حلقة ذاتية: تُقرأ الفترة من الخدمة قبل كل نبضة فيسري التغيير فورًا.
+  // حلقة ذاتية ذكية:
+  // - بعد نبضة ناجحة: فاصل زمني متغير عشوائيًا (بين دقيقة و5 دقائق) لمحاكاة السلوك البشري ومنع كشف الروبوت.
+  // - عند انشغال الخدمة: انتظار قصير (30ث) ثم التحقق مجددًا لتجنب فجوات خمول مفرطة بعد انتهاء التنزيل/المزامنة.
+  // - عند عدم فتح المتصفح: فحص سريع كل 15 ثانية لالتقاط الجلسة فور إقلاع Chrome.
   for (;;) {
-    await pulse();
-    await sleep(await currentIntervalMs());
+    const outcome = await pulse();
+    let waitMs;
+    if (outcome === "no-target") {
+      waitMs = 15_000;
+    } else if (outcome === "busy") {
+      waitMs = 30_000;
+    } else {
+      waitMs = await currentIntervalMs();
+      const waitSec = Math.round(waitMs / 1000);
+      const waitMin = (waitSec / 60).toFixed(1);
+      console.log(`[${new Date().toISOString()}] ⏳ النبضة التالية بعد ${waitSec} ثانية (~${waitMin} دقيقة)`);
+    }
+    await sleep(waitMs);
   }
 }

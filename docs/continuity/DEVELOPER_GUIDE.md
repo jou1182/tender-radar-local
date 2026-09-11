@@ -140,12 +140,15 @@ RADAR_LIVE_DOWNLOAD_MANIFEST_SHA256=<البصمة>
 
 `scripts/lib/session-keepalive.mjs`:
 
-1. حلقة لا نهائية `for(;;) { await pulse(); await sleep(currentIntervalMs()); }`.
+1. حلقة لا نهائية ذكية:
+   - بعد نبضة ناجحة: فاصل زمني متغير عشوائيًا (بين 60 و300 ثانية، بخطوة 15ث) يحاكي السلوك البشري ويمنع كشف الأنماط الآلية.
+   - عند انشغال الخدمة (مزامنة/تنزيل حي): انتظار قصير 30ث للتحقق مجددًا بعد انتهاء العملية دون إحداث فجوة خمول مفرطة.
+   - عند عدم العثور على صفحة اعتماد: فحص سريع كل 15ث حتى يفتح المستخدم المتصفح.
 2. `pulse()`:
-   - يفحص قفل التشابك: يقرأ `/status` → إن كان `phase` في `{starting,scanning,resuming,captcha-required,login-required}` يتخطى.
+   - يفحص قفل التشابك: يقرأ `/status` → إن كان `phase` في `{starting,scanning,resuming,captcha-required,login-required}` أو `downloading === true` يتخطى.
    - يجد صفحة اعتماد عبر CDP `:9333/json/list`.
    - يرسل تمريرًا خفيفًا + `Page.reload`.
-3. `currentIntervalMs()`: يقرأ `/keepalive/interval` من الخدمة قبل كل نبضة — **التغيير يسري فورًا**.
+3. `currentIntervalMs()`: يحسب الفاصل الزمني العشوائي للدورة التالية ضمن سقف الفترة المضبوطة في الخدمة (60–300ث) — **التغيير يسري فورًا**.
 
 **حدود الفترة:** 30–300 ثانية (مطبقة في `radar-repository.mjs` `setKeepaliveInterval`).
 

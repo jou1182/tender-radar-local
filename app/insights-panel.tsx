@@ -154,7 +154,7 @@ export function KeepaliveControl() {
     if (res.ok) {
       setIntervalSec(data.keepaliveIntervalSeconds);
       setInput(String(data.keepaliveIntervalSeconds));
-      setMessage(`✓ حُفظت: نبضة كل ${data.keepaliveIntervalSeconds} ثانية — تسري فورًا.`);
+      setMessage(`✓ حُفظ السقف: فواصل متغيرة عشوائيًا حتى ${data.keepaliveIntervalSeconds} ثانية — تسري فورًا.`);
     } else {
       setMessage(`⚠ ${data.message || "قيمة غير صالحة"}`);
     }
@@ -164,20 +164,20 @@ export function KeepaliveControl() {
     <section className="insights-panel" aria-label="نبضة إبقاء الجلسة">
       <div className="insights-head">
         <div><p className="eyebrow">إبقاء جلسة اعتماد</p><h2>♥ نبضة البقاء</h2></div>
-        {interval !== null && <span className="team-state">{interval < 60 ? "⚡ كثيفة" : interval > 120 ? "💤 هادئة" : "✓ طبيعية"}</span>}
+        {interval !== null && <span className="team-state">{interval <= 90 ? "⚡ سريعة" : interval > 180 ? "💤 هادئة" : "✓ طبيعية"}</span>}
       </div>
       <div className="storage-purge">
-        <b>فترة النبضة (بالثواني)</b>
-        <span>تحفظ الجلسة من طرد اعتماد بعد الخمول.</span>
+        <b>سقف فترة النبضة (بالثواني)</b>
+        <span>نبضة ذكية متغيرة عشوائيًا (بين دقيقة و5 دقائق) تحاكي السلوك البشري لمنع كشف الأنماط الآلية.</span>
         <div className="inline-row">
           <input
-            type="number" min={30} max={300} step={15} value={input}
+            type="number" min={60} max={300} step={15} value={input}
             onChange={(e) => { setInput(e.target.value); setMessage(""); }}
             style={{ width: "7em", fontFamily: "inherit" }}
           />
-          <button type="button" className="outline-button" onClick={() => void save()}>حفظ الفترة</button>
+          <button type="button" className="outline-button" onClick={() => void save()}>حفظ السقف</button>
         </div>
-        <small className="storage-note">المدى المسموح: 30–300 ثانية (دقيقة حتى 5 دقائق). الافتراضي 60 ثانية.</small>
+        <small className="storage-note">المدى المسموح للسقف الأقصى: 60–300 ثانية (حتى 5 دقائق). يتم اختيار الفاصل عشوائيًا بعد كل نبضة.</small>
         {message && <em className="panel-msg">{message}</em>}
       </div>
     </section>
