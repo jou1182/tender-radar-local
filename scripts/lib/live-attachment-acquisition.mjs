@@ -1,5 +1,10 @@
-// P3-B1A: بوابة تنفيذ محكومة لمنافسة مجانية واحدة وملف واحد.
-// لا تحتوي هذه الوحدة driver حيًا أو selectors لمنصة اعتماد. يضاف driver بعد فحص P3-B1B فقط.
+// P3-B1A، موسّعة P5-LIVE-ALLOWLIST-TENDER: بوابة تنفيذ محكومة لمنافسة واحدة
+// معتمدة عند إقلاع الخدمة — أي ملف داخل تلك المنافسة قابل للتنفيذ الحي، بشرط
+// موافقة بشرية صريحة منفصلة (عبارة الرضا + بصمة manifest) لكل طلب تنزيل فعلي
+// عبر download-gate.mjs (الحارس الحقيقي غير المتغيّر). قائمة السماح عند
+// الإقلاع لم تعد تحتاج معرفة اسم الملف أو بصمته مسبقًا — فقط مرجع المنافسة.
+// التنفيذ الفعلي يبقى ملفًا واحدًا لكل استدعاء execute() (قيد معماري في
+// السائق والحجر والفحص، لا علاقة له بنطاق قائمة السماح) — انظر assertSingleFileManifest.
 import { createHash } from "node:crypto";
 import { link, mkdir, open, readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
@@ -11,8 +16,6 @@ export const liveEnabledEnvName = "RADAR_LIVE_DOWNLOAD_ENABLED";
 export const liveKillEnvName = "RADAR_LIVE_DOWNLOAD_KILL";
 export const liveAllowlistEnvNames = {
   tenderReference: "RADAR_LIVE_DOWNLOAD_TENDER_REF",
-  fileName: "RADAR_LIVE_DOWNLOAD_FILE_NAME",
-  manifestSha256: "RADAR_LIVE_DOWNLOAD_MANIFEST_SHA256",
 };
 export const liveKillSwitchFileName = "live-acquisition.stop";
 export const quarantineDirectoryName = "quarantine";
@@ -28,15 +31,11 @@ export function liveAcquisitionError(code, message) {
 
 export function readLiveAcquisitionConfig(env = process.env) {
   const tenderReference = String(env[liveAllowlistEnvNames.tenderReference] || "").trim();
-  const fileName = String(env[liveAllowlistEnvNames.fileName] || "").normalize("NFC").trim();
-  const manifestSha256 = String(env[liveAllowlistEnvNames.manifestSha256] || "").trim().toLowerCase();
   return {
     enabled: env[liveEnabledEnvName] === "true",
     killSwitchEngaged: env[liveKillEnvName] === "true",
     tenderReference,
-    fileName,
-    manifestSha256,
-    allowlistComplete: Boolean(tenderReference && fileName && /^[a-f0-9]{64}$/.test(manifestSha256)),
+    allowlistComplete: Boolean(tenderReference),
   };
 }
 
@@ -66,13 +65,27 @@ export async function engageLiveKillSwitch(privateDir) {
   return liveKillSwitchPath(privateDir);
 }
 
+// قائمة السماح تتحقق من مرجع المنافسة فقط (P5-LIVE-ALLOWLIST-TENDER) — أي ملف
+// داخل هذه المنافسة مقبول هنا؛ الموافقة الصريحة لكل طلب فعلي (download-gate.mjs)
+// هي من تحدد أي ملف تحديدًا، لا قائمة السماح.
 export function assertManifestMatchesLiveAllowlist({ manifest, config }) {
   const mismatch = (message) => liveAcquisitionError("LIVE_ALLOWLIST_MISMATCH", message);
   if (!manifest || !Array.isArray(manifest.files)) throw mismatch("manifest غير موجود أو تالف.");
   if (manifest.tenderReference !== config.tenderReference) throw mismatch("مرجع المنافسة خارج قائمة السماح.");
-  if (manifest.files.length !== 1) throw mismatch("يسمح P3-B1 بملف واحد فقط.");
-  if (manifest.files[0].displayName !== config.fileName) throw mismatch("اسم الملف خارج قائمة السماح.");
-  if (hashDownloadManifest(manifest) !== config.manifestSha256) throw mismatch("بصمة manifest لا تطابق قائمة السماح.");
+  return true;
+}
+
+// قيد معماري لا علاقة له بقائمة السماح: المحوّل الحي (السائق + الحجر + الفحص +
+// التخزين الذري) مبني بالكامل حول ملف واحد لكل استدعاء execute(). موافقة بدفعة
+// (حتى maxFilesPerBatch عبر download-gate.mjs) تُنفَّذ حيًا ملفًا بملف — استدعاء
+// execute() منفصل لكل ملف، لا تنزيل دفعة واحدة في عملية واحدة.
+export function assertSingleFileManifest(manifest) {
+  if (!manifest || !Array.isArray(manifest.files) || manifest.files.length !== 1) {
+    throw liveAcquisitionError(
+      "LIVE_BATCH_NOT_SUPPORTED",
+      "التنفيذ الحي يدعم ملفًا واحدًا لكل تنفيذ فعلي؛ نفّذ كل ملف عبر استدعاء execute() منفصل.",
+    );
+  }
   return true;
 }
 
@@ -250,13 +263,14 @@ export function createLiveDownloadAdapter({ repository, projectRoot, privateDir,
   if (!repository) throw new Error("createLiveDownloadAdapter يحتاج repository.");
   if (!projectRoot || !privateDir) throw new Error("createLiveDownloadAdapter يحتاج projectRoot وprivateDir.");
   return {
-    kind: "live-guarded-single-free-unconfigured",
+    kind: "live-guarded-tender-allowlist",
     async execute(job) {
       const config = readLiveAcquisitionConfig(env);
       if (await isLiveKillSwitchEngaged({ privateDir, env }) || !config.enabled || !config.allowlistComplete) {
         throw liveAcquisitionError("LIVE_ADAPTER_DISABLED", "التنفيذ الحي معطل أو قائمة السماح غير مكتملة.");
       }
       assertManifestMatchesLiveAllowlist({ manifest: job?.manifest, config });
+      assertSingleFileManifest(job?.manifest);
       const manifest = job.manifest;
       const displayName = manifest.files[0].displayName;
       const tender = repository.getTender(manifest.tenderReference);
@@ -269,7 +283,7 @@ export function createLiveDownloadAdapter({ repository, projectRoot, privateDir,
       if (!driver || typeof driver.preflight !== "function" || typeof driver.acquire !== "function") {
         throw liveAcquisitionError("LIVE_DRIVER_NOT_CONFIGURED", "لم يُعتمد driver حي بعد؛ يلزم فحص P3-B1B أولًا.");
       }
-      const target = await runBoundedPreflight(driver, { tender, trustedTenderUrl, displayName, manifestHash: config.manifestSha256 }, preflightTimeoutMs);
+      const target = await runBoundedPreflight(driver, { tender, trustedTenderUrl, displayName }, preflightTimeoutMs);
       if (!target?.ready || target.tenderReference !== tender.reference || target.displayName !== displayName || !target.targetId) {
         throw liveAcquisitionError("LIVE_TARGET_MISMATCH", "لم يثبت الفحص أن الصفحة والملف يطابقان الموافقة.");
       }

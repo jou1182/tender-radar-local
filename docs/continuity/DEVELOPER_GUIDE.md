@@ -95,9 +95,16 @@
 ```
 RADAR_LIVE_DOWNLOAD_ENABLED=true
 RADAR_LIVE_DOWNLOAD_TENDER_REF=<المرجع>
-RADAR_LIVE_DOWNLOAD_FILE_NAME=<اسم الملف>
-RADAR_LIVE_DOWNLOAD_MANIFEST_SHA256=<البصمة>
 ```
+
+**P5-LIVE-ALLOWLIST-TENDER (2026-09-16):** قائمة السماح تكتفي بمرجع منافسة واحد
+— لم يعد اسم الملف أو بصمة manifest يُصرَّح بهما مسبقًا عند الإقلاع (كانا
+`RADAR_LIVE_DOWNLOAD_FILE_NAME`/`RADAR_LIVE_DOWNLOAD_MANIFEST_SHA256`، أُزيلا).
+أي ملف داخل المنافسة المسموحة يُقبل الآن دون إعادة إقلاع للخدمة، بشرط موافقة
+بشرية صريحة منفصلة (عبارة الرضا + بصمة manifest **لكل طلب فعلي**) عبر
+`download-gate.mjs` — هذا الحارس الحقيقي لم يتغيّر. التنفيذ الحي يبقى ملفًا
+واحدًا لكل استدعاء `execute()` (قيد معماري في السائق/الحجر/الفحص، تفرضه
+`assertSingleFileManifest`، لا علاقة له بقائمة السماح).
 
 > **دين تقني موثّق (محلول):** التنزيل الثاني (جدول الكميات) مرّ بمسار أضعف مؤقتًا
 > (allowlist من سكربت). صُحّح بإعادة إقلاع الخدمة بقائمة السماح كـenv vars. لا تكرّر هذا.

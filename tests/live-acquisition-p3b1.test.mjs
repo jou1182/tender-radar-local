@@ -6,12 +6,13 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { createRadarRepository } from "../scripts/lib/radar-repository.mjs";
-import { downloadConsentPhrase, hashDownloadManifest } from "../scripts/lib/download-gate.mjs";
+import { downloadConsentPhrase } from "../scripts/lib/download-gate.mjs";
 import { resolveAttachmentStoragePath } from "../scripts/lib/attachment-storage.mjs";
 import {
   assertLivePreconditions,
   assertTrustedTenderUrl,
   assertManifestMatchesLiveAllowlist,
+  assertSingleFileManifest,
   assertSafeDownloadTrigger,
   createLiveDownloadAdapter,
   engageLiveKillSwitch,
@@ -72,12 +73,10 @@ function approve(repository, { files = [{ displayName: freeFile }], purchaseConf
   });
 }
 
-function liveEnv(approval, overrides = {}) {
+function liveEnv(overrides = {}) {
   return {
     RADAR_LIVE_DOWNLOAD_ENABLED: "true",
     RADAR_LIVE_DOWNLOAD_TENDER_REF: tender.reference,
-    RADAR_LIVE_DOWNLOAD_FILE_NAME: freeFile,
-    RADAR_LIVE_DOWNLOAD_MANIFEST_SHA256: hashDownloadManifest(approval.scope),
     ...overrides,
   };
 }
@@ -145,7 +144,7 @@ test("the kill switch (env) disables the adapter immediately even with a complet
   const { projectRoot, repository } = await repositoryWithTender();
   try {
     const approval = approve(repository);
-    const env = liveEnv(approval, { RADAR_LIVE_DOWNLOAD_KILL: "true" });
+    const env = liveEnv({ RADAR_LIVE_DOWNLOAD_KILL: "true" });
     const simulator = pdfSimulator();
     const adapter = createAdapter({ repository, projectRoot, env, driver: simulator.driver });
     await expectRejectedAndUnconsumed({ adapter, approval, jobId: "job-kill-env", code: "LIVE_ADAPTER_DISABLED" });
@@ -163,7 +162,7 @@ test("the kill switch file engages and disengages immediately without a restart"
     const approval = approve(repository);
     const privateDir = path.join(projectRoot, ".radar-data");
     const simulator = pdfSimulator();
-    const adapter = createAdapter({ repository, projectRoot, env: liveEnv(approval), driver: simulator.driver });
+    const adapter = createAdapter({ repository, projectRoot, env: liveEnv(), driver: simulator.driver });
 
     await engageLiveKillSwitch(privateDir);
     await expectRejectedAndUnconsumed({ adapter, approval, jobId: "job-kill-file", code: "LIVE_ADAPTER_DISABLED" });
@@ -180,15 +179,13 @@ test("the kill switch file engages and disengages immediately without a restart"
   }
 });
 
-test("an incomplete allowlist keeps the adapter disabled and the approval unconsumed", async () => {
+test("an incomplete allowlist (no tender reference) keeps the adapter disabled and the approval unconsumed", async () => {
   const { projectRoot, repository } = await repositoryWithTender();
   try {
     const approval = approve(repository);
-    for (const missing of ["RADAR_LIVE_DOWNLOAD_TENDER_REF", "RADAR_LIVE_DOWNLOAD_FILE_NAME", "RADAR_LIVE_DOWNLOAD_MANIFEST_SHA256"]) {
-      const env = liveEnv(approval, { [missing]: "" });
-      const adapter = createAdapter({ repository, projectRoot, env, driver: pdfSimulator().driver });
-      await expectRejectedAndUnconsumed({ adapter, approval, jobId: `job-incomplete-${missing}`, code: "LIVE_ADAPTER_DISABLED" });
-    }
+    const env = liveEnv({ RADAR_LIVE_DOWNLOAD_TENDER_REF: "" });
+    const adapter = createAdapter({ repository, projectRoot, env, driver: pdfSimulator().driver });
+    await expectRejectedAndUnconsumed({ adapter, approval, jobId: "job-incomplete-tenderref", code: "LIVE_ADAPTER_DISABLED" });
     assert.equal(repository.getDownloadApproval(approval.id).status, "approved");
   } finally {
     repository.close();
@@ -196,30 +193,45 @@ test("an incomplete allowlist keeps the adapter disabled and the approval uncons
   }
 });
 
-test("any manifest outside the single-tender single-file allowlist is rejected before consumption", async () => {
+test("P5-LIVE-ALLOWLIST-TENDER: a manifest for another tender is rejected; a batch of 2+ files is rejected (single-file execute); a different, previously undeclared file in the SAME allowed tender succeeds without any allowlist change or restart", async () => {
   const { projectRoot, repository } = await repositoryWithTender({
     attachmentStates: { [freeFile]: "free-available", "المخططات.zip": "free-available" },
   });
   try {
+    // مرجع منافسة مختلف عن قائمة السماح: لا يزال يُرفض — القيد الوحيد المتبقي في قائمة السماح.
     const approval = approve(repository);
-    const cases = [
-      { RADAR_LIVE_DOWNLOAD_TENDER_REF: "999999999999" },
-      { RADAR_LIVE_DOWNLOAD_FILE_NAME: "ملف-آخر.pdf" },
-      { RADAR_LIVE_DOWNLOAD_MANIFEST_SHA256: "0".repeat(64) },
-    ];
-    for (const overrides of cases) {
-      const adapter = createAdapter({ repository, projectRoot, env: liveEnv(approval, overrides), driver: pdfSimulator().driver });
-      await expectRejectedAndUnconsumed({ adapter, approval, jobId: "job-allowlist", code: "LIVE_ALLOWLIST_MISMATCH" });
-    }
-    const twoFileApproval = approve(repository, { files: [{ displayName: freeFile }, { displayName: "المخططات.zip" }] });
-    const twoFileAdapter = createAdapter({
+    const wrongTenderAdapter = createAdapter({
       repository, projectRoot,
-      env: liveEnv(twoFileApproval),
+      env: liveEnv({ RADAR_LIVE_DOWNLOAD_TENDER_REF: "999999999999" }),
       driver: pdfSimulator().driver,
     });
-    await expectRejectedAndUnconsumed({ adapter: twoFileAdapter, approval: twoFileApproval, jobId: "job-two-files", code: "LIVE_ALLOWLIST_MISMATCH" });
+    await expectRejectedAndUnconsumed({ adapter: wrongTenderAdapter, approval, jobId: "job-wrong-tender", code: "LIVE_ALLOWLIST_MISMATCH" });
     assert.equal(repository.getDownloadApproval(approval.id).status, "approved");
+
+    // موافقة بملفين معًا: قائمة السماح تقبلها (نفس المنافسة) لكن التنفيذ الحي أحادي
+    // الملف بالتصميم — تُرفض بكود مختلف يعكس السبب الحقيقي (لا علاقة بقائمة السماح).
+    const twoFileApproval = approve(repository, { files: [{ displayName: freeFile }, { displayName: "المخططات.zip" }] });
+    const twoFileAdapter = createAdapter({ repository, projectRoot, env: liveEnv(), driver: pdfSimulator().driver });
+    await expectRejectedAndUnconsumed({ adapter: twoFileAdapter, approval: twoFileApproval, jobId: "job-two-files", code: "LIVE_BATCH_NOT_SUPPORTED" });
     assert.equal(repository.getDownloadApproval(twoFileApproval.id).status, "approved");
+
+    // الحالة الإيجابية الجوهرية: ملف مختلف تمامًا، لم يُذكر اسمه في أي env var عند
+    // الإقلاع، ينجح بنفس المحوّل ونفس بيئة الإقلاع (بلا إعادة إقلاع) لأنه ضمن نفس
+    // المنافسة المسموحة — هذا هو جوهر توسيع قائمة السماح لمنافسة كاملة.
+    const otherFileApproval = approve(repository, { files: [{ displayName: "المخططات.zip" }] });
+    const zipFixture = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x0a, 0x00]);
+    const otherFileAdapter = createAdapter({
+      repository, projectRoot, env: liveEnv(),
+      driver: pdfSimulator(zipFixture, { contentType: "application/zip" }).driver,
+    });
+    const job = repository.recordDownloadJob({
+      approvalId: otherFileApproval.id, tenderReference: otherFileApproval.tenderReference,
+      manifest: otherFileApproval.scope, status: "running",
+    });
+    const result = await otherFileAdapter.execute({ id: job.id, approvalId: otherFileApproval.id, manifest: otherFileApproval.scope });
+    assert.equal(result.status, "complete");
+    assert.equal(result.files[0], resolveAttachmentStoragePath(projectRoot, tender.reference, "المخططات.zip"));
+    assert.equal(repository.getDownloadApproval(otherFileApproval.id).status, "consumed");
   } finally {
     repository.close();
     await rm(projectRoot, { recursive: true, force: true });
@@ -233,7 +245,7 @@ test("P5-B0PRE v2: pre-click checks are fee-neutral — paid passes like free", 
     const approval = approve(paid.repository, { purchaseConfirmed: true });
     const adapter = createAdapter({
       repository: paid.repository, projectRoot: paid.projectRoot,
-      env: liveEnv(approval), driver: pdfSimulator().driver,
+      env: liveEnv(), driver: pdfSimulator().driver,
     });
     // يجب ألا يُرفض LIVE_PRECHECK_FAILED — ينفّذ حتى النهاية عبر السائق المحاكى
     const result = await adapter.execute({ id: "job-paid-ok", approvalId: approval.id, manifest: approval.scope });
@@ -279,7 +291,7 @@ test("a mismatched driver target is rejected before approval consumption", async
       async preflight() { return { ready: true, tenderReference: "wrong", displayName: freeFile, targetId: "wrong", elementInfo: { text: freeFile } }; },
       async acquire() { throw new Error("must not acquire"); },
     };
-    const adapter = createAdapter({ repository, projectRoot, env: liveEnv(approval), driver });
+    const adapter = createAdapter({ repository, projectRoot, env: liveEnv(), driver });
     await expectRejectedAndUnconsumed({ adapter, approval, jobId: "job-target-mismatch", code: "LIVE_TARGET_MISMATCH" });
     assert.equal(repository.getDownloadApproval(approval.id).status, "approved");
   } finally {
@@ -297,7 +309,7 @@ test("a stalled preflight times out without consuming approval or acquiring", as
       async preflight() { await new Promise(() => {}); },
       async acquire() { acquired = true; },
     };
-    const adapter = createAdapter({ repository, projectRoot, env: liveEnv(approval), driver, preflightTimeoutMs: 15 });
+    const adapter = createAdapter({ repository, projectRoot, env: liveEnv(), driver, preflightTimeoutMs: 15 });
     await expectRejectedAndUnconsumed({ adapter, approval, jobId: "job-preflight-timeout", code: "LIVE_PREFLIGHT_TIMEOUT" });
     assert.equal(acquired, false);
     assert.equal(repository.getDownloadApproval(approval.id).status, "approved");
@@ -312,7 +324,7 @@ test("successful guarded execution consumes once, inspects, and moves atomically
   try {
     const approval = approve(repository);
     const simulator = pdfSimulator();
-    const adapter = createAdapter({ repository, projectRoot, env: liveEnv(approval), driver: simulator.driver });
+    const adapter = createAdapter({ repository, projectRoot, env: liveEnv(), driver: simulator.driver });
     const job = repository.recordDownloadJob({ approvalId: approval.id, tenderReference: approval.tenderReference, manifest: approval.scope, status: "running" });
     const result = await adapter.execute({ id: job.id, approvalId: approval.id, manifest: approval.scope });
 
@@ -339,8 +351,7 @@ test("successful guarded execution consumes once, inspects, and moves atomically
     repository.updateDownloadJob(job.id, { status: "complete", finished: true });
     assert.equal(repository.listDownloadJobs(tender.reference)[0].status, "complete");
 
-    const secondApproval = approve(repository);
-    const secondAdapter = createAdapter({ repository, projectRoot, env: liveEnv(secondApproval), driver: simulator.driver });
+    const secondAdapter = createAdapter({ repository, projectRoot, env: liveEnv(), driver: simulator.driver });
     await assert.rejects(
       () => secondAdapter.execute({ id: "job-replay", approvalId: approval.id, manifest: approval.scope }),
       (error) => error.code === "APPROVAL_CONSUMED",
@@ -358,7 +369,7 @@ test("a transfer beyond 100MB is canceled and rolled back, with no retry", async
     const approval = approve(repository);
     const oversized = Buffer.concat([pdfFixture, Buffer.alloc(2_048, 0x41)]);
     const simulator = pdfSimulator(oversized);
-    const adapter = createAdapter({ repository, projectRoot, env: liveEnv(approval), driver: simulator.driver, maxBytes: 1_024 });
+    const adapter = createAdapter({ repository, projectRoot, env: liveEnv(), driver: simulator.driver, maxBytes: 1_024 });
     const job = repository.recordDownloadJob({ approvalId: approval.id, tenderReference: approval.tenderReference, manifest: approval.scope, status: "running" });
     await assert.rejects(
       () => adapter.execute({ id: job.id, approvalId: approval.id, manifest: approval.scope }),
@@ -393,7 +404,7 @@ test("a timed-out transfer is aborted, cleaned, and never retried", async () => 
         throw new Error("aborted by guard");
       },
     };
-    const adapter = createAdapter({ repository, projectRoot, env: liveEnv(approval), driver, timeoutMs: 25 });
+    const adapter = createAdapter({ repository, projectRoot, env: liveEnv(), driver, timeoutMs: 25 });
     await assert.rejects(
       () => adapter.execute({ id: "job-timeout", approvalId: approval.id, manifest: approval.scope }),
       (error) => error.code === "LIVE_DOWNLOAD_TIMEOUT",
@@ -411,7 +422,7 @@ test("P3-B1A has no production driver and fails before consuming an enabled appr
   const { projectRoot, repository } = await repositoryWithTender();
   try {
     const approval = approve(repository);
-    const adapter = createAdapter({ repository, projectRoot, env: liveEnv(approval), driver: null });
+    const adapter = createAdapter({ repository, projectRoot, env: liveEnv(), driver: null });
     await expectRejectedAndUnconsumed({ adapter, approval, jobId: "job-no-driver", code: "LIVE_DRIVER_NOT_CONFIGURED" });
     assert.equal(repository.getDownloadApproval(approval.id).status, "approved");
     assert.deepEqual(await quarantineEntries(projectRoot), []);
@@ -434,7 +445,7 @@ test("signature, MIME, and extension mismatches are rejected and rolled back", a
     const badSignature = Buffer.from("plain text pretending to be a booklet");
     const approvalOne = approve(repository);
     const adapterOne = createAdapter({
-      repository, projectRoot, env: liveEnv(approvalOne),
+      repository, projectRoot, env: liveEnv(),
       driver: pdfSimulator(badSignature).driver,
     });
     await assert.rejects(
@@ -444,7 +455,7 @@ test("signature, MIME, and extension mismatches are rejected and rolled back", a
 
     const approvalTwo = approve(repository);
     const adapterTwo = createAdapter({
-      repository, projectRoot, env: liveEnv(approvalTwo),
+      repository, projectRoot, env: liveEnv(),
       driver: pdfSimulator(pdfFixture, { contentType: "text/html" }).driver,
     });
     await assert.rejects(
@@ -515,7 +526,7 @@ test("an acquire failure rolls back quarantine, records a failed job, and never 
         throw error;
       },
     };
-    const adapter = createAdapter({ repository, projectRoot, env: liveEnv(approval), driver: failingDriver });
+    const adapter = createAdapter({ repository, projectRoot, env: liveEnv(), driver: failingDriver });
     const job = repository.recordDownloadJob({ approvalId: approval.id, tenderReference: approval.tenderReference, manifest: approval.scope, status: "running" });
     await assert.rejects(
       () => adapter.execute({ id: job.id, approvalId: approval.id, manifest: approval.scope }),
@@ -532,20 +543,27 @@ test("an acquire failure rolls back quarantine, records a failed job, and never 
   }
 });
 
-test("allowlist unit checks: single file, exact reference, exact name, exact fingerprint", async () => {
+test("allowlist unit checks: tender reference only, any file within it, single-file execution constraint is separate", async () => {
   const manifest = { tenderReference: tender.reference, files: [{ displayName: freeFile, size: null }] };
+  const otherFileManifest = { tenderReference: tender.reference, files: [{ displayName: "ملف آخر تمامًا.pdf", size: null }] };
   const config = readLiveAcquisitionConfig({
     RADAR_LIVE_DOWNLOAD_ENABLED: "true",
     RADAR_LIVE_DOWNLOAD_TENDER_REF: tender.reference,
-    RADAR_LIVE_DOWNLOAD_FILE_NAME: freeFile,
-    RADAR_LIVE_DOWNLOAD_MANIFEST_SHA256: hashDownloadManifest(manifest),
   });
   assert.equal(config.enabled, true);
   assert.equal(config.allowlistComplete, true);
   assert.equal(assertManifestMatchesLiveAllowlist({ manifest, config }), true);
+  // أي اسم ملف داخل نفس المنافسة مقبول من قائمة السماح — لم يُصرَّح به مسبقًا وأُقبل أيضًا.
+  assert.equal(assertManifestMatchesLiveAllowlist({ manifest: otherFileManifest, config }), true);
   assert.throws(
-    () => assertManifestMatchesLiveAllowlist({ manifest: { tenderReference: tender.reference, files: [] }, config }),
+    () => assertManifestMatchesLiveAllowlist({ manifest: { tenderReference: "غير هذه المنافسة", files: [] }, config }),
     (error) => error.code === "LIVE_ALLOWLIST_MISMATCH",
+  );
+  // قيد الملف الواحد منفصل تمامًا عن قائمة السماح الآن — يفحص شكل المanifest فقط.
+  assert.equal(assertSingleFileManifest(manifest), true);
+  assert.throws(
+    () => assertSingleFileManifest({ tenderReference: tender.reference, files: [{ displayName: freeFile }, { displayName: "ثانٍ.pdf" }] }),
+    (error) => error.code === "LIVE_BATCH_NOT_SUPPORTED",
   );
 });
 
@@ -557,8 +575,7 @@ test("live module and service wiring keep the safety invariants textually", asyn
   assert.match(liveModule, /RADAR_LIVE_DOWNLOAD_ENABLED/);
   assert.match(liveModule, /RADAR_LIVE_DOWNLOAD_KILL/);
   assert.match(liveModule, /RADAR_LIVE_DOWNLOAD_TENDER_REF/);
-  assert.match(liveModule, /RADAR_LIVE_DOWNLOAD_FILE_NAME/);
-  assert.match(liveModule, /RADAR_LIVE_DOWNLOAD_MANIFEST_SHA256/);
+  assert.match(liveModule, /LIVE_BATCH_NOT_SUPPORTED/, "single-file execution constraint stays explicit");
   assert.match(liveModule, /consumeDownloadApproval/, "consumption happens inside the guarded module");
   assert.match(liveModule, /LIVE_DRIVER_NOT_CONFIGURED/);
   assert.match(liveModule, /quarantine/);

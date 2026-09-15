@@ -14,7 +14,6 @@ const driverModule = await import("../scripts/lib/etimad-live-driver.mjs");
 const acquisition = await import("../scripts/lib/live-attachment-acquisition.mjs");
 const { createEtimadLiveDriver } = driverModule;
 const { createLiveDownloadAdapter, assertLivePreconditions, assertSafeDownloadTrigger, inspectQuarantinedFile } = acquisition;
-const gate = await import("../scripts/lib/download-gate.mjs");
 const repoMod = await import("../scripts/lib/radar-repository.mjs");
 
 const PDF = Buffer.concat([Buffer.from("%PDF-1.4\n"), Buffer.from("radar-test-bytes".repeat(40))]);
@@ -142,20 +141,18 @@ function seedTender(fee) {
   return repository.listAttachmentMeta("260839005042");
 }
 
-function liveEnv(approval) {
+function liveEnv() {
   return {
     RADAR_LIVE_DOWNLOAD_ENABLED: "true",
     RADAR_LIVE_DOWNLOAD_TENDER_REF: "260839005042",
-    RADAR_LIVE_DOWNLOAD_FILE_NAME: "كراسة الشروط والمواصفات.pdf",
-    RADAR_LIVE_DOWNLOAD_MANIFEST_SHA256: gate.hashDownloadManifest(approval.scope),
   };
 }
 
-function createAdapter(repo, approval, envOverride = {}) {
+function createAdapter(repo, envOverride = {}) {
   const driver = createEtimadLiveDriver({ cdpPort, downloadPollMs: 60 });
   return createLiveDownloadAdapter({
     repository: repo, projectRoot, privateDir,
-    env: { ...liveEnv(approval), ...envOverride },
+    env: { ...liveEnv(), ...envOverride },
     driver,
     timeoutMs: 8_000, preflightTimeoutMs: 5_000,
   });
@@ -196,7 +193,7 @@ test("B1C-2: full live flow — paid tender (200) downloads, inspects, and store
   });
   assert.equal(approved.status, "approved");
 
-  const adapter = createAdapter(repository, approved);
+  const adapter = createAdapter(repository);
   const job = { id: "job-b1c-e2e", approvalId: approved.id, manifest: approved.scope };
   const result = await adapter.execute(job);
 
