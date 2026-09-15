@@ -64,7 +64,7 @@ test("A) المدقق دالة كلية على التقرير كاملًا: null
     expectRejection(value, `التقرير=${JSON.stringify(value)}`);
   }
   // تقرير ينقصه حقل أو أكثر: يذكر الخطأ اسم كل حقل مفقود.
-  for (const field of ["executiveSummary", "evidence", "decisionEvidenceIds"]) {
+  for (const field of ["executiveSummary", "evidence", "sufficiencyEvidenceIds"]) {
     const partial = emptyAnalysisReport();
     delete partial[field];
     const errors = expectRejection(partial, `حقل مفقود: ${field}`);
@@ -146,10 +146,10 @@ test("D) evidence المشوهة: قيمة غير مصفوفة وعناصر نا
   assert.ok(longErrors.some((line) => line.includes("400")));
 });
 
-test("E) decisionEvidenceIds وwarnings بالأنواع الخاطئة", () => {
+test("E) sufficiencyEvidenceIds وwarnings بالأنواع الخاطئة", () => {
   for (const value of [null, {}, "ev-1", 7, ["ev-1", 2]]) {
-    const errors = expectRejection({ ...emptyAnalysisReport(), decisionEvidenceIds: value }, `decisionEvidenceIds=${JSON.stringify(value)}`);
-    assert.ok(errors.some((line) => line.includes("decisionEvidenceIds")), "الخطأ يذكر decisionEvidenceIds");
+    const errors = expectRejection({ ...emptyAnalysisReport(), sufficiencyEvidenceIds: value }, `sufficiencyEvidenceIds=${JSON.stringify(value)}`);
+    assert.ok(errors.some((line) => line.includes("sufficiencyEvidenceIds")), "الخطأ يذكر sufficiencyEvidenceIds");
   }
   for (const value of [null, {}, "نص", 3]) {
     const errors = expectRejection({ ...emptyAnalysisReport(), warnings: value }, `warnings=${JSON.stringify(value)}`);
@@ -164,11 +164,11 @@ test("F) سلامة المراجع: معرفات وهمية ومكررة، وا�
   const danglingErrors = validateAnalysisReport(dangling);
   assert.ok(danglingErrors.some((line) => line.includes("ev-404") && line.includes("غير موجود")), "مرجع وهمي مرفوض باسم المعرف");
 
-  // decisionEvidenceIds تشير إلى دليل غير موجود.
-  const danglingDecision = { ...emptyAnalysisReport(), evidence: [validEvidenceItem], decisionEvidenceIds: ["ev-404"] };
+  // sufficiencyEvidenceIds تشير إلى دليل غير موجود.
+  const danglingDecision = { ...emptyAnalysisReport(), evidence: [validEvidenceItem], sufficiencyEvidenceIds: ["ev-404"] };
   malformedCases += 1;
   const decisionErrors = validateAnalysisReport(danglingDecision);
-  assert.ok(decisionErrors.some((line) => line.includes("دليل القرار ev-404 غير موجود")), "مرجع قرار وهمي مرفوض");
+  assert.ok(decisionErrors.some((line) => line.includes("دليل الكفاية ev-404 غير موجود")), "مرجع كفاية وهمي مرفوض");
 
   // معرفات أدلة مكررة داخل التقرير: تُرفض قبل التطبيع.
   malformedCases += 1;
@@ -184,12 +184,12 @@ test("F) سلامة المراجع: معرفات وهمية ومكررة، وا�
     ...emptyAnalysisReport(),
     scopeOfWork: [validFinding()],
     evidence: [validEvidenceItem],
-    preliminaryDecision: "review",
+    evidenceSufficiency: "partial",
     confidence: "medium",
-    decisionEvidenceIds: ["ev-1"],
+    sufficiencyEvidenceIds: ["ev-1"],
   };
   assert.deepEqual(validateAnalysisReport(valid), [], "التقرير الصحيح الكامل مقبول");
-  assert.deepEqual(validateAnalysisReport(emptyAnalysisReport()), [], "تقرير insufficient_data الفارغ مقبول");
+  assert.deepEqual(validateAnalysisReport(emptyAnalysisReport()), [], "تقرير insufficient الفارغ مقبول");
 });
 
 test("G) المزود بمحاكاة محلية: findings غير مصفوفة تُرفض بـAI_OUTPUT_INVALID بلا TypeError وبلا إعادة", async () => {
@@ -271,8 +271,8 @@ test("H) المحرك بقاعدة مؤقتة: مهمة failed بـAI_OUTPUT_INV
 });
 
 test("I) عدم التراجع: الثوابت والإصدارات المعتمدة", () => {
-  assert.equal(analysisReportSchemaVersion, "analysis-report-v2");
-  assert.equal(analysisPromptVersion, "p4a-prompt-v4");
+  assert.equal(analysisReportSchemaVersion, "analysis-report-v3");
+  assert.equal(analysisPromptVersion, "p4a-prompt-v5");
   assert.equal(analysisFindingFields.length, 12);
 });
 
@@ -281,8 +281,8 @@ test("ملخص تغطية المدخلات المشوهة", () => {
   // B: 12 حقلًا × 5 قيم = 60
   // C: 11 عنصرًا + evidenceIds كنص = 12
   // D: 3 قيم غير مصفوفة + null داخل مصفوفة + 4 حقول مفقودة + موقع + excerpt مفقود + excerpt طويل = 11
-  // E: 5 decisionEvidenceIds + 4 warnings = 9
-  // F: مرجع وهمي + مرجع قرار وهمي + تكرار = 3
+  // E: 5 sufficiencyEvidenceIds + 4 warnings = 9
+  // F: مرجع وهمي + مرجع كفاية وهمي + تكرار = 3
   // G: مزود = 1 — H: محرك = 1
   assert.equal(malformedCases, 106, "عدد الحالات المشوهة المختبرة ثابت وحتمي");
 });

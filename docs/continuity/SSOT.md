@@ -62,6 +62,12 @@
    (enter/skip)**. القرار للمستخدم دائمًا، لأن المنصة منتج عام لجمهور مستقبلي متنوع
    وليست مخصصة لشركة واحدة. عرض enter/skip والثقة (confidence) كمؤشر رئيسي بارز
    أُزيل من الواجهة؛ الفئات المستخرجة هي المعروض الرئيسي.
+   **P5-EVIDENCE-SUFFICIENCY (اكتملت)**: الحياد امتد للمخطط الداخلي نفسه — لا يوجد
+   أي حقل قرار تجاري حتى في العقد غير الظاهر بين النموذج والنظام. `preliminaryDecision`
+   (enter/review/exclude/insufficient_data) استُبدل بـ`evidenceSufficiency`
+   (sufficient/partial/insufficient)، وهو وصف لكفاية الأدلة المستخرجة فقط، لا توصية
+   دخول/استبعاد. `decisionEvidenceIds` → `sufficiencyEvidenceIds`. إصدارات المخطط/الـprompt
+   رُفعت: `analysis-report-v3`، `p4a-prompt-v5`، `analysis-model-selection-v3`.
 
 ## 4. المنافذ والخدمات
 

@@ -5,8 +5,8 @@ const db = new DatabaseSync(path.resolve("..", "radar", ".radar-data", "radar.sq
 const j = db.prepare("SELECT report_json FROM analysis_jobs ORDER BY created_at DESC LIMIT 1").get();
 const r = JSON.parse(j.report_json);
 console.log("=== التقرير النهائي — nemotron على كراسة 260839005042 ===");
-console.log("القرار:", r.preliminaryDecision, "| الثقة:", r.confidence);
-console.log("معرفات القرار:", (r.decisionEvidenceIds ?? []).join(", "));
+console.log("كفاية الأدلة:", r.evidenceSufficiency, "| الثقة:", r.confidence);
+console.log("معرفات الكفاية:", (r.sufficiencyEvidenceIds ?? []).join(", "));
 const sec = (title, key) => {
   const items = r[key] ?? [];
   console.log("\n-- " + title + " --");

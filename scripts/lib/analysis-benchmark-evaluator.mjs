@@ -1,6 +1,6 @@
 // المُقيّم Offline المحايد لمنصة مقارنة النماذج — P4-M0A.
 // يستقبل حالة benchmark (مستند + أجزاء + بصمة manifest) وground-truth وكتالوج
-// الأدلة وتقرير analysis-report-v2 وmodelId محايدًا وtelemetry اختيارية مصطنعة،
+// الأدلة وتقرير analysis-report-v3 وmodelId محايدًا وtelemetry اختيارية مصطنعة،
 // ويعيد نتيجة منظمة. لا شبكة ولا استدعاء نماذج ولا مزودون: دوال نقية فقط.
 // modelId سلسلة محايدة (model-a / model-b …): لا يوجد أي شرط على قيمتها،
 // ولا تدخل في الدرجة، ولا يوجد نموذج افتراضي.
@@ -277,7 +277,7 @@ export function evaluateBenchmarkRun({ benchmarkCase, groundTruth, catalog, repo
   // ---------- بوابات تعكس رفض نظام الإنتاج نفسه: فشلها يعني SAFE_REJECTION ----------
   const schemaErrors = validateAnalysisReport(report);
   gate("reportSchemaValid", schemaErrors.length === 0,
-    (detail) => evidenceErrors.push(`التقرير غير مطابق لـ analysis-report-v2: ${detail}`),
+    (detail) => evidenceErrors.push(`التقرير غير مطابق لـ analysis-report-v3: ${detail}`),
     schemaErrors[0]);
 
   const findingKeys = ["category", "statement", "severity", "confidence", "evidenceIds"];

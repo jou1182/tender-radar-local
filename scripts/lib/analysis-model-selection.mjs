@@ -1,25 +1,27 @@
 // مخطط مخرجات النموذج الداخلي وإعادة بناء التقرير canonical — P4-M0BR0.
-// النموذج لا يُنتج أي نص أو statement أو summary إطلاقًا: يحدد القرار واليقين
+// النموذج لا يُنتج أي نص أو statement أو summary إطلاقًا: يحدد كفاية الأدلة واليقين
 // ويوزع معرفات المرشحين [cand-...] على الفئات الاثنتي عشرة.
-// هذا المخطط الداخلي (analysis-model-selection-v2) ديناميكي لكل مستند.
+// هذا المخطط الداخلي (analysis-model-selection-v3) ديناميكي لكل مستند.
+// حياد القرار التجاري (P5-EVIDENCE-SUFFICIENCY): لا حقل قرار تجاري — evidenceSufficiency
+// يصف فقط مدى كفاية الأدلة المستخرجة، لا توصية دخول/استبعاد.
 import {
   analysisFindingFields,
   confidenceValues,
+  evidenceSufficiencyValues,
   findingSeverityValues,
-  preliminaryDecisionValues,
   validateAnalysisReport,
 } from "./analysis-report.mjs";
 import { materializeEvidenceFromCandidates } from "./analysis-evidence-candidates.mjs";
 
-export const modelSelectionSchemaVersion = "analysis-model-selection-v2";
+export const modelSelectionSchemaVersion = "analysis-model-selection-v3";
 
-// حقول المخطط الداخلي v2: الفئات الاثنتا عشرة، القرار واليقين وأدلة القرار.
+// حقول المخطط الداخلي v3: الفئات الاثنتا عشرة، كفاية الأدلة واليقين وأدلة الكفاية.
 // لا توجد حقول للبيان statement أو الملخص executiveSummary أو التحذيرات warnings.
 export const modelSelectionFields = Object.freeze([
   ...analysisFindingFields,
-  "preliminaryDecision",
+  "evidenceSufficiency",
   "confidence",
-  "decisionEvidenceIds",
+  "sufficiencyEvidenceIds",
 ]);
 
 function isNonEmptyString(value) {
@@ -50,9 +52,9 @@ export function buildModelSelectionSchema(candidates) {
     required: [...modelSelectionFields],
     properties: {
       ...Object.fromEntries(analysisFindingFields.map((field) => [field, { $ref: "#/$defs/selectionFindingList" }])),
-      preliminaryDecision: { enum: [...preliminaryDecisionValues] },
+      evidenceSufficiency: { enum: [...evidenceSufficiencyValues] },
       confidence: { enum: [...confidenceValues] },
-      decisionEvidenceIds: { type: "array", items: { enum: [...allowedIds] } }
+      sufficiencyEvidenceIds: { type: "array", items: { enum: [...allowedIds] } }
     },
     $defs: {
       selectionFindingList: { type: "array", items: { $ref: "#/$defs/selectionFinding" } },
@@ -118,22 +120,22 @@ export function validateModelSelection(selection, candidates) {
     });
   }
 
-  if (!preliminaryDecisionValues.includes(selection.preliminaryDecision)) {
-    errors.push(`preliminaryDecision غير صالحة؛ القيم المسموحة: ${preliminaryDecisionValues.join("، ")}.`);
+  if (!evidenceSufficiencyValues.includes(selection.evidenceSufficiency)) {
+    errors.push(`evidenceSufficiency غير صالحة؛ القيم المسموحة: ${evidenceSufficiencyValues.join("، ")}.`);
   }
   if (!confidenceValues.includes(selection.confidence)) errors.push("confidence يجب أن تكون low أو medium أو high.");
 
-  if (!Array.isArray(selection.decisionEvidenceIds) || !selection.decisionEvidenceIds.every(isNonEmptyString)) {
-    errors.push("decisionEvidenceIds يجب أن تكون مصفوفة معرفات مرشحين.");
+  if (!Array.isArray(selection.sufficiencyEvidenceIds) || !selection.sufficiencyEvidenceIds.every(isNonEmptyString)) {
+    errors.push("sufficiencyEvidenceIds يجب أن تكون مصفوفة معرفات مرشحين.");
   } else {
     const seen = new Set();
-    for (const id of selection.decisionEvidenceIds) {
-      if (seen.has(id)) errors.push(`decisionEvidenceIds يحتوي معرفًا مكررًا: ${id}.`);
+    for (const id of selection.sufficiencyEvidenceIds) {
+      if (seen.has(id)) errors.push(`sufficiencyEvidenceIds يحتوي معرفًا مكررًا: ${id}.`);
       seen.add(id);
-      if (!allowedIds.has(id)) errors.push(`decisionEvidenceIds يشير إلى معرف مرشح مجهول: ${id}.`);
+      if (!allowedIds.has(id)) errors.push(`sufficiencyEvidenceIds يشير إلى معرف مرشح مجهول: ${id}.`);
     }
-    if (["enter", "review", "exclude"].includes(selection.preliminaryDecision) && !selection.decisionEvidenceIds.length) {
-      errors.push("قرار enter أو review أو exclude يتطلب decisionEvidenceIds غير فارغة من معرفات المرشحين.");
+    if (["sufficient", "partial"].includes(selection.evidenceSufficiency) && !selection.sufficiencyEvidenceIds.length) {
+      errors.push("evidenceSufficiency بقيمة sufficient أو partial يتطلب sufficiencyEvidenceIds غير فارغة من معرفات المرشحين.");
     }
   }
 
@@ -145,7 +147,7 @@ export function validateModelSelection(selection, candidates) {
   return errors;
 }
 
-// يعيد بناء تقرير analysis-report-v2 canonical حتميًا بالكامل — P4-M0BR0.
+// يعيد بناء تقرير analysis-report-v3 canonical حتميًا بالكامل — P4-M0BR0.
 // هذا مسار مخرجات النموذج الصارم فقط:
 // - statement يُبنى حرفيًا من مقتطفات الأدلة المنتمية للكتالوج (بفاصل محايد).
 // - executiveSummary يُدمج حتميًا من بنود findings نفسها (مقتطفات حرفية
@@ -174,9 +176,9 @@ export function materializeCanonicalReport(selection, catalog) {
   };
 
   const report = {
-    preliminaryDecision: selection.preliminaryDecision,
+    evidenceSufficiency: selection.evidenceSufficiency,
     confidence: selection.confidence,
-    decisionEvidenceIds: [...selection.decisionEvidenceIds],
+    sufficiencyEvidenceIds: [...selection.sufficiencyEvidenceIds],
   };
 
   const allStatements = [];
@@ -200,7 +202,7 @@ export function materializeCanonicalReport(selection, catalog) {
     });
   }
 
-  for (const id of selection.decisionEvidenceIds) collect(id);
+  for (const id of selection.sufficiencyEvidenceIds) collect(id);
 
   // فشل آمن واضح بدل fallback غير مؤسس: بلا بنود مؤسسة لا يمكن بناء ملخص
   // حرفي من الأدلة، وأي ملخص آخر سيُدخل كلمات غير موجودة في corpus الأدلة.
@@ -230,7 +232,8 @@ export function materializeCanonicalReport(selection, catalog) {
 export function buildModelSelectionPrompt({ document, catalog }) {
   const lines = [
     `أنت محلل وثائق منافسات. أعد JSON فقط يطابق المخطط الداخلي ${modelSelectionSchemaVersion}.`,
-    "مهمتك: تصنيف وتوزيع معرفات الأدلة من كتالوج المرشحين أدناه فقط على الفئات الاثنتي عشرة، وتحديد القرار واليقين.",
+    "مهمتك: تصنيف وتوزيع معرفات الأدلة من كتالوج المرشحين أدناه فقط على الفئات الاثنتي عشرة، وتقييم مدى كفاية الأدلة المستخرجة ويقينها.",
+    "أنت لا تصدر أي توصية بدخول المنافسة أو استبعادها — هذا قرار للمستخدم البشري وحده دائمًا؛ evidenceSufficiency يصف فقط مدى اكتمال ما استُخرج من الوثيقة.",
     "الفئات الاثنتا عشرة هي: scopeOfWork, boqSummary, criticalQuantities,",
     "eligibilityRequirements, requiredExperience, deadlines, bidBonds, guarantees, penalties,",
     "contractualRisks, unclearItems, questionsForAuthority.",
@@ -238,8 +241,8 @@ export function buildModelSelectionPrompt({ document, catalog }) {
     "شكل كل finding في القائمة: {severity: info|low|medium|high|critical, confidence: low|medium|high, evidenceIds: [معرفات مرشحة]}.",
     "ملاحظة: لا تكتب أي نص أو statement أو ملخص. سيقوم النظام محلياً وحتمياً بإنشاء النصوص الحرفية والملخص والتحذيرات من مقتطفات الأدلة التي تختارها.",
     "evidenceIds: اختر واحدًا أو أكثر من معرفات [cand-...] المعروضة فقط — كل finding يحتاج دليلًا واحدًا على الأقل.",
-    "decisionEvidenceIds: معرفات مرشحة تدعم preliminaryDecision؛ قرار enter أو review أو exclude يتطلب مصفوفة غير فارغة.",
-    "preliminaryDecision إحدى: enter, review, exclude, insufficient_data — استخدم insufficient_data إذا لم توجد أدلة كافية.",
+    "sufficiencyEvidenceIds: معرفات مرشحة تدعم تقييم evidenceSufficiency؛ sufficient أو partial يتطلب مصفوفة غير فارغة.",
+    "evidenceSufficiency إحدى: sufficient (الفئات الجوهرية مغطاة بأدلة كافية)، partial (بعض الفئات مغطاة وبعضها ناقص أو غامض)، insufficient (لا توجد أدلة كافية عمومًا). هذا وصف لاكتمال الاستخراج فقط، وليس قرارًا بدخول أو استبعاد المنافسة.",
     "confidence: low|medium|high.",
     "ممنوع منعًا باتًا: إضافة أي حقول زائدة، أو كتابة أي مقتطفات نصية، أو كتابة أي نصوص واقعية حرة.",
     "المقتطفات المعروضة منسوخة حرفيًا من المستند وهي مرجع للقراءة فقط لمساعدتك على الاختيار.",

@@ -33,10 +33,10 @@ try {
   const secs = Math.round((Date.now() - t0) / 1000);
   console.log(`\n=== اكتمل في ${secs} ثانية ===`);
   const report = result.report ?? result;
-  console.log("preliminaryDecision:", report.preliminaryDecision);
+  console.log("evidenceSufficiency:", report.evidenceSufficiency);
   console.log("confidence:", report.confidence);
-  const evidenceIds = report.decisionEvidenceIds ?? [];
-  console.log("أدلة (decisionEvidenceIds):", evidenceIds.length);
+  const evidenceIds = report.sufficiencyEvidenceIds ?? [];
+  console.log("أدلة (sufficiencyEvidenceIds):", evidenceIds.length);
   for (const eid of evidenceIds.slice(0, 9)) console.log("  -", eid);
   const unc = report.unclearItems ?? [];
   console.log("نقاط غير واضحة:", unc.length);

@@ -80,9 +80,9 @@
       "notes": "فحوص loopback فقط (واجهة :3000 + خدمة المزامنة /health و/analysis/health)؛ exit≠0 عند أي فشل؛ روابط قابلة للتجاوز loopback-only للاختبارات."
     }
   },
-  "analysisReportSchemaVersion": "analysis-report-v2",
-  "analysisPromptVersion": "p4a-prompt-v4",
-  "modelSelectionSchemaVersion": "analysis-model-selection-v2",
+  "analysisReportSchemaVersion": "analysis-report-v3",
+  "analysisPromptVersion": "p4a-prompt-v5",
+  "modelSelectionSchemaVersion": "analysis-model-selection-v3",
   "liveAiEnabledByDefault": false,
   "currentDefaultProvider": "stub",
   "localModels": {

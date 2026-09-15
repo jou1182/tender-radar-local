@@ -1,8 +1,8 @@
 {
   "executiveSummary": "تقرير مرجعي مصطنع للحالة m0a-clear — لأغراض المقارنة Offline فقط.",
-  "preliminaryDecision": "review",
+  "evidenceSufficiency": "partial",
   "confidence": "medium",
-  "decisionEvidenceIds": [
+  "sufficiencyEvidenceIds": [
     "cand-37770f82d3d41251cc5eeb04"
   ],
   "warnings": [

@@ -172,10 +172,10 @@ export function createStubProvider() {
         ? `مستند ${document.documentType} للاختبار يتضمن: ${titleBlock.text.slice(0, 120)}`
         : `مستند ${document.documentType} للاختبار بلا عنوان واضح.`;
       report.evidence = evidence.map((item) => Object.fromEntries(Object.entries(item).filter(([, value]) => value !== undefined)));
-      report.decisionEvidenceIds = evidence.length ? [`ev-1`] : [];
-      report.preliminaryDecision = evidence.length ? "review" : "insufficient_data";
+      report.sufficiencyEvidenceIds = evidence.length ? [`ev-1`] : [];
+      report.evidenceSufficiency = evidence.length ? "partial" : "insufficient";
       report.confidence = evidence.length ? "medium" : "low";
-      if (!evidence.length) report.warnings.push("لا توجد أدلة كافية في المستند؛ القرار insufficient_data.");
+      if (!evidence.length) report.warnings.push("لا توجد أدلة كافية في المستند؛ evidenceSufficiency=insufficient.");
       return report;
     },
   };
@@ -209,7 +209,7 @@ export function createOllamaProvider({ env = {}, fetchFn = globalThis.fetch } = 
       let response;
       try {
         // نقطة التوليد فقط؛ لا سحب نماذج ولا أي endpoint آخر، ومحاولة واحدة بلا إعادة.
-        // format يحمل مخطط الاختيار الداخلي analysis-model-selection-v2 (P4-M0BR0)
+        // format يحمل مخطط الاختيار الداخلي analysis-model-selection-v3 (P4-M0BR0)
         // لفرض بنية الاختيار بالمعرف من المصدر؛ validateModelSelection يبقى الحاجز
         // الإلزامي الثاني بعد الاستجابة.
         // P4-M0B2A: think:false يُعطِّل حقل التفكير في النماذج الداعمة (مثل qwen3.8)
@@ -236,7 +236,7 @@ export function createOllamaProvider({ env = {}, fetchFn = globalThis.fetch } = 
       } catch {
         throw providerError("AI_OUTPUT_INVALID", "مخرجات Ollama ليست JSON صالحًا.");
       }
-      // إعادة بناء تقرير analysis-report-v2 canonical من الكتالوج المحلي حرفيًا.
+      // إعادة بناء تقرير analysis-report-v3 canonical من الكتالوج المحلي حرفيًا.
       // أي معرف مجهول أو مكرر أو بنية مشوهة تُرفض هنا بـAI_OUTPUT_INVALID.
       const report = materializeCanonicalReport(selection, catalog);
       // المدة وإحصاء الكتالوج تُعاد ضمن النتيجة للسجل، دون أي نص من الطلب أو الاستجابة.

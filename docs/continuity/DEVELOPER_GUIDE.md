@@ -182,5 +182,5 @@ RADAR_LIVE_DOWNLOAD_MANIFEST_SHA256=<البصمة>
 | النبضة تنهار على `ECONNREFUSED` | احصر كل fetch لـCDP بـtry/catch |
 | مطابقة أسماء عربية بلا تطبيع | طبّع `ة→ه` و`أ→ا` على **الطرفين** |
 | عكس السلسلة كاملة للعربية | اعكس ترتيب الكلمات فقط + أبقِ اللاتيني |
-| قراءة `evidenceCatalog` بدل `decisionEvidenceIds` | الأدلة الفعلية في `decisionEvidenceIds` |
+| قراءة `evidenceCatalog` بدل `sufficiencyEvidenceIds` (اسم سابق: `decisionEvidenceIds` قبل P5-EVIDENCE-SUFFICIENCY) | الأدلة الفعلية في `sufficiencyEvidenceIds` |
 | الثقة برقم من محادثة قديمة | شغّل `npm test` واقرأ `SSOT.md` |

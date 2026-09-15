@@ -48,9 +48,9 @@ function groundedFakeFetch(calls) {
     const selection = {
       ...emptyAnalysisReport(),
       scopeOfWork: [{ severity: "info", confidence: "medium", evidenceIds: [candidateId] }],
-      preliminaryDecision: "review",
+      evidenceSufficiency: "partial",
       confidence: "medium",
-      decisionEvidenceIds: [candidateId],
+      sufficiencyEvidenceIds: [candidateId],
     };
     delete selection.evidence; // مخطط الاختيار الداخلي لا يحتوي evidence
     delete selection.executiveSummary; // P4-M0BR0: لا حقل نصي في المخطط الداخلي v2
@@ -85,12 +85,12 @@ test("R2) evidence ids are namespaced per job — two runs of the same fixture n
       assert.ok(!firstIds.has(item.evidenceId), `evidence id ${item.evidenceId} is unique across jobs`);
       assert.match(item.evidenceId, /^ev-[a-zA-Z0-9]+-\d+$/, "evidence ids carry the job scope");
     }
-    // المراجع داخل findings وdecisionEvidenceIds أُعيدت كتابتها إلى المعرفات الجديدة.
+    // المراجع داخل findings وsufficiencyEvidenceIds أُعيدت كتابتها إلى المعرفات الجديدة.
     const secondIds = new Set(second.report.evidence.map((item) => item.evidenceId));
     for (const finding of second.findings) {
       for (const id of finding.evidenceIds) assert.ok(secondIds.has(id), "finding references remapped ids");
     }
-    for (const id of second.report.decisionEvidenceIds) assert.ok(secondIds.has(id));
+    for (const id of second.report.sufficiencyEvidenceIds) assert.ok(secondIds.has(id));
   } finally {
     await cleanup(projectRoot, repository);
   }
@@ -130,8 +130,8 @@ test("R4) grounding: fabricated excerpts, foreign documents, and unknown chunks 
         response: JSON.stringify({
           ...emptyAnalysisReport(),
           evidence: [{ evidenceId: "ev-1", documentId: "doc-foreign", sourceType: "pdf", pageNumber: 1, excerpt: "مقتطف مختلق لا وجود له في النص", chunkId: "chk-0000000000000000" }],
-          decisionEvidenceIds: ["ev-1"],
-          preliminaryDecision: "review",
+          sufficiencyEvidenceIds: ["ev-1"],
+          evidenceSufficiency: "partial",
           confidence: "medium",
         }),
       }),
@@ -168,30 +168,30 @@ test("R4) grounding: fabricated excerpts, foreign documents, and unknown chunks 
   );
 });
 
-test("R5) decisionEvidenceIds are mandatory for final decisions and must resolve", () => {
+test("R5) sufficiencyEvidenceIds are mandatory for sufficient/partial and must resolve", () => {
   const evidence = [{ evidenceId: "ev-1", documentId: "d", sourceType: "pdf", pageNumber: 1, excerpt: "نص", chunkId: "chk-1" }];
   const base = { ...emptyAnalysisReport(), evidence, confidence: "medium" };
-  for (const decision of ["enter", "review", "exclude"]) {
-    const missing = validateAnalysisReport({ ...base, preliminaryDecision: decision, decisionEvidenceIds: [] });
-    assert.ok(missing.some((line) => line.includes("decisionEvidenceIds")), `${decision} without decision evidence is rejected`);
+  for (const decision of ["sufficient", "partial"]) {
+    const missing = validateAnalysisReport({ ...base, evidenceSufficiency: decision, sufficiencyEvidenceIds: [] });
+    assert.ok(missing.some((line) => line.includes("sufficiencyEvidenceIds")), `${decision} without sufficiency evidence is rejected`);
   }
-  const dangling = validateAnalysisReport({ ...base, preliminaryDecision: "review", decisionEvidenceIds: ["ev-404"] });
+  const dangling = validateAnalysisReport({ ...base, evidenceSufficiency: "partial", sufficiencyEvidenceIds: ["ev-404"] });
   assert.ok(dangling.some((line) => line.includes("ev-404")), "dangling decision evidence is rejected");
-  assert.deepEqual(validateAnalysisReport({ ...base, preliminaryDecision: "review", decisionEvidenceIds: ["ev-1"] }), [], "resolved decision evidence passes");
-  assert.deepEqual(validateAnalysisReport({ ...emptyAnalysisReport(), preliminaryDecision: "insufficient_data", decisionEvidenceIds: [] }), [], "insufficient_data needs none");
+  assert.deepEqual(validateAnalysisReport({ ...base, evidenceSufficiency: "partial", sufficiencyEvidenceIds: ["ev-1"] }), [], "resolved decision evidence passes");
+  assert.deepEqual(validateAnalysisReport({ ...emptyAnalysisReport(), evidenceSufficiency: "insufficient", sufficiencyEvidenceIds: [] }), [], "insufficient needs none");
 
   // التطبيع يعيد كتابة المراجع المعروفة ويُبقي الوهمية ليسقطها المدقق.
   const report = {
     ...base,
-    preliminaryDecision: "review",
-    decisionEvidenceIds: ["ev-1"],
+    evidenceSufficiency: "partial",
+    sufficiencyEvidenceIds: ["ev-1"],
     contractualRisks: [{ category: "contractualRisks", statement: "خطر", severity: "low", confidence: "low", evidenceIds: ["ev-1"] }],
   };
   const normalized = normalizeReportEvidenceIds(report, "analysis-job-abcdef123456");
   assert.equal(normalized.evidence[0].evidenceId, "ev-abcdef123456-1");
-  assert.deepEqual(normalized.decisionEvidenceIds, ["ev-abcdef123456-1"]);
+  assert.deepEqual(normalized.sufficiencyEvidenceIds, ["ev-abcdef123456-1"]);
   assert.deepEqual(normalized.contractualRisks[0].evidenceIds, ["ev-abcdef123456-1"]);
-  const phantom = normalizeReportEvidenceIds({ ...report, decisionEvidenceIds: ["ev-404"] }, "analysis-job-abcdef123456");
+  const phantom = normalizeReportEvidenceIds({ ...report, sufficiencyEvidenceIds: ["ev-404"] }, "analysis-job-abcdef123456");
   assert.ok(validateAnalysisReport(phantom).some((line) => line.includes("ev-404")), "phantom references stay visible and rejected");
 });
 

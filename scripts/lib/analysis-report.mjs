@@ -1,12 +1,17 @@
 // صيغة تقرير التحليل المنظم والتحقق منها — P4-A0 / تشديد P4-A0R.
-// لا توصية نهائية بلا أدلة: غياب الأدلة يفرض insufficient_data،
-// وكل finding بلا evidenceIds صالحة يرفض التقرير كاملًا،
-// وقرار enter/review/exclude يتطلب decisionEvidenceIds صريحة ومؤسسة.
-export const analysisReportSchemaVersion = "analysis-report-v2";
+// حياد القرار التجاري (P5-EVIDENCE-SUFFICIENCY، قرار د. جو 2026-08-29): لا يوجد أي
+// حقل قرار تجاري (enter/review/exclude) — evidenceSufficiency يصف فقط مدى كفاية
+// الأدلة المستخرجة، وليس توصية بدخول أو استبعاد المنافسة. القرار للمستخدم دائمًا.
+// غياب الأدلة يفرض "insufficient"، وكل finding بلا evidenceIds صالحة يرفض التقرير
+// كاملًا، وevidenceSufficiency بقيمة sufficient/partial يتطلب sufficiencyEvidenceIds
+// صريحة ومؤسسة.
+export const analysisReportSchemaVersion = "analysis-report-v3";
 // v3 (P4-A1D0): عقد التفاعل تغيّر — النموذج يختار معرفات مرشحين فقط ولا يكتب evidence.
-export const analysisPromptVersion = "p4a-prompt-v4";
+// v5 (P5-EVIDENCE-SUFFICIENCY): استبدال preliminaryDecision (enter/review/exclude)
+// بـevidenceSufficiency (sufficient/partial/insufficient) — إزالة أي دلالة قرار تجاري.
+export const analysisPromptVersion = "p4a-prompt-v5";
 
-export const preliminaryDecisionValues = ["enter", "review", "exclude", "insufficient_data"];
+export const evidenceSufficiencyValues = ["sufficient", "partial", "insufficient"];
 export const findingSeverityValues = ["info", "low", "medium", "high", "critical"];
 export const confidenceValues = ["low", "medium", "high"];
 
@@ -30,9 +35,9 @@ export const analysisFindingFields = [
 export const analysisReportFields = [
   "executiveSummary",
   ...analysisFindingFields,
-  "preliminaryDecision",
+  "evidenceSufficiency",
   "confidence",
-  "decisionEvidenceIds",
+  "sufficiencyEvidenceIds",
   "warnings",
   "evidence",
 ];
@@ -55,7 +60,7 @@ function deepFreeze(value) {
   return value;
 }
 
-// JSON Schema محلي مطابق لعقد analysis-report-v2 (P4-A1C0): يُمرر إلى Ollama
+// JSON Schema محلي مطابق لعقد analysis-report-v3 (P4-A1C0): يُمرر إلى Ollama
 // داخل حقل format لفرض البنية من المصدر. لا يحول كائنًا إلى مصفوفة ولا يصحح
 // مخرجات النموذج؛ validateAnalysisReport يبقى الحاجز الإلزامي الثاني بعد الاستجابة.
 // كائن JSON خالص: قابل للتسلسل الكامل بـJSON.stringify دون functions أو undefined.
@@ -66,10 +71,10 @@ export const analysisReportJsonSchema = deepFreeze({
   properties: {
     executiveSummary: { type: "string", minLength: 1 },
     ...Object.fromEntries(analysisFindingFields.map((field) => [field, { $ref: "#/$defs/findingList" }])),
-    preliminaryDecision: { enum: [...preliminaryDecisionValues] },
+    evidenceSufficiency: { enum: [...evidenceSufficiencyValues] },
     confidence: { enum: [...confidenceValues] },
-    // يسمح بالفراغ: المدقق يفرض عدم الفراغ فقط عند enter/review/exclude.
-    decisionEvidenceIds: { type: "array", items: { type: "string", minLength: 1 } },
+    // يسمح بالفراغ: المدقق يفرض عدم الفراغ فقط عند sufficient/partial.
+    sufficiencyEvidenceIds: { type: "array", items: { type: "string", minLength: 1 } },
     warnings: { type: "array", items: { type: "string" } },
     evidence: { type: "array", items: { $ref: "#/$defs/evidence" } },
   },
@@ -126,8 +131,8 @@ export function validateAnalysisReport(report) {
   if (errors.length) return errors;
 
   if (!isNonEmptyString(report.executiveSummary)) errors.push("executiveSummary يجب أن يكون نصًا غير فارغ.");
-  if (!preliminaryDecisionValues.includes(report.preliminaryDecision)) {
-    errors.push(`preliminaryDecision غير صالحة؛ القيم المسموحة: ${preliminaryDecisionValues.join("، ")}.`);
+  if (!evidenceSufficiencyValues.includes(report.evidenceSufficiency)) {
+    errors.push(`evidenceSufficiency غير صالحة؛ القيم المسموحة: ${evidenceSufficiencyValues.join("، ")}.`);
   }
   if (!confidenceValues.includes(report.confidence)) errors.push("confidence يجب أن تكون low أو medium أو high.");
   if (!isStringArray(report.warnings)) errors.push("warnings يجب أن تكون مصفوفة نصوص.");
@@ -163,8 +168,8 @@ export function validateAnalysisReport(report) {
     if (!isNonEmptyString(item.chunkId)) errors.push(`evidence[${index}].chunkId مفقود.`);
   });
 
-  if (!Array.isArray(report.decisionEvidenceIds) || !report.decisionEvidenceIds.every(isNonEmptyString)) {
-    errors.push("decisionEvidenceIds يجب أن تكون مصفوفة معرفات أدلة.");
+  if (!Array.isArray(report.sufficiencyEvidenceIds) || !report.sufficiencyEvidenceIds.every(isNonEmptyString)) {
+    errors.push("sufficiencyEvidenceIds يجب أن تكون مصفوفة معرفات أدلة.");
   }
 
   // سلامة المراجع بحواجز بنيوية صريحة (P4-A1R): لا يُمرّ على report[field] إلا
@@ -183,18 +188,18 @@ export function validateAnalysisReport(report) {
       }
     }
   }
-  for (const id of Array.isArray(report.decisionEvidenceIds) ? report.decisionEvidenceIds : []) {
-    if (isNonEmptyString(id) && !evidenceIds.has(id)) errors.push(`دليل القرار ${id} غير موجود في evidence.`);
+  for (const id of Array.isArray(report.sufficiencyEvidenceIds) ? report.sufficiencyEvidenceIds : []) {
+    if (isNonEmptyString(id) && !evidenceIds.has(id)) errors.push(`دليل الكفاية ${id} غير موجود في evidence.`);
   }
 
-  // القاعدة الصارمة: لا قرار نهائي بلا أدلة؛ غياب الأدلة يفرض insufficient_data.
-  if (!report.evidence.length && report.preliminaryDecision !== "insufficient_data") {
-    errors.push("لا يجوز إصدار قرار نهائي بلا أدلة؛ استخدم insufficient_data عند غياب الأدلة.");
+  // القاعدة الصارمة: لا تقييم كفاية إيجابي بلا أدلة؛ غياب الأدلة يفرض "insufficient".
+  if (!report.evidence.length && report.evidenceSufficiency !== "insufficient") {
+    errors.push("لا يجوز إصدار evidenceSufficiency غير insufficient بلا أدلة؛ استخدم insufficient عند غياب الأدلة.");
   }
-  // قرار enter/review/exclude يتطلب decisionEvidenceIds صريحة غير فارغة.
-  if (["enter", "review", "exclude"].includes(report.preliminaryDecision)
-    && (!Array.isArray(report.decisionEvidenceIds) || !report.decisionEvidenceIds.length)) {
-    errors.push("قرار enter أو review أو exclude يتطلب decisionEvidenceIds غير فارغة تشير إلى أدلة موجودة.");
+  // evidenceSufficiency بقيمة sufficient أو partial يتطلب sufficiencyEvidenceIds صريحة غير فارغة.
+  if (["sufficient", "partial"].includes(report.evidenceSufficiency)
+    && (!Array.isArray(report.sufficiencyEvidenceIds) || !report.sufficiencyEvidenceIds.length)) {
+    errors.push("evidenceSufficiency بقيمة sufficient أو partial يتطلب sufficiencyEvidenceIds غير فارغة تشير إلى أدلة موجودة.");
   }
   return errors;
 }
@@ -225,9 +230,9 @@ export function emptyAnalysisReport({ summary = "لا توجد أدلة كافي
     contractualRisks: [],
     unclearItems: [],
     questionsForAuthority: [],
-    preliminaryDecision: "insufficient_data",
+    evidenceSufficiency: "insufficient",
     confidence: "low",
-    decisionEvidenceIds: [],
+    sufficiencyEvidenceIds: [],
     warnings,
     evidence: [],
   };
@@ -253,7 +258,7 @@ export function normalizeReportEvidenceIds(report, scope) {
     return { ...item, evidenceId: nextId };
   });
   const remap = (ids) => (Array.isArray(ids) ? ids.map((id) => idMap.get(id) || id) : []);
-  const normalized = { ...report, evidence, decisionEvidenceIds: remap(report?.decisionEvidenceIds) };
+  const normalized = { ...report, evidence, sufficiencyEvidenceIds: remap(report?.sufficiencyEvidenceIds) };
   for (const field of analysisFindingFields) {
     normalized[field] = (Array.isArray(report?.[field]) ? report[field] : []).map((finding) => (
       finding && typeof finding === "object" ? { ...finding, evidenceIds: remap(finding.evidenceIds) } : finding

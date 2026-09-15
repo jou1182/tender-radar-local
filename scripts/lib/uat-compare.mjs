@@ -29,7 +29,7 @@ try {
   const secs = Math.round((Date.now() - t0) / 1000);
   const report = result.report ?? result;
   const evidence = report.evidenceCatalog ?? [];
-  console.log(`✓ اكتمل في ${secs}ث | decision: ${report.preliminaryDecision} | confidence: ${report.confidence} | أدلة: ${evidence.length}`);
+  console.log(`✓ اكتمل في ${secs}ث | evidenceSufficiency: ${report.evidenceSufficiency} | confidence: ${report.confidence} | أدلة: ${evidence.length}`);
   const sample = (report.scopeOfWork ?? [])[0]?.statement ?? "";
   console.log("عينة scopeOfWork:", JSON.stringify(sample.replace(/\s+/g, " ").slice(0, 130)));
 } catch (error) {

@@ -81,14 +81,14 @@ function buildFlatePdf(pages) {
 }
 
 test("S1) report schema and prompt versions are v2 with twelve finding categories", () => {
-  assert.equal(analysisReportSchemaVersion, "analysis-report-v2");
-  assert.equal(analysisPromptVersion, "p4a-prompt-v4");
+  assert.equal(analysisReportSchemaVersion, "analysis-report-v3");
+  assert.equal(analysisPromptVersion, "p4a-prompt-v5");
   for (const field of ["scopeOfWork", "boqSummary", "criticalQuantities"]) {
     assert.ok(analysisFindingFields.includes(field), `${field} is an evidence-backed finding category`);
   }
   assert.equal(analysisFindingFields.length, 12);
   const report = emptyAnalysisReport();
-  assert.deepEqual(validateAnalysisReport(report), [], "empty v2 report stays valid with insufficient_data");
+  assert.deepEqual(validateAnalysisReport(report), [], "empty v2 report stays valid with insufficient");
   for (const field of ["scopeOfWork", "boqSummary", "criticalQuantities"]) {
     const invalid = validateAnalysisReport({ ...report, [field]: ["نص حر بلا دليل"] });
     assert.ok(invalid.some((line) => line.includes(field)), `free text in ${field} is rejected`);
@@ -125,9 +125,9 @@ test("S3) the Ollama request body itself: selection schema, source metadata, and
   const validSelection = {
     ...emptyAnalysisReport(),
     scopeOfWork: [{ severity: "info", confidence: "medium", evidenceIds: [catalog.candidates[0].candidateId] }],
-    preliminaryDecision: "review",
+    evidenceSufficiency: "partial",
     confidence: "medium",
-    decisionEvidenceIds: [catalog.candidates[0].candidateId],
+    sufficiencyEvidenceIds: [catalog.candidates[0].candidateId],
   };
   delete validSelection.evidence; // مخطط الاختيار الداخلي لا يحتوي evidence
   delete validSelection.executiveSummary; // P4-M0BR0: لا حقل نصي في المخطط الداخلي v2
@@ -146,13 +146,13 @@ test("S3) the Ollama request body itself: selection schema, source metadata, and
   assert.ok(!("evidence" in seenBody.format.properties), "the model never sees an evidence field");
   assert.equal(seenBody.stream, false);
   const { prompt } = seenBody;
-  assert.match(prompt, /decisionEvidenceIds/, "decision evidence is requested explicitly");
+  assert.match(prompt, /sufficiencyEvidenceIds/, "decision evidence is requested explicitly");
   assert.match(prompt, /evidenceIds/, "finding shape with evidenceIds is documented");
   assert.match(prompt, /severity: info\|low\|medium\|high\|critical/, "finding shape is documented (v2 بلا statement/category)");
   assert.match(prompt, /لا تكتب أي نص أو statement/, "the model is forbidden from writing any free text");
   assert.doesNotMatch(prompt, /category, statement, severity/, "v2 لا يعرض حقل statement في شكل finding");
-  assert.match(prompt, /analysis-model-selection-v2/, "the internal selection schema version is named");
-  assert.doesNotMatch(prompt, /analysis-report-v2/, "النموذج لا يرى صيغة التقرير النهائية — يختار معرفات فقط");
+  assert.match(prompt, /analysis-model-selection-v3/, "the internal selection schema version is named");
+  assert.doesNotMatch(prompt, /analysis-report-v3/, "النموذج لا يرى صيغة التقرير النهائية — يختار معرفات فقط");
   assert.match(prompt, /معرف المستند: doc-req/);
   for (const field of analysisFindingFields) assert.ok(prompt.includes(field), `prompt names category ${field}`);
   // كل مرشح يرسل بيانات مصدره الفعلية معه.

@@ -437,7 +437,7 @@ export function loadBenchmarkCase(benchmarkRoot, caseId) {
 
 // ---------- بناء selection مرجعي من ground-truth (للعينات والتحقق الذاتي) ----------
 // مرجع مُصنّع من بيانات ground-truth المعتمدة — ليس ناتج نموذج إطلاقًا. لا يمر
-// عبر مسار النموذج الصارم (analysis-model-selection-v2) الذي يمنع أي نص حر؛
+// عبر مسار النموذج الصارم (analysis-model-selection-v3) الذي يمنع أي نص حر؛
 // referenceReport تُبنى منه مباشرة عبر materializeReferenceReport لأنها بيانات
 // مرجعية لاختبار المُقيّم نفسه (تغطي أيضًا عبارات التعارض الموثقة التي لا تظهر
 // حرفيًا في مقتطفات الأدلة، مثل «مدة التنفيذ متعارضة بين الصفحتين»).
@@ -445,9 +445,9 @@ export function buildReferenceSelection(groundTruth) {
   const selection = {
     executiveSummary: `تقرير مرجعي مصطنع للحالة ${groundTruth.caseId} — لأغراض المقارنة Offline فقط.`,
     ...Object.fromEntries(analysisFindingFields.map((field) => [field, []])),
-    preliminaryDecision: "review",
+    evidenceSufficiency: "partial",
     confidence: "medium",
-    decisionEvidenceIds: [],
+    sufficiencyEvidenceIds: [],
     warnings: ["تقرير مرجعي مصطنع لأغراض المقارنة Offline فقط؛ ليس ناتج نموذج."],
   };
   const decisionIds = [];
@@ -468,12 +468,12 @@ export function buildReferenceSelection(groundTruth) {
       selection.warnings.push(expectation.expectedValue);
     }
   }
-  selection.decisionEvidenceIds = decisionIds;
+  selection.sufficiencyEvidenceIds = decisionIds;
   return selection;
 }
 
 // يُبني التقرير المرجعي من selection مرجعي: يبني evidence من الكتالوج حرفيًا
-// ثم يتحقق من صحة analysis-report-v2 فقط — بلا تقييد نصي لأن المصدر
+// ثم يتحقق من صحة analysis-report-v3 فقط — بلا تقييد نصي لأن المصدر
 // ground-truth معتمد وليس ناتج نموذج. يُستخدم حصريًا في منصة المقارنة Offline.
 export function materializeReferenceReport(selection, catalog) {
   const candidates = (catalog && Array.isArray(catalog.candidates)) ? catalog.candidates : [];
@@ -488,9 +488,9 @@ export function materializeReferenceReport(selection, catalog) {
   };
   const report = {
     executiveSummary: selection.executiveSummary,
-    preliminaryDecision: selection.preliminaryDecision,
+    evidenceSufficiency: selection.evidenceSufficiency,
     confidence: selection.confidence,
-    decisionEvidenceIds: [...selection.decisionEvidenceIds],
+    sufficiencyEvidenceIds: [...selection.sufficiencyEvidenceIds],
     warnings: [...selection.warnings],
   };
   for (const field of analysisFindingFields) {
@@ -505,7 +505,7 @@ export function materializeReferenceReport(selection, catalog) {
       };
     });
   }
-  for (const id of selection.decisionEvidenceIds) collect(id);
+  for (const id of selection.sufficiencyEvidenceIds) collect(id);
   report.evidence = usedIds.map((id) => {
     const candidate = byId.get(id);
     if (!candidate) {

@@ -66,9 +66,9 @@ test("3) القيم الأساسية في CURRENT_STATE.json صحيحة (بني�
   assert.equal(state.testBaselines.continuityPackage.passed, 251);
   assert.equal(state.testBaselines.continuityPackage.failed, 0);
   assert.equal(state.testBaselines.continuityPackage.phase, "P4-H1B");
-  assert.equal(state.analysisReportSchemaVersion, "analysis-report-v2");
-  assert.equal(state.analysisPromptVersion, "p4a-prompt-v4");
-  assert.equal(state.modelSelectionSchemaVersion, "analysis-model-selection-v2");
+  assert.equal(state.analysisReportSchemaVersion, "analysis-report-v3");
+  assert.equal(state.analysisPromptVersion, "p4a-prompt-v5");
+  assert.equal(state.modelSelectionSchemaVersion, "analysis-model-selection-v3");
   assert.equal(state.liveAiEnabledByDefault, false, "الذكاء الحي معطل افتراضيًا");
   assert.equal(state.currentDefaultProvider, "stub");
   assert.equal(state.nextPlannedPhase, "P4-O0");

@@ -78,9 +78,9 @@ const fixtureSet = [
 function emptySelection() {
   return {
     ...Object.fromEntries(analysisFindingFields.map((field) => [field, []])),
-    preliminaryDecision: "insufficient_data",
+    evidenceSufficiency: "insufficient",
     confidence: "low",
-    decisionEvidenceIds: [],
+    sufficiencyEvidenceIds: [],
   };
 }
 
@@ -215,17 +215,17 @@ test("D) schema v2: مخطط الاختيار الداخلي مغلق تماما
   assert.equal(finding.properties.evidenceIds.type, "array");
   assert.equal(finding.properties.evidenceIds.minItems, 1);
   assert.deepEqual(finding.properties.evidenceIds.items.enum, allowedIds, "evidenceIds enum من معرفات المرشحين");
-  assert.deepEqual(schema.properties.decisionEvidenceIds.items.enum, allowedIds, "decisionEvidenceIds enum من القائمة نفسها");
+  assert.deepEqual(schema.properties.sufficiencyEvidenceIds.items.enum, allowedIds, "sufficiencyEvidenceIds enum من القائمة نفسها");
   assert.ok(!allowedIds.includes("cand-unknown"), "معرف مجهول ليس ضمن enum");
 
   assert.deepEqual(JSON.parse(JSON.stringify(schema)), schema, "قابل للتسلسل الكامل");
   assert.ok(Object.isFrozen(schema) && Object.isFrozen(schema.$defs.selectionFinding), "المخطط مجمد");
-  assert.equal(modelSelectionSchemaVersion, "analysis-model-selection-v2");
+  assert.equal(modelSelectionSchemaVersion, "analysis-model-selection-v3");
 });
 
 test("E) prompt v4: اختيار بالمعرف فقط، بلا نصوص، ضمن الميزانية وبلا مسارات", () => {
-  assert.equal(analysisPromptVersion, "p4a-prompt-v4", "إصدار prompt الجديد");
-  assert.equal(analysisReportSchemaVersion, "analysis-report-v2", "صيغة التقرير canonical باقية");
+  assert.equal(analysisPromptVersion, "p4a-prompt-v5", "إصدار prompt الجديد");
+  assert.equal(analysisReportSchemaVersion, "analysis-report-v3", "صيغة التقرير canonical باقية");
   const { document, chunks } = fixtureDocument("booklet-pdf", "booklet-sample.pdf", "doc-prompt");
   const catalog = buildEvidenceCandidateCatalog({ document, chunks });
   const prompt = buildModelSelectionPrompt({ document, catalog });
@@ -235,8 +235,8 @@ test("E) prompt v4: اختيار بالمعرف فقط، بلا نصوص، ضم�
   assert.match(prompt, /ممنوع منعًا باتًا/, "يمنع كتابة الأدلة صراحة");
   assert.match(prompt, /لا تكتب أي نص أو statement/, "يمنع النصوص صراحة");
   assert.match(prompt, /مرجع للقراءة فقط/, "المقتطفات مرجع قراءة فقط");
-  assert.match(prompt, /insufficient_data/, "يسمح بـinsufficient_data عند غياب الأدلة");
-  assert.match(prompt, /decisionEvidenceIds/, "يطلب أدلة القرار");
+  assert.match(prompt, /insufficient/, "يسمح بـinsufficient عند غياب الأدلة");
+  assert.match(prompt, /sufficiencyEvidenceIds/, "يطلب أدلة القرار");
   assert.doesNotMatch(prompt, /انسخ excerpt|اكتب excerpt/, "لا يطلب كتابة مقتطف إطلاقًا");
 
   assert.ok(catalog.totalExcerptChars <= 6_000, "ميزانية المقتطفات مطبقة");
@@ -252,12 +252,12 @@ test("F) materialization: تقرير canonical v2 بأدلة محلية حرفي
   const selection = {
     ...emptySelection(),
     scopeOfWork: [{ severity: "info", confidence: "medium", evidenceIds: [first.candidateId, second.candidateId] }],
-    preliminaryDecision: "review",
+    evidenceSufficiency: "partial",
     confidence: "medium",
-    decisionEvidenceIds: [first.candidateId],
+    sufficiencyEvidenceIds: [first.candidateId],
   };
   const report = materializeCanonicalReport(selection, catalog);
-  assert.deepEqual(validateAnalysisReport(report), [], "التقرير المعاد بناؤه يطابق analysis-report-v2");
+  assert.deepEqual(validateAnalysisReport(report), [], "التقرير المعاد بناؤه يطابق analysis-report-v3");
   assert.equal(report.evidence.length, 2, "evidence مبنية محليًا من الكتالوج فقط");
   assert.equal(report.evidence[0].evidenceId, first.candidateId, "evidenceId = candidateId قبل التطبيع");
   assert.equal(report.evidence[0].excerpt, first.excerpt, "excerpt حرفي من الكتالوج");
@@ -268,7 +268,7 @@ test("F) materialization: تقرير canonical v2 بأدلة محلية حرفي
   const normalized = normalizeReportEvidenceIds(report, "analysis-job-p4a1d0mat01");
   assert.match(normalized.evidence[0].evidenceId, /^ev-[a-zA-Z0-9]+-1$/, "التطبيع يعيد الترقيم بنطاق المهمة");
   assert.deepEqual(normalized.scopeOfWork[0].evidenceIds, normalized.evidence.map((e) => e.evidenceId), "المراجع أُعيدت كتابتها دون كسر");
-  assert.deepEqual(normalized.decisionEvidenceIds, [normalized.evidence[0].evidenceId]);
+  assert.deepEqual(normalized.sufficiencyEvidenceIds, [normalized.evidence[0].evidenceId]);
   assert.deepEqual(validateAnalysisReport(normalized), [], "صالح بعد التطبيع");
   assert.equal(verifyReportGrounding(normalized, document, chunks), true, "grounding ناجح بعد التطبيع");
 });
@@ -279,8 +279,8 @@ test("G) معرف مجهول: AI_OUTPUT_INVALID في الوحدة والمزود
   const selection = {
     ...emptySelection(),
     scopeOfWork: [{ severity: "info", confidence: "medium", evidenceIds: ["cand-000000000000000000000000"] }],
-    preliminaryDecision: "review",
-    decisionEvidenceIds: ["cand-000000000000000000000000"],
+    evidenceSufficiency: "partial",
+    sufficiencyEvidenceIds: ["cand-000000000000000000000000"],
   };
   const errors = validateModelSelection(selection, catalog.candidates);
   assert.ok(errors.some((line) => line.includes("cand-000000000000000000000000") && line.includes("مجهول")), "المعرف المجهول مرفوض باسمه");
@@ -313,11 +313,11 @@ test("H) استجابات مشوهة: كائن بدل مصفوفة وIDs غير 
     ["IDs مكررة داخل finding", {
       ...emptySelection(),
       scopeOfWork: [{ severity: "info", confidence: "low", evidenceIds: [id, id] }],
-      preliminaryDecision: "review",
-      decisionEvidenceIds: [id],
+      evidenceSufficiency: "partial",
+      sufficiencyEvidenceIds: [id],
     }, /مكرر/],
-    ["قرار نهائي بلا decisionEvidenceIds", { ...emptySelection(), preliminaryDecision: "enter" }, /decisionEvidenceIds/],
-    ["معرف قرار مكرر", { ...emptySelection(), preliminaryDecision: "review", decisionEvidenceIds: [id, id] }, /مكرر/],
+    ["قرار نهائي بلا sufficiencyEvidenceIds", { ...emptySelection(), evidenceSufficiency: "sufficient" }, /sufficiencyEvidenceIds/],
+    ["معرف قرار مكرر", { ...emptySelection(), evidenceSufficiency: "partial", sufficiencyEvidenceIds: [id, id] }, /مكرر/],
     ["حقل evidence زائد", { ...emptySelection(), evidence: [] }, /evidence/],
     ["حقل statement زائد داخل الفئة", { ...emptySelection(), scopeOfWork: [{ statement: "نص واقعي حر", severity: "info", confidence: "low", evidenceIds: [id] }] }, /statement|حقل غير مسموح/],
     ["حقل category زائد داخل الفئة", { ...emptySelection(), scopeOfWork: [{ category: "scopeOfWork", severity: "info", confidence: "low", evidenceIds: [id] }] }, /category|حقل غير مسموح/],
@@ -339,7 +339,7 @@ test("H) استجابات مشوهة: كائن بدل مصفوفة وIDs غير 
   }
 });
 
-test("I) المحرك بـfetchFn وهمي: مهمة completed وتقرير محفوظ وfindings/evidence وmodel_run succeeded واحد بـ p4a-prompt-v4", async () => {
+test("I) المحرك بـfetchFn وهمي: مهمة completed وتقرير محفوظ وfindings/evidence وmodel_run succeeded واحد بـ p4a-prompt-v5", async () => {
   const { projectRoot, repository } = await tempRepository();
   try {
     let generateCalls = 0;
@@ -355,9 +355,9 @@ test("I) المحرك بـfetchFn وهمي: مهمة completed وتقرير مح
       const selection = {
         ...emptySelection(),
         scopeOfWork: [{ severity: "info", confidence: "medium", evidenceIds: [ids[0], ids[1] || ids[0]] }],
-        preliminaryDecision: "review",
+        evidenceSufficiency: "partial",
         confidence: "medium",
-        decisionEvidenceIds: [ids[0]],
+        sufficiencyEvidenceIds: [ids[0]],
       };
       return { ok: true, status: 200, json: async () => ({ response: JSON.stringify(selection) }) };
     };
@@ -371,8 +371,8 @@ test("I) المحرك بـfetchFn وهمي: مهمة completed وتقرير مح
     assert.ok(done.findings.length >= 1, "findings محفوظة");
     assert.equal(done.modelRuns.length, 1, "model_run واحد");
     assert.equal(done.modelRuns[0].status, "succeeded");
-    assert.equal(done.modelRuns[0].promptVersion, "p4a-prompt-v4");
-    assert.equal(done.modelRuns[0].outputSchemaVersion, "analysis-report-v2");
+    assert.equal(done.modelRuns[0].promptVersion, "p4a-prompt-v5");
+    assert.equal(done.modelRuns[0].outputSchemaVersion, "analysis-report-v3");
     assert.deepEqual(validateAnalysisReport(done.report), [], "التقرير المحفوظ صالح");
     const evidenceIds = new Set(done.report.evidence.map((item) => item.evidenceId));
     for (const finding of done.findings) {
@@ -392,8 +392,8 @@ test("J) فشل آمن: معرف مجهول عبر المحرك — failed بل�
       const selection = {
         ...emptySelection(),
         scopeOfWork: [{ severity: "info", confidence: "low", evidenceIds: ["cand-eeeeeeeeeeeeeeeeeeeeeeee"] }],
-        preliminaryDecision: "review",
-        decisionEvidenceIds: ["cand-eeeeeeeeeeeeeeeeeeeeeeee"],
+        evidenceSufficiency: "partial",
+        sufficiencyEvidenceIds: ["cand-eeeeeeeeeeeeeeeeeeeeeeee"],
       };
       return { ok: true, status: 200, json: async () => ({ response: JSON.stringify(selection) }) };
     };
@@ -430,9 +430,9 @@ test("K) حاجز grounding: تلاعب محلي بعد materialization يُرف
   const selection = {
     ...emptySelection(),
     scopeOfWork: [{ severity: "info", confidence: "medium", evidenceIds: [id] }],
-    preliminaryDecision: "review",
+    evidenceSufficiency: "partial",
     confidence: "medium",
-    decisionEvidenceIds: [id],
+    sufficiencyEvidenceIds: [id],
   };
   const report = materializeCanonicalReport(selection, catalog);
   assert.equal(verifyReportGrounding(report, document, chunks), true, "الأصل سليم");
@@ -471,9 +471,9 @@ test("L) بلا مرشحين: لا استدعاء للنموذج إطلاقًا 
 });
 
 test("M) عدم التراجع: الثوابت والإصدارات المعتمدة في v2", () => {
-  assert.equal(analysisReportSchemaVersion, "analysis-report-v2");
-  assert.equal(analysisPromptVersion, "p4a-prompt-v4");
-  assert.equal(modelSelectionSchemaVersion, "analysis-model-selection-v2");
+  assert.equal(analysisReportSchemaVersion, "analysis-report-v3");
+  assert.equal(analysisPromptVersion, "p4a-prompt-v5");
+  assert.equal(modelSelectionSchemaVersion, "analysis-model-selection-v3");
   assert.equal(analysisFindingFields.length, 12);
   assert.deepEqual(evidenceCandidateLimits, { maxCandidates: 48, maxTotalExcerptChars: 6_000, maxExcerptChars: 400, minExcerptChars: 8 });
 });
@@ -487,8 +487,8 @@ test("N) P4-M0BR0: معرف واحد ينتج statement حرفيًا وملخص�
   const selectionSingle = {
     ...emptySelection(),
     scopeOfWork: [{ severity: "info", confidence: "medium", evidenceIds: [first.candidateId] }],
-    preliminaryDecision: "review",
-    decisionEvidenceIds: [first.candidateId],
+    evidenceSufficiency: "partial",
+    sufficiencyEvidenceIds: [first.candidateId],
   };
   const reportSingle = materializeCanonicalReport(selectionSingle, catalog);
   assert.equal(reportSingle.scopeOfWork[0].statement, first.excerpt, "الدليل الفردي مطابق حرفياً");
@@ -497,8 +497,8 @@ test("N) P4-M0BR0: معرف واحد ينتج statement حرفيًا وملخص�
   const selectionMulti = {
     ...emptySelection(),
     scopeOfWork: [{ severity: "info", confidence: "medium", evidenceIds: [first.candidateId, second.candidateId] }],
-    preliminaryDecision: "review",
-    decisionEvidenceIds: [first.candidateId],
+    evidenceSufficiency: "partial",
+    sufficiencyEvidenceIds: [first.candidateId],
   };
   const reportMulti = materializeCanonicalReport(selectionMulti, catalog);
   assert.equal(reportMulti.scopeOfWork[0].statement, `${first.excerpt}؛ ${second.excerpt}`, "الدليل المتعدد مدمج بفاصل حتمي");
@@ -540,9 +540,9 @@ test("O) P4-M0BR0: تغطية الفئات الاثنتي عشرة وحتمية 
   const catalog = buildEvidenceCandidateCatalog({ document, chunks });
   const first = catalog.candidates[0];
   const selectionAll = {
-    preliminaryDecision: "review",
+    evidenceSufficiency: "partial",
     confidence: "medium",
-    decisionEvidenceIds: [first.candidateId],
+    sufficiencyEvidenceIds: [first.candidateId],
     ...Object.fromEntries(analysisFindingFields.map((field) => [
       field,
       [{ severity: "info", confidence: "medium", evidenceIds: [first.candidateId] }]
@@ -577,8 +577,8 @@ test("P) P4-M0BR0: لا laundering ولا نصوص حرة — أمثلة Qwen ت
   for (const { label, mutate } of qwenExamples) {
     const base = {
       ...emptySelection(),
-      preliminaryDecision: "review",
-      decisionEvidenceIds: [first.candidateId],
+      evidenceSufficiency: "partial",
+      sufficiencyEvidenceIds: [first.candidateId],
     };
     const tampered = mutate(base);
     const errors = validateModelSelection(tampered, catalog.candidates);
@@ -594,8 +594,8 @@ test("P) P4-M0BR0: لا laundering ولا نصوص حرة — أمثلة Qwen ت
   for (const freeText of ["يتعلق المشروع", "المستند يحتوي", "يجب تحديد"]) {
     const tampered = {
       ...emptySelection(),
-      preliminaryDecision: "review",
-      decisionEvidenceIds: [first.candidateId],
+      evidenceSufficiency: "partial",
+      sufficiencyEvidenceIds: [first.candidateId],
       executiveSummary: `${freeText} نص حر`,
     };
     assert.throws(
@@ -615,8 +615,8 @@ test("Q) P4-M0BR0: معرف مجهول أو مكرر يرفض، وبلا بنو�
   const unknown = {
     ...emptySelection(),
     scopeOfWork: [{ severity: "info", confidence: "low", evidenceIds: ["cand-000000000000000000000000"] }],
-    preliminaryDecision: "review",
-    decisionEvidenceIds: [first.candidateId],
+    evidenceSufficiency: "partial",
+    sufficiencyEvidenceIds: [first.candidateId],
   };
   assert.throws(() => materializeCanonicalReport(unknown, catalog), (err) => err.code === "AI_OUTPUT_INVALID");
 
@@ -624,17 +624,17 @@ test("Q) P4-M0BR0: معرف مجهول أو مكرر يرفض، وبلا بنو�
   const duplicated = {
     ...emptySelection(),
     scopeOfWork: [{ severity: "info", confidence: "low", evidenceIds: [first.candidateId, first.candidateId] }],
-    preliminaryDecision: "review",
-    decisionEvidenceIds: [first.candidateId],
+    evidenceSufficiency: "partial",
+    sufficiencyEvidenceIds: [first.candidateId],
   };
   assert.throws(() => materializeCanonicalReport(duplicated, catalog), (err) => err.code === "AI_OUTPUT_INVALID");
 
-  // بلا بنود مختارة (كل الفئات فارغة) وinsufficient_data: لا fallback — فشل آمن مشفر.
+  // بلا بنود مختارة (كل الفئات فارغة) وinsufficient: لا fallback — فشل آمن مشفر.
   const noSelection = {
     ...emptySelection(),
-    preliminaryDecision: "insufficient_data",
+    evidenceSufficiency: "insufficient",
     confidence: "low",
-    decisionEvidenceIds: [],
+    sufficiencyEvidenceIds: [],
   };
   assert.throws(
     () => materializeCanonicalReport(noSelection, catalog),

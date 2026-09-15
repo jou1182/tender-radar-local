@@ -234,7 +234,7 @@ test("11) end-to-end stub analysis completes with an evidence-backed validated r
     assert.equal(job.jobStatus, "completed");
     assert.deepEqual(validateAnalysisReport(job.report), [], "the stored report matches the schema");
     assert.ok(job.report.evidence.length > 0);
-    assert.notEqual(job.report.preliminaryDecision, "insufficient_data");
+    assert.notEqual(job.report.evidenceSufficiency, "insufficient");
     const evidenceIds = new Set(job.report.evidence.map((item) => item.evidenceId));
     assert.ok(job.findings.length > 0);
     for (const finding of job.findings) {
@@ -242,8 +242,8 @@ test("11) end-to-end stub analysis completes with an evidence-backed validated r
       for (const id of finding.evidenceIds) assert.ok(evidenceIds.has(id));
     }
     assert.ok(job.report.bidBonds.some((finding) => finding.statement.includes("5000")), "stub surfaces the bid bond from the fixture");
-    assert.ok(job.report.decisionEvidenceIds.length > 0, "a review decision carries explicit decision evidence");
-    for (const id of job.report.decisionEvidenceIds) assert.ok(evidenceIds.has(id), "decision evidence exists in evidence");
+    assert.ok(job.report.sufficiencyEvidenceIds.length > 0, "a review decision carries explicit decision evidence");
+    for (const id of job.report.sufficiencyEvidenceIds) assert.ok(evidenceIds.has(id), "decision evidence exists in evidence");
     assert.ok(job.report.evidence.every((item) => item.chunkId.startsWith("chk-") && item.documentId === job.document.id));
     assert.equal(job.modelRuns.length, 1);
     assert.equal(job.modelRuns[0].status, "succeeded");
@@ -299,8 +299,8 @@ test("14-15) Ollama sends only the bounded candidate catalog to /api/generate, n
     const selection = {
       ...emptyAnalysisReport(),
       scopeOfWork: [{ severity: "info", confidence: "medium", evidenceIds: [candidateId] }],
-      preliminaryDecision: "review",
-      decisionEvidenceIds: [candidateId],
+      evidenceSufficiency: "partial",
+      sufficiencyEvidenceIds: [candidateId],
     };
     delete selection.evidence;
     delete selection.executiveSummary; // P4-M0BR0: المخطط الداخلي v2 بلا حقول نصية
@@ -312,7 +312,7 @@ test("14-15) Ollama sends only the bounded candidate catalog to /api/generate, n
     fetchFn,
   });
   const report = await provider.analyze({ document, chunks });
-  assert.equal(report.preliminaryDecision, "review");
+  assert.equal(report.evidenceSufficiency, "partial");
   assert.ok(report._meta.durationMs >= 0, "duration is measured for the run log");
   assert.equal(calls.length, 1, "exactly one attempt — no unbounded retry");
   assert.equal(calls[0].url, "http://127.0.0.1:11434/api/generate", "the generate endpoint is the only call");
@@ -342,16 +342,16 @@ test("15-16) the report schema rejects malformed output and any decision without
   assert.ok(validateAnalysisReport(null).length > 0);
   assert.ok(validateAnalysisReport({}).length > 0, "missing fields are rejected");
   const report = emptyAnalysisReport();
-  assert.deepEqual(validateAnalysisReport(report), [], "an empty report with insufficient_data is valid");
-  const enterWithoutEvidence = validateAnalysisReport({ ...report, preliminaryDecision: "enter" });
-  assert.ok(enterWithoutEvidence.some((line) => line.includes("بلا أدلة")), "a final decision without evidence is impossible");
-  assert.ok(enterWithoutEvidence.some((line) => line.includes("decisionEvidenceIds")), "enter requires explicit decision evidence ids");
+  assert.deepEqual(validateAnalysisReport(report), [], "an empty report with insufficient is valid");
+  const sufficientWithoutEvidence = validateAnalysisReport({ ...report, evidenceSufficiency: "sufficient" });
+  assert.ok(sufficientWithoutEvidence.some((line) => line.includes("بلا أدلة")), "a sufficiency claim without evidence is impossible");
+  assert.ok(sufficientWithoutEvidence.some((line) => line.includes("sufficiencyEvidenceIds")), "sufficient requires explicit sufficiency evidence ids");
   const withFinding = {
     ...report,
     evidence: [{ evidenceId: "ev-1", documentId: "d", sourceType: "pdf", pageNumber: 1, excerpt: "نص", chunkId: "chk-1" }],
-    decisionEvidenceIds: ["ev-1"],
+    sufficiencyEvidenceIds: ["ev-1"],
     contractualRisks: [{ category: "contractualRisks", statement: "خطر", severity: "high", confidence: "low", evidenceIds: ["ev-404"] }],
-    preliminaryDecision: "review",
+    evidenceSufficiency: "partial",
   };
   assert.ok(validateAnalysisReport(withFinding).some((line) => line.includes("ev-404")), "dangling evidence references are rejected");
   const noFindingEvidence = { ...withFinding, contractualRisks: [{ category: "c", statement: "s", severity: "low", confidence: "low", evidenceIds: [] }] };

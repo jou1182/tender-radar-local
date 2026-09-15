@@ -33,7 +33,7 @@ const fakeDocument = {
 };
 const fakeChunks = [{ chunkId: "chk-1", text: "نص جزء اختبار ثابت.", blockIds: ["b1"], sources: [{ pageNumber: 1 }] }];
 
-// اختيار نموذج صحيح الشكل (P4-M0BR0 / analysis-model-selection-v2):
+// اختيار نموذج صحيح الشكل (P4-M0BR0 / analysis-model-selection-v3):
 // الفئات الاثنتا عشرة + القرار واليقين وأدلة القرار فقط — بلا executiveSummary
 // ولا warnings ولا evidence (المخطط الداخلي لا يقبل أي حقل نصي أو زائد).
 function emptySelection() {
@@ -125,12 +125,12 @@ test("D) مخطط evidence", () => {
 
 test("E) حقول القرار والملخص", () => {
   const { properties } = analysisReportJsonSchema;
-  assert.deepEqual(properties.preliminaryDecision.enum, ["enter", "review", "exclude", "insufficient_data"]);
+  assert.deepEqual(properties.evidenceSufficiency.enum, ["sufficient", "partial", "insufficient"]);
   assert.deepEqual(properties.confidence.enum, ["low", "medium", "high"]);
-  assert.equal(properties.decisionEvidenceIds.type, "array");
-  assert.equal(properties.decisionEvidenceIds.items.type, "string");
-  assert.equal(properties.decisionEvidenceIds.items.minLength, 1);
-  assert.ok(!("minItems" in properties.decisionEvidenceIds), "الفراغ مسموح — المدقق يفرض عدمه عند القرارات فقط");
+  assert.equal(properties.sufficiencyEvidenceIds.type, "array");
+  assert.equal(properties.sufficiencyEvidenceIds.items.type, "string");
+  assert.equal(properties.sufficiencyEvidenceIds.items.minLength, 1);
+  assert.ok(!("minItems" in properties.sufficiencyEvidenceIds), "الفراغ مسموح — المدقق يفرض عدمه إلا عند sufficient/partial");
   assert.equal(properties.warnings.type, "array");
   assert.equal(properties.warnings.items.type, "string");
   assert.equal(properties.executiveSummary.type, "string");
@@ -167,9 +167,9 @@ test("G) جسم طلب Ollama: format مخطط اختيار ديناميكي و�
       const response = {
         ...emptySelection(),
         scopeOfWork: [{ severity: "info", confidence: "medium", evidenceIds: [candidateId] }],
-        preliminaryDecision: "review",
+        evidenceSufficiency: "partial",
         confidence: "medium",
-        decisionEvidenceIds: [candidateId],
+        sufficiencyEvidenceIds: [candidateId],
       };
       return { ok: true, status: 200, json: async () => ({ response: JSON.stringify(response) }) };
     },
@@ -190,7 +190,7 @@ test("G) جسم طلب Ollama: format مخطط اختيار ديناميكي و�
   // P4-M0B2A: think:false يُرسل كقيمة boolean صريحة داخل /api/generate.
   assert.equal(seenBody.think, false, "think:false في جسم طلب /api/generate");
   assert.equal(typeof seenBody.think, "boolean", "think قيمة boolean لا string ولا undefined");
-  assert.match(seenBody.prompt, /analysis-model-selection-v2/, "مخطط الاختيار الداخلي v2 مذكور في الـprompt");
+  assert.match(seenBody.prompt, /analysis-model-selection-v3/, "مخطط الاختيار الداخلي v2 مذكور في الـprompt");
 });
 
 test("H) استجابة صحيحة مطابقة تنجح وتبقى صيغة التقرير v2", async () => {
@@ -199,9 +199,9 @@ test("H) استجابة صحيحة مطابقة تنجح وتبقى صيغة ا�
   const validSelection = {
     ...emptySelection(),
     scopeOfWork: [{ severity: "info", confidence: "medium", evidenceIds: [candidateId] }],
-    preliminaryDecision: "review",
+    evidenceSufficiency: "partial",
     confidence: "medium",
-    decisionEvidenceIds: [candidateId],
+    sufficiencyEvidenceIds: [candidateId],
   };
   const provider = createOllamaProvider({
     env: ollamaEnv,
@@ -213,8 +213,8 @@ test("H) استجابة صحيحة مطابقة تنجح وتبقى صيغة ا�
   assert.equal(report.evidence.length, 1, "evidence بُنيت محليًا من الكتالوج");
   assert.equal(report.evidence[0].excerpt, "نص جزء اختبار ثابت.", "excerpt حرفي من الكتالوج لا من النموذج");
   assert.ok(Number.isInteger(_meta.durationMs));
-  assert.equal(analysisReportSchemaVersion, "analysis-report-v2");
-  assert.equal(analysisPromptVersion, "p4a-prompt-v4");
+  assert.equal(analysisReportSchemaVersion, "analysis-report-v3");
+  assert.equal(analysisPromptVersion, "p4a-prompt-v5");
 });
 
 test("I) استجابة مشوهة (شكل P4-A1B) تُرفض بـAI_OUTPUT_INVALID بلا TypeError وبلا إعادة", async () => {
@@ -244,9 +244,9 @@ function validSelectionFor() {
     selection: {
       ...emptySelection(),
       scopeOfWork: [{ severity: "info", confidence: "medium", evidenceIds: [candidateId] }],
-      preliminaryDecision: "review",
+      evidenceSufficiency: "partial",
       confidence: "medium",
-      decisionEvidenceIds: [candidateId],
+      sufficiencyEvidenceIds: [candidateId],
     },
     candidateId,
     catalog,

@@ -42,10 +42,10 @@ for (const meta of metas) {
         sizeBytes: meta.size,
         fragmented: true,
         status: "fragmented",
-        decision: "insufficient_data",
+        evidenceSufficiency: "insufficient",
         confidence: "low",
         evidenceCount: 0,
-        decisionEvidenceIds: [],
+        sufficiencyEvidenceIds: [],
         evidence: [],
       });
       continue;
@@ -70,14 +70,14 @@ for (const meta of metas) {
       sizeBytes: meta.size,
       jobId: job.id,
       status: job.jobStatus,
-      decision: report.preliminaryDecision,
+      evidenceSufficiency: report.evidenceSufficiency,
       confidence: report.confidence,
       evidenceCount: (report.evidence || []).length,
-      decisionEvidenceIds: report.decisionEvidenceIds || [],
+      sufficiencyEvidenceIds: report.sufficiencyEvidenceIds || [],
       findings: report,
       evidence: report.evidence || [],
     });
-    console.log(`  → قرار=${report.preliminaryDecision} ثقة=${report.confidence} أدلة=${(report.evidence || []).length}`);
+    console.log(`  → كفاية الأدلة=${report.evidenceSufficiency} ثقة=${report.confidence} أدلة=${(report.evidence || []).length}`);
   } catch (error) {
     results.push({ fileName: meta.displayName, sizeBytes: meta.size, error: error.code || "FAILED", message: error.message?.slice(0, 200) });
     console.log(`  → فشل: ${error.code} — ${error.message?.slice(0, 150)}`);
@@ -85,36 +85,36 @@ for (const meta of metas) {
 }
 
 // دمج التقارير
-const decisionRank = { enter: 3, review: 2, exclude: 1, insufficient_data: 0 };
+const sufficiencyRank = { sufficient: 2, partial: 1, insufficient: 0 };
 const confidenceRank = { high: 3, medium: 2, low: 1 };
 const merged = {
-  preliminaryDecision: "insufficient_data",
+  evidenceSufficiency: "insufficient",
   confidence: "low",
-  decisionEvidenceIds: [],
-  files: results.map((r) => ({ fileName: r.fileName, sizeBytes: r.sizeBytes, decision: r.decision, confidence: r.confidence, evidenceCount: r.evidenceCount, error: r.error })),
+  sufficiencyEvidenceIds: [],
+  files: results.map((r) => ({ fileName: r.fileName, sizeBytes: r.sizeBytes, evidenceSufficiency: r.evidenceSufficiency, confidence: r.confidence, evidenceCount: r.evidenceCount, error: r.error })),
   perFileEvidence: {},
   errors: results.filter((r) => r.error).map((r) => ({ fileName: r.fileName, code: r.error, message: r.message })),
 };
-const decisionFileMap = {};
+const sufficiencyFileMap = {};
 for (const r of results) {
   if (r.error) continue;
-  const dr = decisionRank[r.decision] ?? 0;
-  if (dr > (decisionRank[merged.preliminaryDecision] ?? 0)) {
-    merged.preliminaryDecision = r.decision;
+  const sr = sufficiencyRank[r.evidenceSufficiency] ?? 0;
+  if (sr > (sufficiencyRank[merged.evidenceSufficiency] ?? 0)) {
+    merged.evidenceSufficiency = r.evidenceSufficiency;
     merged.confidence = r.confidence;
-  } else if (dr === (decisionRank[merged.preliminaryDecision] ?? 0)) {
+  } else if (sr === (sufficiencyRank[merged.evidenceSufficiency] ?? 0)) {
     if ((confidenceRank[r.confidence] ?? 0) > (confidenceRank[merged.confidence] ?? 0)) merged.confidence = r.confidence;
   }
-  for (const id of r.decisionEvidenceIds) {
-    if (!merged.decisionEvidenceIds.includes(id)) {
-      merged.decisionEvidenceIds.push(id);
-      decisionFileMap[id] = r.fileName;
+  for (const id of r.sufficiencyEvidenceIds) {
+    if (!merged.sufficiencyEvidenceIds.includes(id)) {
+      merged.sufficiencyEvidenceIds.push(id);
+      sufficiencyFileMap[id] = r.fileName;
     }
   }
   merged.perFileEvidence[r.fileName] = r.evidence.map((e) => ({ evidenceId: e.evidenceId, pageNumber: e.pageNumber, excerpt: e.excerpt }));
 }
 merged.totalEvidence = results.reduce((s, r) => s + (r.evidenceCount || 0), 0);
-merged.decisionEvidenceFileMap = decisionFileMap;
+merged.sufficiencyEvidenceFileMap = sufficiencyFileMap;
 merged.durationSecs = Math.round((Date.now() - t0) / 1000);
 merged.model = "nemotron-3.5-lightning:latest";
 
@@ -133,8 +133,8 @@ if (coverage.unbalanced) {
 const outPath = path.join(projectRoot, ".radar-data", "multidoc-report.json");
 await writeFile(outPath, JSON.stringify(merged, null, 2));
 console.log(`\n=== اكتمل في ${merged.durationSecs} ثانية ===`);
-console.log("القرار الموحّد:", merged.preliminaryDecision, "| الثقة:", merged.confidence);
+console.log("كفاية الأدلة الموحّدة:", merged.evidenceSufficiency, "| الثقة:", merged.confidence);
 console.log("إجمالي الأدلة:", merged.totalEvidence);
-console.log("أدلة القرار الموحّد:", merged.decisionEvidenceIds.length);
+console.log("أدلة الكفاية الموحّدة:", merged.sufficiencyEvidenceIds.length);
 console.log("أخطاء:", merged.errors.length);
 console.log(`حُفظ في ${outPath}`);
