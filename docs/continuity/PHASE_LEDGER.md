@@ -102,6 +102,7 @@
 | P5-B0-B3 | تنزيل حي رابع: ملحق الغرامات 004.pdf من 260839003247 عبر المسار الرسمي /approval-jobs/live بقائمة سماح من بيئة الإقلاع. 233225 بايت، SHA e95440d3. ثلاث ملفات من أربعة منزّلة. | owner-approved live |
 | P5-B0-B4 | تنزيل رابع حي (الملحق العام) — نجح عبر المسار الرسمي /approval-jobs/live بعد إصلاح توقيت DetailsForSupplier في السائق | approved |
 | P5-KEEPALIVE | نبضة إبقاء جلسة اعتماد حيّة (خيار 1: تمرير + إعادة تحميل صامتة كل دقيقة عبر CDP:9333) بقفل تشابك يقرأ phase من /status فيتوقف أثناء المزامنة/التنزيل الحي. أمر: npm run keepalive. يحل مشكلة طرد اعتماد للمستخدم بعد الخمول (إعادة إدخال كلمة سر + OTP). | owner-approved |
+| P5-EVIDENCE-SUFFICIENCY | دمج `b7e9518` — استبدال `preliminaryDecision`/`decisionEvidenceIds` (enter/review/exclude/insufficient_data) بـ`evidenceSufficiency`/`sufficiencyEvidenceIds` (sufficient/partial/insufficient) في المخطط الداخلي والـprompt (لا حقل قرار تجاري حتى في العقد غير الظاهر للنموذج، امتدادًا لقرار الحياد 2026-08-29 الذي كان مقتصرًا على الواجهة). حارس التأسيس (grounding) محفوظ حرفيًا؛ إصدارات رُفعت: analysis-report-v3، p4a-prompt-v5، analysis-model-selection-v3. fast-forward — 353/353 اختبارات، lint وbuild نظيفان. | approved |
 
 ## مراحل لم تبدأ
 
