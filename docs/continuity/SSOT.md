@@ -5,7 +5,7 @@
 > هذا الملف هو الحقيقة (إلا أن Git وSQLite والاختبارات هي الحقيقة المطلقة فوقه).
 
 **آخر تحديث:** 2026-09-16
-**رأس المستودع (HEAD):** `b7e9518`
+**رأس المستودع (HEAD):** `e83bc98`
 **الاختبارات المعتمدة (`npm test`):** 353 / 353 — صفر فشل
 **schemaVersion:** 10
 
@@ -151,14 +151,14 @@ npm run health
 ## 8. ما أُنجز مؤخرًا (آخر 8 commits)
 
 ```
+e83bc98 طبقة استخراج بديلة ثالثة عبر pymupdf (P5-PYMUPDF)
+c809c9b توثيق: تسجيل commit دمج P5-EVIDENCE-SUFFICIENCY
 b7e9518 استبدال preliminaryDecision بـevidenceSufficiency (P5-EVIDENCE-SUFFICIENCY)
 569f992 نبضة keepalive: فاصل عشوائي متغير (60-300ث) + تراجع ذكي
 6dcee7f توثيق NEXT_PHASES: ثغرات طبقة الاستخراج (pymupdf/OCR) — تخطيط مؤجل
 2fa62ff حياد القرار التجاري في الواجهة: إخفاء enter/skip+confidence
 fcc8538 توثيق SSOT+PHASE_LEDGER: poppler fallback حل دائم معتمد
 cd48c86 توحيد عتبة poppler مع بوابة الجودة
-50ffbe1 مسار poppler البديل + بوابات الجودة + اختبارات
-43ff433 بوابتا الجودة (هيمنة + تجزئة)
 ```
 
 ## 9. قواعد الوكيل غير القابلة للكسر
