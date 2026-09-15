@@ -27,6 +27,7 @@
 | **التنزيل الحي للمرفقات** | ✅ **مثبت حيًا** (ملفان) | P5-B0 + P5-B0-B1 |
 | فك النص العربي من خطوط CID (CMap) | ✅ حي | P5-B1 + RTL-2 |
 | **مسار استخراج بديل (poppler + عكس)** | ✅ **مثبت حيًا — حل دائم** | P5-POPPLER |
+| **مسار استخراج بديل ثالث (pymupdf/Python)** | ✅ **مثبت حيًا — حل دائم** | P5-PYMUPDF |
 | تحليل كراسات حي (nemotron) | ✅ **مثبت حيًا** | P5-TDR-LIVE1 (enter/high/9 أدلة) |
 | **تحليل موحّد متعدد الملفات** | ✅ **مثبت حيًا** | P5-MULTIDOC (86 دليلًا من 3 ملفات) |
 | **بوابتا جودة التحليل** | ✅ حي | P5-QGATES |
@@ -38,9 +39,15 @@
 | مقيّم طابور التحميل | ✅ حي | P5-A1 |
 
 ### الحقيقة المطلقة عن الاختبارات
-- `npm test` = **353/353** (المسار المعتمد — لا تثق بأي رقم غيره).
-- `node --test tests/*.test.mjs` (الجلوب) يشمل اختبارات إضافية وقد يُظهر فشل عزل
-  node:test (`Unable to deserialize cloned data`) — **ليس فشل منطق**؛ الاختبار يمر منفردًا.
+- `npm test` = **353/353** (المسار المعتمد — لا تثق بأي رقم غيره). قائمة صريحة
+  في `package.json`، لا glob — تستبعد عمدًا اختبارات تعتمد ملفات حقيقية منزّلة
+  محليًا في `.radar-data/attachments/` (مُتجاهَل من Git) لتبقى محمولة عبر أي
+  worktree معزول.
+- `node --test tests/*.test.mjs` (الجلوب) = **394/395** حاليًا — يشمل اختبارات
+  إضافية غير محمولة تفترض ملفات هذا الجهاز تحديدًا (`poppler-fallback.test.mjs`،
+  `pymupdf-fallback.test.mjs`، `analysis-quality-gates.test.mjs`، وغيرها) وقد
+  يُظهر فشل عزل node:test (`Unable to deserialize cloned data` في
+  `p5b1-cmap.test.mjs`) — **ليس فشل منطق**؛ كل اختبار يمر منفردًا.
 
 ## 3. القرارات الحاكمة (غير قابلة للتراجع دون قرار جديد من المالك)
 
@@ -68,6 +75,12 @@
    (sufficient/partial/insufficient)، وهو وصف لكفاية الأدلة المستخرجة فقط، لا توصية
    دخول/استبعاد. `decisionEvidenceIds` → `sufficiencyEvidenceIds`. إصدارات المخطط/الـprompt
    رُفعت: `analysis-report-v3`، `p4a-prompt-v5`، `analysis-model-selection-v3`.
+8. **مسار الاستخراج البديل الثالث (P5-PYMUPDF، قرار د. جو 2026-09-16)**: خطوط
+   مدمجة معينة تُسقط المحتوى العربي بصمت (يبقى الترقيم/اللاتيني، يختفي العربي)
+   دون أن ترفع نسبة التجزئة — نمط لا يكتشفه `isFragmentedDocument` وحده. حاجز
+   جديد `needsAlternateExtraction` (تجزئة **أو** فقدان عربي مشبوه) يُشغّل تسلسل
+   pdf.js → poppler → pymupdf. **Python 3 + pymupdf أصبحا تبعية تشغيل فعلية
+   معتمدة**، لا تشخيصية مؤقتة كما كانا. **هذا حل دائم معتمد، لا تجربة.**
 
 ## 4. المنافذ والخدمات
 
@@ -127,7 +140,7 @@ npm run health
 | محوّل التنزيل المحكوم | `scripts/lib/live-attachment-acquisition.mjs` |
 | جلسة Chrome المخصصة | `scripts/lib/radar-chrome-session.mjs` |
 | استخراج المستندات + فك CMap + RTL | `scripts/lib/analysis-documents.mjs` |
-| **مسار poppler البديل + بوابات الجودة** | `scripts/lib/analysis-documents.mjs` + `scripts/lib/analysis-quality-gates.mjs` |
+| **مسارا poppler وpymupdf البديلان + بوابات الجودة** | `scripts/lib/analysis-documents.mjs` + `scripts/lib/extract-pdf-pymupdf.py` + `scripts/lib/analysis-quality-gates.mjs` |
 | **تحليل موحّد متعدد الملفات** | `scripts/lib/run-multidoc-analysis.mjs` |
 | محرك التحليل | `scripts/lib/analysis-engine.mjs` |
 | طاقم الوكلاء | `scripts/lib/agent-team.mjs` |

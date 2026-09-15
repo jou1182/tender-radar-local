@@ -8,7 +8,10 @@ import { writeFileSync, rmSync, mkdtempSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
-import { isFragmentedDocument } from "./analysis-quality-gates.mjs";
+import { fileURLToPath } from "node:url";
+import { needsAlternateExtraction } from "./analysis-quality-gates.mjs";
+
+const defaultPymupdfScriptPath = fileURLToPath(new URL("./extract-pdf-pymupdf.py", import.meta.url));
 
 export const supportedDocumentTypes = ["pdf", "xlsx", "docx"];
 export const defaultMaxFileBytes = 30 * 1024 * 1024;
@@ -410,6 +413,57 @@ export function extractPdfViaPoppler(buffer, { applyRtlFix = true, pdftotextPath
   return { blocks, tables: [], warnings, extractionMethod: "poppler-fallback" };
 }
 
+// ---------- مسار بديل ثالث P5-PYMUPDF: استخراج PDF عبر PyMuPDF (Python) ----------
+// بعض خطوط Type0 المدمجة تُسقط الأحرف العربية بصمت عبر pdf.js وpoppler معًا —
+// MuPDF يحلّ جدول ترميزها بشكل مختلف وينتج نصًا عربيًا سليمًا. بخلاف poppler،
+// نصه يخرج **بترتيب منطقي صحيح مسبقًا** (مؤكَّد تجريبيًا على مستندين حقيقيين
+// معطوبين) — لذا لا يُطبَّق أي إصلاح RTL هنا؛ تطبيقه سيُفسد نصًا سليمًا أصلًا.
+// نفس حدود أمان poppler بالضبط: buffer يُكتب لملف مؤقت مولّد ذاتيًا ويُحذف
+// فورًا بعد القراءة؛ الوسيط الوحيد للسكربت هو هذا المسار المولَّد داخليًا.
+export function extractPdfViaPymupdf(buffer, { pythonPath = "python3", scriptPath = defaultPymupdfScriptPath, timeoutMs = 60_000 } = {}) {
+  const warnings = [];
+  const tmpDir = mkdtempSync(path.join(os.tmpdir(), "radar-pdf-"));
+  const tmpFile = path.join(tmpDir, "document.pdf");
+  let stdout = "";
+  try {
+    writeFileSync(tmpFile, buffer);
+    stdout = execFileSync(pythonPath, [scriptPath, tmpFile], {
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+      windowsHide: true,
+      timeout: timeoutMs,
+    });
+  } catch (error) {
+    warnings.push(`pymupdf فشل: ${String(error?.stderr || error?.message || error).slice(0, 200)}`);
+  } finally {
+    try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* تجاهل فشل الحذف */ }
+  }
+  let parsed;
+  try {
+    parsed = stdout.trim() ? JSON.parse(stdout) : null;
+  } catch {
+    parsed = null;
+  }
+  if (!parsed?.pages?.length) {
+    throw documentError("DOCUMENT_NO_TEXT", "لم يُستخرج أي نص من ملف PDF عبر pymupdf.");
+  }
+  const blocks = [];
+  parsed.pages.forEach((lines, pageIndex) => {
+    (Array.isArray(lines) ? lines : []).forEach((line, lineIndex) => {
+      const text = String(line).normalize("NFKC").replace(/\s{2,}/g, " ").trim();
+      if (!text) return;
+      blocks.push({
+        blockId: `p${pageIndex + 1}-l${lineIndex + 1}`,
+        kind: "page-text",
+        text,
+        source: { pageNumber: pageIndex + 1 },
+      });
+    });
+  });
+  if (!blocks.length) throw documentError("DOCUMENT_NO_TEXT", "لم يُستخرج أي نص من ملف PDF عبر pymupdf.");
+  return { blocks, tables: [], warnings, extractionMethod: "pymupdf-fallback" };
+}
+
 // ---------- مستخرج XLSX: أوراق مسماة وخلايا ذات عناوين ----------
 function extractXlsxDocument(buffer) {
   const warnings = [];
@@ -521,23 +575,52 @@ function extractDocxDocument(buffer) {
 }
 
 // ---------- نقطة الدخول الموحدة ----------
-export function extractAnalysisDocument({ documentId, fileName, buffer, maxBytes, maxStreamBytes, applyRtlFix = true, allowPopplerFallback = true }) {
+export function extractAnalysisDocument({
+  documentId, fileName, buffer, maxBytes, maxStreamBytes, applyRtlFix = true,
+  allowPopplerFallback = true, allowPymupdfFallback = true,
+}) {
   const inspected = inspectDocumentBuffer({ fileName, buffer, maxBytes });
   let extracted;
   if (inspected.documentType === "pdf") {
     extracted = extractPdfDocument(buffer, { maxStreamBytes: maxStreamBytes ?? defaultMaxPdfStreamBytes, applyRtlFix });
-    // P5-POPPLER: التحويل التلقائي. المستخرج المضمّن نجح لكن نصه مجزأ حرفيًا
-    // (نفس بوابة الجودة: نسبة الكتل المفردة ≤2 حرف >90%) — مؤشر خطوط بلا ToUnicode.
-    // نحوّل لـpoppler كبديل. الملفات التي تنجح أصلًا (نص سليم) تبقى على مسارها ولا تُحوَّل.
-    if (allowPopplerFallback && extracted?.blocks?.length && isFragmentedDocument(extracted.blocks, { ratio: 0.9 })) {
-      try {
-        const fallback = extractPdfViaPoppler(buffer, { applyRtlFix });
-        extracted = { blocks: fallback.blocks, tables: fallback.tables, warnings: [...extracted.warnings, ...fallback.warnings] };
-        extracted.extractionMethod = "poppler-fallback";
-      } catch {
-        // poppler غير متاح أو فشل — نبقى على النتيجة المجزأة ونعلّمها تحذيرًا.
+    // P5-POPPLER + P5-PYMUPDF: تسلسل بديل تلقائي بطبقتين. needsAlternateExtraction
+    // يكتشف نمطين مختلفين للعطب: تجزئة حرفية (خطوط بلا ToUnicode) أو فقدان
+    // المحتوى العربي بصمت (بعض الخطوط المدمجة تُسقط العربي وتُبقي الترقيم/اللاتيني
+    // سليمًا — لا يرفع نسبة التجزئة فيفلت من الحاجز الأول وحده). نجرّب poppler
+    // ثم pymupdf بالترتيب؛ أول مسار ينتج نصًا سليمًا (حسب نفس الحاجز) يُعتمد فورًا.
+    // الملفات السليمة أصلًا عبر pdf.js تبقى على مسارها ولا تُحوَّل أبدًا.
+    if (extracted?.blocks?.length && needsAlternateExtraction(extracted.blocks)) {
+      const attempts = [];
+      let resolved = null;
+      if (allowPopplerFallback) {
+        try {
+          const fallback = extractPdfViaPoppler(buffer, { applyRtlFix });
+          if (!needsAlternateExtraction(fallback.blocks)) resolved = fallback;
+          else attempts.push("poppler: النص ما زال معطوبًا");
+        } catch (error) {
+          attempts.push(`poppler فشل: ${String(error?.message || error).slice(0, 120)}`);
+        }
+      }
+      if (!resolved && allowPymupdfFallback) {
+        try {
+          const fallback = extractPdfViaPymupdf(buffer);
+          if (!needsAlternateExtraction(fallback.blocks)) resolved = fallback;
+          else attempts.push("pymupdf: النص ما زال معطوبًا");
+        } catch (error) {
+          attempts.push(`pymupdf فشل: ${String(error?.message || error).slice(0, 120)}`);
+        }
+      }
+      if (resolved) {
+        extracted = {
+          blocks: resolved.blocks,
+          tables: resolved.tables,
+          warnings: [...extracted.warnings, ...resolved.warnings],
+          extractionMethod: resolved.extractionMethod,
+        };
+      } else {
+        // لا مسار بديل نجح — نبقى على النتيجة المعطوبة الأصلية ونعلّمها تحذيرًا صريحًا.
         extracted.extractionMethod = "pdfjs-fragmented";
-        extracted.warnings.push("النص مجزأ ولم يتوفر مسار poppler البديل.");
+        extracted.warnings.push(`النص معطوب ولم ينجح أي مسار بديل (${attempts.join("؛ ") || "لا مسارات بديلة مفعّلة"}).`);
       }
     } else {
       extracted.extractionMethod = "pdfjs";

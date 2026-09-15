@@ -5,6 +5,9 @@ import {
   isFragmentedDocument,
   assessCoverageBalance,
   coverageWarningMessage,
+  computePunctuationOnlyRatio,
+  isArabicContentSuspiciouslyMissing,
+  needsAlternateExtraction,
 } from "../scripts/lib/analysis-quality-gates.mjs";
 
 // ── fixture: كتل من حروف منفردة (نص مجزأ) ──
@@ -79,4 +82,40 @@ test("P5-QGATE-7: coverageWarningMessage ينتج الرسالة الصريحة 
   const msg = coverageWarningMessage({ unbalanced: true, filesWithZero: 2, totalFiles: 4 });
   assert.equal(msg, "التغطية غير متوازنة: 2 من 4 ملفات لم تساهم بأدلة");
   assert.equal(coverageWarningMessage({ unbalanced: false, filesWithZero: 0, totalFiles: 4 }), null);
+});
+
+// ── P5-PYMUPDF: كشف فقدان المحتوى العربي الصامت (نمط فشل مختلف عن التجزئة) ──
+
+test("P5-QGATE-8: computePunctuationOnlyRatio يحسب نسبة الكتل التي هي علامات ترقيم بحتة فقط", () => {
+  const blocks = [
+    { text: "." }, { text: "،" }, { text: "-" }, { text: "MEWA" },
+    { text: "SLA" }, { text: "جملة عربية كاملة سليمة" },
+  ];
+  // 3 كتل ترقيم بحتة من أصل 6 = 50%
+  assert.equal(computePunctuationOnlyRatio(blocks), 0.5);
+});
+
+test("P5-QGATE-9: isArabicContentSuspiciouslyMissing يرفض مستندًا فقد محتواه العربي صامتًا", () => {
+  // محاكاة النمط الحقيقي: خط مدمج يُسقط العربي ويُبقي الترقيم والاختصارات اللاتينية.
+  const blocks = [
+    ...Array.from({ length: 6 }, () => ({ text: "." })),
+    { text: "MEWA" }, { text: "INFOSEC" }, { text: "SLA" }, { text: "RACI" },
+  ];
+  // 6 من 10 = 60% > 15% → مشبوه، رغم أن لا كتلة منها حرف مفرد (لا يُطلق isFragmentedDocument).
+  assert.equal(isArabicContentSuspiciouslyMissing(blocks), true);
+  assert.equal(isFragmentedDocument(blocks), false, "الكتل ليست حروفًا مفردة — بوابة التجزئة لا تكتشف هذا النمط");
+});
+
+test("P5-QGATE-10: isArabicContentSuspiciouslyMissing يقبل مستندًا سليمًا (نسبة ترقيم طبيعية)", () => {
+  const blocks = healthyBlocks(20);
+  assert.equal(isArabicContentSuspiciouslyMissing(blocks), false);
+});
+
+test("P5-QGATE-11: needsAlternateExtraction يجمع الحاجزين — أيهما وقع يكفي", () => {
+  const fragmented = fragmentedBlocks(95);
+  const arabicMissing = [...Array.from({ length: 6 }, () => ({ text: "." })), { text: "MEWA" }, { text: "SLA" }, { text: "RACI" }, { text: "DOC" }];
+  const healthy = healthyBlocks(10);
+  assert.equal(needsAlternateExtraction(fragmented), true, "تجزئة وحدها كافية");
+  assert.equal(needsAlternateExtraction(arabicMissing), true, "فقدان عربي وحده كافٍ");
+  assert.equal(needsAlternateExtraction(healthy), false);
 });

@@ -22,6 +22,10 @@
 
 - Node.js `>=22.13.0` مع دعم `node:sqlite`.
 - Google Chrome.
+- `pdftotext` (حزمة poppler) و**Python 3 + `pip install pymupdf`** — مساران بديلان
+  لاستخراج نص PDF عند فشل المستخرج المضمّن (خطوط بلا ToUnicode أو فقدان محتوى
+  عربي صامت)؛ الرادار يتدهور بأمان بتحذير صريح إن غاب أي منهما، لكن أفضل نتائج
+  الاستخراج تتطلب كليهما مثبَّتين.
 - Docker Desktop وn8n اختياريان لتشغيل مخطط التحليل عبر n8n (`workflows/p4a-local-analysis.json`).
 - Ollama اختياري — للتحليل المحلي عند التفعيل الصريح (النموذج الافتراضي `nemotron-3.5-lightning:latest`).
 

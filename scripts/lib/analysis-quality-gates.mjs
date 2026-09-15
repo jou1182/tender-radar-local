@@ -18,6 +18,36 @@ export function isFragmentedDocument(blocks, { ratio = 0.9, shortThreshold = 2 }
   return computeFragmentationRatio(blocks, { shortThreshold }) > ratio;
 }
 
+// (ب-2) P5-PYMUPDF: كشف فقدان المحتوى العربي بصمت — نمط فشل مختلف عن التجزئة.
+// بعض خطوط Type0 المدمجة تُسقط الأحرف العربية تمامًا من الاستخراج (تختفي دون أثر)
+// بينما تبقى علامات الترقيم والأرقام والنص اللاتيني سليمة — فتظهر كتل كثيرة
+// نصها الكامل بعد التقليم مجرد علامات ترقيم متكررة ("."، "،"، "-") من غير أي
+// حرف فعلي. هذا لا يرفع نسبة التجزئة (الكتل ليست حروفًا مفردة) فيفلت من
+// isFragmentedDocument تمامًا. عُيّرت العتبة الافتراضية (0.15) تجريبيًا مقابل
+// مستندات حقيقية سليمة (نسبتها كلها <0.1) ومستندين حقيقيين معطوبين (0.26 و0.48).
+const PURE_PUNCTUATION_RE = /^[.,،:؛;\-–—]+$/;
+
+export function computePunctuationOnlyRatio(blocks) {
+  if (!Array.isArray(blocks) || blocks.length === 0) return 0;
+  const punctuationOnly = blocks.filter((b) => {
+    const text = typeof b?.text === "string" ? b.text.trim() : "";
+    return text.length > 0 && PURE_PUNCTUATION_RE.test(text);
+  }).length;
+  return punctuationOnly / blocks.length;
+}
+
+export function isArabicContentSuspiciouslyMissing(blocks, { ratio = 0.15 } = {}) {
+  return computePunctuationOnlyRatio(blocks) > ratio;
+}
+
+// (ب-3) الحاجز الموحّد: هل يحتاج المستند مسار استخراج بديل؟ — تجزئة حرفية
+// أو فقدان محتوى عربي صامت، أيهما وقع. عتبتان منفصلتان عمدًا (لا خيار
+// `ratio` مشترك) لأن الحاجزين يقيسان ظاهرتين مختلفتين بمقاييس مختلفة تمامًا.
+export function needsAlternateExtraction(blocks, { fragmentationRatio = 0.9, arabicLossRatio = 0.15, shortThreshold = 2 } = {}) {
+  return isFragmentedDocument(blocks, { ratio: fragmentationRatio, shortThreshold })
+    || isArabicContentSuspiciouslyMissing(blocks, { ratio: arabicLossRatio });
+}
+
 // (ج) تقييم توازن تغطية الأدلة عبر الملفات.
 // المدخل: كائن { fileName: evidenceCount } لكل ملف تم تحليله (بما فيه المجزأ = 0).
 // يقرر ما إذا كانت التغطية غير متوازنة بشكل يستدعي خفض الثقة:

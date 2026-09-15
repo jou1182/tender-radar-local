@@ -4,7 +4,7 @@
   "files": {
     "scripts/lib/analysis-api.mjs": "1d6f18094bf8af98c3ced1cf9061c93fb84521dd100e268f393ebacd4b0561c1",
     "scripts/lib/analysis-chunking.mjs": "7bbc8dcbcc388a7675c44be6e175051d0a2565240610bbb969f263ad9c49bc0f",
-    "scripts/lib/analysis-documents.mjs": "cceee6eebcc3379a83f3e82a276c2800c07a7e3b2df53eb7e772afe352942355",
+    "scripts/lib/analysis-documents.mjs": "cfa18bfb71f1a0b3b1d839b34103a6dee2f8e27d621c49eb1934f3e5ffafb6ee",
     "scripts/lib/analysis-engine.mjs": "7b16a828c81c28e757eda6d29d4a4575b906518ca7a4de54b416f6383240b093",
     "scripts/lib/analysis-evidence-candidates.mjs": "973908242634f5273754890eaec77fcb74c612c86653464bc6c6abf8f1ed0769",
     "scripts/lib/analysis-fixtures.mjs": "83ef120e6e39eef1816087da1ac0a7f76a8feaffbe92094f921b4c39b4a33943",
@@ -12,5 +12,5 @@
     "scripts/lib/analysis-providers.mjs": "dc8e3e307967d498c666d7c88748e1066136f6675b3629b21074561d343359af",
     "scripts/lib/analysis-report.mjs": "621db3c6de8055de4ffcd011180e6ebd54b4656c8c8d8e47a32121aa6cd6b9fc"
   },
-  "note": " | P5-B1: analysis-documents.mjs حدث بفك ToUnicode CMap بموافقة المالك (إصلاح النص العربي المكسور) — سلوك fixtures اللاتينية ثابت. | P5-POPPLER: أضيف مسار poppler-fallback للـPDF المجزأ بموافقة المالك + حقل extractionMethod في analysis-documents.mjs وanalysis-engine.mjs — سلوك fixtures اللاتينية ثابت (لا تحويل لأن متوسط كتلتها سليم). | P5-EVIDENCE-SUFFICIENCY: استبدال preliminaryDecision/decisionEvidenceIds بـevidenceSufficiency/sufficiencyEvidenceIds (قيم sufficient/partial/insufficient بدل enter/review/exclude/insufficient_data) في analysis-report.mjs وanalysis-model-selection.mjs وanalysis-providers.mjs بموافقة المالك — حياد القرار التجاري بالكامل حتى داخل المخطط الداخلي، لا تغيير في منطق الاستخراج أو التأسيس."
+  "note": " | P5-B1: analysis-documents.mjs حدث بفك ToUnicode CMap بموافقة المالك (إصلاح النص العربي المكسور) — سلوك fixtures اللاتينية ثابت. | P5-POPPLER: أضيف مسار poppler-fallback للـPDF المجزأ بموافقة المالك + حقل extractionMethod في analysis-documents.mjs وanalysis-engine.mjs — سلوك fixtures اللاتينية ثابت (لا تحويل لأن متوسط كتلتها سليم). | P5-EVIDENCE-SUFFICIENCY: استبدال preliminaryDecision/decisionEvidenceIds بـevidenceSufficiency/sufficiencyEvidenceIds (قيم sufficient/partial/insufficient بدل enter/review/exclude/insufficient_data) في analysis-report.mjs وanalysis-model-selection.mjs وanalysis-providers.mjs بموافقة المالك — حياد القرار التجاري بالكامل حتى داخل المخطط الداخلي، لا تغيير في منطق الاستخراج أو التأسيس. | P5-PYMUPDF: طبقة استخراج بديلة ثالثة (بعد pdf.js وpoppler) عبر PyMuPDF (Python) في analysis-documents.mjs، بموافقة المالك — تُعالج نمط عطب مكتشف حيًا (فقدان محتوى عربي صامت من خطوط مدمجة معينة، لا يرفع نسبة التجزئة) عبر حاجز جودة جديد (needsAlternateExtraction) في analysis-quality-gates.mjs. سلوك fixtures اللاتينية والملفات التي يحلّها pdf.js أو poppler أصلًا ثابت تمامًا (مؤكَّد باختبارات poppler-fallback.test.mjs الأصلية دون تعديل)."
 }

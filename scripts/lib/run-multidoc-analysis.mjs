@@ -7,7 +7,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { createRadarRepository } from "./radar-repository.mjs";
 import { runTrustedDocumentAnalysis } from "./trusted-document-cli.mjs";
 import { extractAnalysisDocument } from "./analysis-documents.mjs";
-import { isFragmentedDocument, assessCoverageBalance, coverageWarningMessage } from "./analysis-quality-gates.mjs";
+import { needsAlternateExtraction, assessCoverageBalance, coverageWarningMessage } from "./analysis-quality-gates.mjs";
 
 const TENDER = process.argv[2] || "260839003247";
 const env = {
@@ -30,13 +30,14 @@ for (const meta of metas) {
   const localStoredName = path.basename(meta.localPath);
   console.log(`\n=== تحليل: ${meta.displayName.slice(0, 50)} (${meta.size} بايت) ===`);
 
-  // P5-QGATE: فحص التجزئة قبل استدعاء النموذج — ملف مجزأ يُستبعد من الأدلة.
+  // P5-QGATE: فحص العطب المتبقي بعد كل المسارات البديلة (poppler + pymupdf) —
+  // ملف ما زال معطوبًا (تجزئة أو فقدان محتوى عربي) يُستبعد من الأدلة.
   let fragmented = false;
   try {
     const probe = extractAnalysisDocument({ documentId: "probe", fileName: meta.displayName, buffer: buf, applyRtlFix: true });
-    fragmented = isFragmentedDocument(probe.blocks, { ratio: 0.9 });
+    fragmented = needsAlternateExtraction(probe.blocks);
     if (fragmented) {
-      console.log(`  ⚠ نص مجزأ (${Math.round((probe.blocks.filter((b) => b.text.trim().length <= 2).length / probe.blocks.length) * 100)}% كتل مفردة) — استُبعد من الأدلة`);
+      console.log(`  ⚠ نص معطوب حتى بعد كل المسارات البديلة (extractionMethod=${probe.extractionMethod}) — استُبعد من الأدلة`);
       results.push({
         fileName: meta.displayName,
         sizeBytes: meta.size,
