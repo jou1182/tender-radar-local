@@ -89,7 +89,7 @@ test("3) القيم الأساسية في CURRENT_STATE.json صحيحة (بني�
   }
   assert.match(stages.p3b1b.resumeCondition, /صفحة تفاصيلها/, "شرط الاستئناف يشترط صفحة التفاصيل");
   assert.match(stages.p3b1b.resumeCondition, /صفر/, "شرط الاستئناف يشترط قيمة الكراسة صفر");
-  assert.equal(stages.p3b1c.status, "paused", "P3-B1C متوقفة");
+  assert.equal(stages.p3b1c.status, "resolved", "P3-B1C حُلّت فعليًا عبر P5-B0 (2026-09-16)");
   // لا يبقى اسم أي حقل حالة محذوف في أي وثيقة من حزمة الاستمرارية (P4-H0R2) —
   // الفحص يعم كل ملفات packageFiles: AGENTS.md وجميع markdown داخل docs/continuity وCURRENT_STATE.json.
   const removedFields = ["approvedBaselineCommit", "approvedTestBaseline", "lastApprovedPhase"];
@@ -228,7 +228,11 @@ test("11) الوثائق تسجل القيود الحاكمة: fixtures فقط �
   assert.match(handoff, /ليس نجاحًا وظيفيًا كاملًا/, "يصرّح أنه ليس نجاحًا وظيفيًا كاملًا");
   assert.doesNotMatch(handoff, /P3‑B1B[^\n]*مكتملة وظيفيًا/, "لا يصف P3-B1B بأنها مكتملة وظيفيًا");
   const next = readPackageFile("docs/continuity/NEXT_PHASES.md");
-  assert.match(next, /إعادة الفحص الحي P3‑B1B معلقة/, "إعادة الفحص الحي معلقة في NEXT_PHASES");
+  // تحديث 2026-09-16: التنزيل الحي الفعلي (P3-B1C) لم يعد معلّقًا — نجح فعليًا
+  // (P5-B0 وما بعدها، 10 ملفات حقيقية) والقاعدة الدائمة أصبحت "كل ملف جديد
+  // يتطلب موافقة صريحة منفصلة"، لا "التنزيل الحي معطّل بالكامل".
+  assert.match(next, /التنزيل الحي مثبت حيًا/, "التنزيل الحي الفعلي موثّق كمنجز لا كمعلّق");
+  assert.match(next, /أي تنزيل حي جديد.*يتطلب موافقة صريحة جديدة/, "قاعدة الموافقة المستقلة لكل ملف جديد موثقة");
   assert.match(next, /48 مرشحًا/, "خطر قص أول 48 مرشحًا موثق");
   assert.match(next, /تحيز الصفحات الأولى/, "تحيز الصفحات الأولى موثق");
   assert.match(next, /ممنوع في P4‑H0|لا تعديل لخوارزمية الكتالوج/, "منع تعديل الخوارزمية في P4-H0 موثق");
