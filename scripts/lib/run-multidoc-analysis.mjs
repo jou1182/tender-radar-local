@@ -7,7 +7,8 @@ import { readFile, writeFile } from "node:fs/promises";
 import { createRadarRepository } from "./radar-repository.mjs";
 import { runTrustedDocumentAnalysis } from "./trusted-document-cli.mjs";
 import { extractAnalysisDocument } from "./analysis-documents.mjs";
-import { needsAlternateExtraction, assessCoverageBalance, coverageWarningMessage } from "./analysis-quality-gates.mjs";
+import { needsAlternateExtraction } from "./analysis-quality-gates.mjs";
+import { mergeMultidocReports } from "./analysis-multidoc-merge.mjs";
 
 const TENDER = process.argv[2] || "260839003247";
 const env = {
@@ -85,51 +86,11 @@ for (const meta of metas) {
   }
 }
 
-// دمج التقارير
-const sufficiencyRank = { sufficient: 2, partial: 1, insufficient: 0 };
-const confidenceRank = { high: 3, medium: 2, low: 1 };
-const merged = {
-  evidenceSufficiency: "insufficient",
-  confidence: "low",
-  sufficiencyEvidenceIds: [],
-  files: results.map((r) => ({ fileName: r.fileName, sizeBytes: r.sizeBytes, evidenceSufficiency: r.evidenceSufficiency, confidence: r.confidence, evidenceCount: r.evidenceCount, error: r.error })),
-  perFileEvidence: {},
-  errors: results.filter((r) => r.error).map((r) => ({ fileName: r.fileName, code: r.error, message: r.message })),
-};
-const sufficiencyFileMap = {};
-for (const r of results) {
-  if (r.error) continue;
-  const sr = sufficiencyRank[r.evidenceSufficiency] ?? 0;
-  if (sr > (sufficiencyRank[merged.evidenceSufficiency] ?? 0)) {
-    merged.evidenceSufficiency = r.evidenceSufficiency;
-    merged.confidence = r.confidence;
-  } else if (sr === (sufficiencyRank[merged.evidenceSufficiency] ?? 0)) {
-    if ((confidenceRank[r.confidence] ?? 0) > (confidenceRank[merged.confidence] ?? 0)) merged.confidence = r.confidence;
-  }
-  for (const id of r.sufficiencyEvidenceIds) {
-    if (!merged.sufficiencyEvidenceIds.includes(id)) {
-      merged.sufficiencyEvidenceIds.push(id);
-      sufficiencyFileMap[id] = r.fileName;
-    }
-  }
-  merged.perFileEvidence[r.fileName] = r.evidence.map((e) => ({ evidenceId: e.evidenceId, pageNumber: e.pageNumber, excerpt: e.excerpt }));
-}
-merged.totalEvidence = results.reduce((s, r) => s + (r.evidenceCount || 0), 0);
-merged.sufficiencyEvidenceFileMap = sufficiencyFileMap;
+// دمج التقارير — المنطق في وحدة نقية مختبَرة معزولًا: analysis-multidoc-merge.mjs.
+const merged = mergeMultidocReports(results, { dominantThreshold: 0.8 });
 merged.durationSecs = Math.round((Date.now() - t0) / 1000);
 merged.model = "nemotron-3.5-lightning:latest";
-
-// P5-QGATE: فحص هيمنة ملف واحد بعد الدمج — إن كانت التغطية غير متوازنة،
-// اخفض الثقة إلى low واعرض رسالة صريحة بدل قرار واثق مضلل.
-const perFileCounts = {};
-for (const r of results) perFileCounts[r.fileName] = r.evidenceCount || 0;
-const coverage = assessCoverageBalance(perFileCounts, { dominantThreshold: 0.8 });
-merged.coverageAssessment = coverage;
-if (coverage.unbalanced) {
-  merged.confidence = "low";
-  merged.coverageWarning = coverageWarningMessage(coverage);
-  console.log(`  ⚠ ${merged.coverageWarning}`);
-}
+if (merged.coverageWarning) console.log(`  ⚠ ${merged.coverageWarning}`);
 
 const outPath = path.join(projectRoot, ".radar-data", "multidoc-report.json");
 await writeFile(outPath, JSON.stringify(merged, null, 2));
