@@ -161,7 +161,7 @@ RADAR_LIVE_DOWNLOAD_TENDER_REF=<المرجع>
 
 ## 8. الاختبارات — الحقيقة المطلقة
 
-- `npm test` = **353/353** (القائمة المعتمدة في `package.json`).
+- `npm test` = **371/371** (القائمة المعتمدة في `package.json`).
 - `node --test tests/*.test.mjs` يشمل اختبارات إضافية (p5keepalive، rtl2، p5agents…) وقد
   يُظهر خطأ عزل node:test عند التوازي — **ليس فشل منطق**.
 - **قاعدة الاختبارات:** لا تلمس قاعدة التشغيل؛ تستخدم `mkdtemp` لقواعد مؤقتة.
@@ -173,7 +173,7 @@ RADAR_LIVE_DOWNLOAD_TENDER_REF=<المرجع>
 1. اقرأ `SSOT.md` ← حدد الـcommit الأساس الكامل.
 2. أنشئ worktree معزول: `git worktree add -b alt/xxx ../radar-alt-xxx HEAD`.
 3. نفّذ الكود + الاختبارات في الـworktree.
-4. شغّل `npm test` في الـworktree ← يجب 353/353 (أو أكثر إن أضفت اختبارات).
+4. شغّل `npm test` في الـworktree ← يجب 371/371 (أو أكثر إن أضفت اختبارات).
 5. قدّم تقريرًا للمشرف **خارج Git** (لا تلتزم التقرير داخل المستودع).
 6. بعد موافقة المالك، ادمج إلى main.
 
