@@ -755,7 +755,7 @@ const server = http.createServer(async (request, response) => {
         database: { online: true, schemaVersion: repository.schemaVersion },
       });
     }
-    if (request.method === "GET" && request.url === "/status") return send(response, 200, { ...state, progress: repository.getSyncProgress(), downloading: liveDownloading });
+    if (request.method === "GET" && request.url === "/status") return send(response, 200, { ...state, progress: repository.getSyncProgress(), downloading: liveDownloading, syncing: syncPromise != null });
     // ── P5-KEEPALIVE: قراءة/ضبط فترة نبضة إبقاء جلسة اعتماد ────────────────────
     if (request.method === "GET" && request.url === "/keepalive/interval") {
       return send(response, 200, {
@@ -904,6 +904,11 @@ const server = http.createServer(async (request, response) => {
       return send(response, 200, { jobs: repository.listDownloadJobs() });
     }
     if (request.method === "POST" && pathname === "/approval-jobs/live") {
+      // P5-SYNCLIVE: قفل تشابك متبادل — لا يبدأ تنزيل حي بينما مزامنة نشطة.
+      // (الاتجاه المعاكس محروس في /sync أعلاه.)
+      if (syncPromise) {
+        return send(response, 409, { error: "LIVE_DOWNLOAD_BLOCKED_BY_SYNC", message: "مزامنة نشطة حاليًا — انتظر اكتمالها ثم أعد طلب التنزيل." });
+      }
       // مسار P3-B1A: المحوّل الحي المحكوم يتحقق من قائمة السماح والحواجز، ولا يستهلك الموافقة وهو معطل.
       if (!localUiOrigins.has(String(request.headers.origin || ""))) {
         return send(response, 403, { error: "HUMAN_CONFIRMATION_ORIGIN_REQUIRED", message: "بدء التجربة متاح من واجهة الرادار المحلية فقط." });
@@ -950,6 +955,11 @@ const server = http.createServer(async (request, response) => {
       }
     }
     if (request.method === "POST" && request.url === "/sync") {
+      // P5-SYNCLIVE: قفل تشابك متبادل — لا تبدأ مزامنة بينما تنزيل حي جارٍ.
+      // (الاتجاه المعاكس محروس في /approval-jobs/live أدناه.)
+      if (liveDownloading) {
+        return send(response, 409, { error: "SYNC_BLOCKED_BY_LIVE_DOWNLOAD", message: "تنزيل حي نشط حاليًا — انتظر اكتماله ثم أعد المزامنة." });
+      }
       if (!syncPromise) syncPromise = performSync().finally(() => { syncPromise = undefined; });
       const result = await syncPromise;
       return send(response, 200, result);
