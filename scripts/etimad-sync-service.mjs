@@ -34,6 +34,7 @@ import {
   createSessionManager,
 } from "./lib/agent-team.mjs";
 import { runAgentSandboxTest } from "./lib/agent-sandbox.mjs";
+import { computeAgentNameChanges } from "./lib/agent-name-change.mjs";
 import { createDashboardApi } from "./lib/dashboard-api.mjs";
 import { createAnalysisEngine } from "./lib/analysis-engine.mjs";
 import { createAnalysisApiHandler } from "./lib/analysis-api.mjs";
@@ -567,7 +568,9 @@ function send(response, status, payload) {
     "Content-Type": "application/json; charset=utf-8",
     "Access-Control-Allow-Origin": "http://localhost:3000",
     "Access-Control-Allow-Methods": "GET,POST,PUT,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    // P5-F1R: x-team-token إلزامي لواجهات الكتابة الموثّقة — بدون إدراجه هنا
+    // يرفض المتصفح الـpreflight ويفشل كل حفظ من الواجهة (Failed to fetch).
+    "Access-Control-Allow-Headers": "Content-Type, x-team-token",
     "Cache-Control": "no-store",
   });
   response.end(JSON.stringify(payload));
@@ -638,6 +641,11 @@ async function handleAgentsApi(request, response, pathname) {
     const body = await readJsonBody(request);
     const roleCode = String(body?.roleCode || "").trim();
     if (!roleCode) return send(response, 400, { error: "ROLE_REQUIRED", message: "معرف الدور مطلوب." });
+    const before = repository.getAgentByRole(roleCode);
+    if (!before) return send(response, 404, { error: "AGENT_NOT_FOUND", message: `وكيل غير معروف: ${roleCode}` });
+    // P5-F1R: يُحسب ما تغيّر فعلًا قبل التحديث (حقول الاسم)، ليُعلن بصدق في الاستجابة
+    // وفي سجل النشاط — فلا تُقال «تم حفظ الاسم عربي + إنجليزي» بينما تغيّر حقل واحد.
+    const changed = computeAgentNameChanges(before, body);
     try {
       repository.updateAgentProfile(roleCode, {
         nameAr: body.nameAr,
@@ -647,11 +655,14 @@ async function handleAgentsApi(request, response, pathname) {
       });
       repository.recordAgentActivity({
         roleCode, action: "profile-updated", status: "info",
-        detail: { nameAr: body.nameAr ?? null, enabled: body.enabled ?? null },
+        detail: { changed, nameAr: body.nameAr ?? null, nameEn: body.nameEn ?? null, enabled: body.enabled ?? null },
       });
-      return send(response, 200, { ok: true, agent: repository.getAgentByRole(roleCode) });
+      return send(response, 200, { ok: true, changed, agent: repository.getAgentByRole(roleCode) });
     } catch (error) {
-      return send(response, 404, { error: "AGENT_NOT_FOUND", message: String(error?.message || error) });
+      // خطأ تحقق (اسم فارغ) ⇒ 400، وكيل مجهول ⇒ 404، وأي خلل غير متوقع ⇒ 500.
+      const code = error?.code || "AGENT_UPDATE_FAILED";
+      const status = code === "AGENT_NOT_FOUND" ? 404 : code === "AGENT_NAME_REQUIRED" ? 400 : 500;
+      return send(response, status, { error: code, message: String(error?.message || error) });
     }
   }
 

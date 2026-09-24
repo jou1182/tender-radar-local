@@ -1871,12 +1871,30 @@ export async function createRadarRepository({ projectRoot }) {
     };
   }
 
+  // P5-F1R: كل حقل يُحدَّث مستقلًا (undefined ⇒ يبقى كما هو)، ولا يُقبل اسم فارغ
+  // أو مسافات فقط لأي من الحقلين — يبقى الصف كما هو ويُرجع خطأ صريح بكوده.
   function updateAgentProfile(roleCode, { nameAr, nameEn, enabled, displayOrder }) {
     const current = statements.getAgentByRole.get(String(roleCode));
-    if (!current) throw new Error(`وكيل غير معروف: ${roleCode}`);
+    if (!current) {
+      const error = new Error(`وكيل غير معروف: ${roleCode}`);
+      error.code = "AGENT_NOT_FOUND";
+      throw error;
+    }
+    const nextNameAr = nameAr !== undefined ? String(nameAr).trim() : current.name_ar;
+    const nextNameEn = nameEn !== undefined ? String(nameEn).trim() : current.name_en;
+    if (!nextNameAr) {
+      const error = new Error("الاسم العربي مطلوب ولا يُقبل فارغًا.");
+      error.code = "AGENT_NAME_REQUIRED";
+      throw error;
+    }
+    if (!nextNameEn) {
+      const error = new Error("الاسم الإنجليزي مطلوب ولا يُقبل فارغًا.");
+      error.code = "AGENT_NAME_REQUIRED";
+      throw error;
+    }
     statements.updateAgentById.run(
-      nameAr !== undefined ? String(nameAr).trim() : current.name_ar,
-      nameEn !== undefined ? String(nameEn).trim() : current.name_en,
+      nextNameAr,
+      nextNameEn,
       enabled !== undefined ? (enabled ? 1 : 0) : Number(current.enabled),
       displayOrder !== undefined ? Number(displayOrder) : Number(current.display_order),
       new Date().toISOString(),

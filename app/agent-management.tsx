@@ -97,13 +97,20 @@ export function AgentManagementScreen() {
   }
 
   async function saveName(agent: ManagedAgent) {
-    const { ok, data } = await post("/agents/update", {
-      roleCode: agent.roleCode,
-      nameAr: nameDraft,
-      nameEn: nameEnDraft || agent.nameEn,
-    });
-    setFlash(ok ? "تم حفظ الاسم (عربي + إنجليزي) ✓" : data.message ?? "تعذر الحفظ.");
-    if (ok) void loadAgents();
+    // P5-F1R: لا رجوع صامت ولا اسم فارغ — كل حقل يُرسَل كما هو مُدخل بعد trim،
+    // والخادم يرفض الفراغ (400) ويعلن ما تغيّر فعلًا في data.changed.
+    const nameAr = nameDraft.trim();
+    const nameEn = nameEnDraft.trim();
+    if (!nameAr) { setFlash("⚠ الاسم العربي مطلوب — لا يُحفظ فارغًا."); return; }
+    if (!nameEn) { setFlash("⚠ الاسم الإنجليزي مطلوب — لا يُحفظ فارغًا."); return; }
+    const { ok, data } = await post("/agents/update", { roleCode: agent.roleCode, nameAr, nameEn });
+    if (!ok) { setFlash(data.message ?? "تعذر الحفظ."); return; }
+    const changed = Array.isArray(data.changed) ? (data.changed as string[]) : [];
+    const labelByField: Record<string, string> = { nameAr: "العربي", nameEn: "الإنجليزي" };
+    setFlash(changed.length === 0
+      ? "لا تغيير لحفظه — الاسمان كما هما."
+      : `تم حفظ الاسم ${changed.map((field) => labelByField[field] ?? field).join(" + ")} ✓`);
+    void loadAgents();
   }
 
   async function saveInstructions(agent: ManagedAgent) {
@@ -198,7 +205,9 @@ export function AgentManagementScreen() {
                     <input placeholder="الاسم الإنجليزي (Latin)" value={nameEnDraft} onChange={(e) => setNameEnDraft(e.target.value)} dir="ltr" />
                     <div className="inline-row">
                       <button type="button" onClick={() => void saveName(agent)}>حفظ الاسم</button>
+                      {flash && <em className="panel-msg">{flash}</em>}
                     </div>
+                    <small className="storage-note">كل حقل يُحفظ مستقلًا؛ لا يُقبل اسم فارغ في أيٍّ منهما.</small>
                   </fieldset>
                 </div>
               )}
@@ -215,6 +224,7 @@ export function AgentManagementScreen() {
                       <small>{instructionsDraft.length} / 8000</small>
                       <button type="button" onClick={() => void saveInstructions(agent)}>حفظ التعليمات</button>
                       {instructionsSaved && <em className="panel-msg">{instructionsSaved}</em>}
+                      {flash && <em className="panel-msg">{flash}</em>}
                     </div>
                   </fieldset>
                 </div>
