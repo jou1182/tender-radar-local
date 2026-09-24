@@ -4,13 +4,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import os from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { createRadarRepository } from "../scripts/lib/radar-repository.mjs";
-import { agentCrew, validateCrew, crewInstructionLimit } from "../scripts/lib/agent-crew-p5ready.mjs";
+import { agentCrew, classifyTarget, validateCrew, crewInstructionLimit } from "../scripts/lib/agent-crew-p5ready.mjs";
 
 const run = promisify(execFile);
 const scriptPath = fileURLToPath(new URL("../scripts/apply-agent-crew.mjs", import.meta.url));
@@ -22,15 +23,20 @@ async function tempRoot(label) {
   return root;
 }
 
-async function cli(args, { expectFail = false } = {}) {
+async function cli(args, { expectFail = false, allowEmpty = true } = {}) {
+  const full = allowEmpty && !args.includes("--allow-empty-db") ? [...args, "--allow-empty-db"] : args;
   try {
-    const { stdout, stderr } = await run(process.execPath, [scriptPath, ...args], { encoding: "utf8" });
+    const { stdout, stderr } = await run(process.execPath, [scriptPath, ...full], { encoding: "utf8" });
     assert.equal(expectFail, false, `كان متوقعًا فشل الأمر لكنه نجح:\n${stdout}`);
     return { stdout, stderr, code: 0 };
   } catch (error) {
     assert.equal(expectFail, true, `فشل غير متوقع: ${error.stderr || error.message}`);
     return { stdout: error.stdout ?? "", stderr: error.stderr ?? "", code: error.code };
   }
+}
+
+function countMessages(problems, needle) {
+  return problems.filter((p) => p.includes(needle)).length;
 }
 
 // ── (أ) تحقق التعريف ─────────────────────────────────────────────────────────
@@ -45,12 +51,15 @@ test("CREW-1: تعريف الطاقم الحقيقي يجتاز التحقق (7 
   }
 });
 
-test("CREW-2: التحقق يرفض الانحرافات (خارجي/فراغ/تجاوز الحد)", () => {
+test("CREW-2: التحقق يرفض الانحرافات (خارجي/فراغ/تجاوز الحد) برسالة واحدة لكل خلل", () => {
   assert.ok(validateCrew({}).length > 0, "طاقم فارغ مرفوض");
   assert.ok(validateCrew({ scout: { model: "qwen2.5:14b", instructions: "   " } }).some((p) => p.includes("فارغة")), "تعليمات فارغة مرفوضة");
-  assert.ok(validateCrew({ scout: { model: "", instructions: "نص" } }).some((p) => p.includes("نموذج فارغ")), "نموذج فارغ مرفوض");
-  assert.ok(validateCrew({ scout: { model: "gpt-5", instructions: "نص" } }).some((p) => p.includes("خارجي")), "نموذج خارجي مرفوض");
-  assert.ok(validateCrew({ scout: { model: "qwen 2.5", instructions: "نص" } }).some((p) => p.includes("مسافة")), "مسافة في اسم النموذج مرفوضة");
+  // P5-AGENTS-READY (S4): رسالة **واحدة** لكل خلل — لا تشخيص مكرر (رصدته مراجعة مستقلة).
+  assert.equal(countMessages(validateCrew({ scout: { model: "", instructions: "نص" } }), "نموذج فارغ"), 1, "نموذج فارغ: رسالة واحدة");
+  assert.equal(countMessages(validateCrew({ scout: { model: " ", instructions: "نص" } }), "نموذج"), 1, "نموذج مسافات: رسالة واحدة");
+  assert.equal(countMessages(validateCrew({ scout: { model: "gpt-5", instructions: "نص" } }), "خارجي"), 1, "نموذج خارجي: رسالة واحدة");
+  assert.equal(countMessages(validateCrew({ scout: { model: "qwen 2.5", instructions: "نص" } }), "مسافة"), 1, "مسافة: رسالة واحدة");
+  assert.equal(countMessages(validateCrew({ scout: { model: "qwen2.5:14b", instructions: "نص" } }), "نموذج"), 0, "نموذج سليم: بلا رسالة");
   const long = "ا".repeat(crewInstructionLimit + 1);
   assert.ok(validateCrew({ scout: { model: "qwen2.5:14b", instructions: long } }).some((p) => p.includes(String(crewInstructionLimit))), "تجاوز الحد مرفوض");
 });
@@ -137,7 +146,7 @@ test("CREW-10: هوية الهدف مؤكَّدة — مجلد .radar-data بل�
   // ملاحظة المراجعة S1: وجود .radar-data وحده لا يكفي (مجلدات شقيقة كثيرة في الشجرة).
   const root = await mkdtemp(path.join(os.tmpdir(), "radar-crew-nodb-"));
   await mkdir(path.join(root, ".radar-data"), { recursive: true });
-  const refused = await cli(["--db-root", root, "--apply"], { expectFail: true });
+  const refused = await cli(["--db-root", root, "--apply"], { expectFail: true, allowEmpty: false });
   assert.equal(refused.code, 2);
   assert.match(refused.stderr, /غير مؤكَّد الهوية|لا توجد قاعدة/);
   assert.ok(!existsSync(path.join(root, ".radar-data", "radar.sqlite")), "لم تُنشأ قاعدة عند الرفض");
@@ -147,4 +156,42 @@ test("CREW-10: هوية الهدف مؤكَّدة — مجلد .radar-data بل�
   const repository = await createRadarRepository({ projectRoot: root });
   assert.equal(repository.getAgentByRole("scout").binding.provider, "ollama", "طُبِّق بعلم صريح");
   repository.close();
+});
+
+// ── (ج) بوابة هوية الهدف (S1 الملزمة) ──────────────────────────────────────
+
+test("CREW-11: مصمّم الهدف النقي يميّز قاعدة التشغيل عن قاعدة خالية", () => {
+  assert.equal(classifyTarget({ dbExists: false }).ok, false, "قاعدة غير موجودة بلا علم ⇒ رفض");
+  assert.equal(classifyTarget({ dbExists: false }).error, "NO_DB");
+  assert.equal(classifyTarget({ dbExists: false, allowEmptyDb: true }).ok, true, "قاعدة جديدة بعلم ⇒ مقبول");
+  const empty = classifyTarget({ dbExists: true, tenders: 0, syncRuns: 0 });
+  assert.equal(empty.ok, false, "قاعدة خالية ⇒ رفض (اختبار/شقيق)");
+  assert.equal(empty.error, "EMPTY_STORE");
+  assert.equal(classifyTarget({ dbExists: true, tenders: 0, syncRuns: 0, allowEmptyDb: true }).ok, true, "قاعدة خالية بعلم ⇒ مقبول");
+  assert.equal(classifyTarget({ dbExists: true, tenders: 332, syncRuns: 12 }).ok, true, "قاعدة ببيانات تشغيل ⇒ مقبول بلا علم");
+  assert.equal(classifyTarget({ dbExists: true, tenders: 0, syncRuns: 3 }).ok, true, "مزامنات وحدها تكفي كدليل تشغيل");
+});
+
+test("CREW-12: قاعدة خالية تُرفض بلا علم --allow-empty-db (لا كتابة)", async () => {
+  const root = await tempRoot("empty-guard");
+  const res = await cli(["--db-root", root, "--apply"], { expectFail: true, allowEmpty: false });
+  assert.equal(res.code, 2, "كود الخروج 2");
+  assert.match(res.stderr, /بيانات تشغيل/, "السبب معلن");
+  const db = new DatabaseSync(path.join(root, ".radar-data", "radar.sqlite"), { readOnly: true });
+  try {
+    assert.equal(db.prepare("SELECT binding_json FROM agents WHERE role_code = 'scout'").get().binding_json, '{"provider":"stub"}', "الربط لم يُمس");
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM agent_activity WHERE action = 'crew-applied'").get().n, 0, "لا سجل تطبيق");
+  } finally {
+    db.close();
+  }
+});
+
+test("CREW-13: المعاينة لا تُنشئ قاعدة إطلاقًا (ولا تكتب)", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "radar-crew-nocreate-"));
+  await mkdir(path.join(root, ".radar-data"), { recursive: true });
+  const res = await cli(["--db-root", root]);
+  assert.equal(res.code, 0, "المعاينة تنجح");
+  assert.match(res.stdout, /هدف جديد بعلم صريح/, "تُعلن أن الهدف جديد");
+  assert.equal(existsSync(path.join(root, ".radar-data", "radar.sqlite")), false, "لم تُنشأ قاعدة في المعاينة");
+  assert.equal(existsSync(path.join(root, ".radar-data", "radar.sqlite-wal")), false, "ولا ملفات WAL");
 });
