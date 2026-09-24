@@ -9,8 +9,7 @@
 //   فلا ندّعي تغييرًا على مدخل غير صالح.
 // - الـtrim قبل المقارنة، والمقارنة صارمة.
 
-export const agentProfileFields = ["nameAr", "nameEn", "enabled", "displayOrder"];
-
+// الحقول المعروفة وأسماؤها العربية — مصدر واحد للتسمية في الواجهتين.
 export const agentChangeLabels = {
   nameAr: "الاسم العربي",
   nameEn: "الاسم الإنجليزي",
@@ -48,9 +47,15 @@ export function computeAgentProfileChanges(current, incoming = {}) {
   return changed;
 }
 
-// رسالة واحدة صادقة تصلح للواجهتين — لا تقول «تم الحفظ» إن لم يتغيّر شيء.
+// رسالة واحدة صادقة تصلح للواجهتين — لا تقول «تم الحفظ» إن لم يتغيّر شيء،
+// ولا تُخفِ حقلًا متغيّرًا بلا تسمية معروفة (ثقب صدق رصدته مراجعة مستقلة):
+// الحقول المجهولة تُذكر بنصها الخام في بند «حقول أخرى» بدل إسقاطها.
 export function describeAgentChanges(changed = []) {
-  const list = (Array.isArray(changed) ? changed : []).filter((field) => agentChangeLabels[field]);
-  if (!list.length) return "لا تغيير لحفظه — القيم كما هي.";
-  return `تم حفظ ${list.map((field) => agentChangeLabels[field]).join(" + ")} ✓`;
+  const fields = Array.isArray(changed) ? changed.filter((f) => typeof f === "string" && f) : [];
+  const known = fields.filter((field) => agentChangeLabels[field]);
+  const unknown = fields.filter((field) => !agentChangeLabels[field]);
+  if (!known.length && !unknown.length) return "لا تغيير لحفظه — القيم كما هي.";
+  const parts = known.map((field) => agentChangeLabels[field]);
+  if (unknown.length) parts.push(`حقول أخرى (${unknown.join("، ")})`);
+  return `تم حفظ ${parts.join(" + ")} ✓`;
 }

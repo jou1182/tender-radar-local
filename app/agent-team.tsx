@@ -198,7 +198,7 @@ export function AgentTeamPanel({ syncState, lastSyncAt }: { syncState: string; l
                     </label>
                     {editProvider !== "stub" && <>
                       <label>رابط الخدمة<input placeholder={editProvider === "ollama" ? "http://127.0.0.1:11434" : "https://api.example.com/v1"} value={editBaseUrl} onChange={(e) => setEditBaseUrl(e.target.value)} /></label>
-                      <label>النموذج<input placeholder={editProvider === "ollama" ? "nemotron-3.5-lightning:latest" : "model-name"} value={editModel} onChange={(e) => setEditModel(e.target.value)} /></label>
+                      <label>النموذج<input placeholder={editProvider === "ollama" ? "qwen2.5:14b" : "model-name"} value={editModel} onChange={(e) => setEditModel(e.target.value)} /></label>
                       <label>مفتاح API (اختياري — يشفَّر ولا يعود ظاهرًا)<input type="password" value={editApiKey} onChange={(e) => setEditApiKey(e.target.value)} /></label>
                       {editBaseUrl && !/^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])/.test(editBaseUrl) && (
                         <label className="confirm-external"><input type="checkbox" checked={externalConfirmed} onChange={(e) => setExternalConfirmed(e.target.checked)} /> أؤكد أن البيانات ستغادر هذا الجهاز إلى مزود خارجي</label>

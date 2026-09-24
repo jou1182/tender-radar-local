@@ -101,7 +101,10 @@ test("P5-F1R-11: describeAgentChanges لا يقول «تم الحفظ» بلا �
   assert.equal(describeAgentChanges(["nameAr", "nameEn"]), "تم حفظ الاسم العربي + الاسم الإنجليزي ✓");
   assert.equal(describeAgentChanges(["enabled"]), "تم حفظ حالة التشغيل ✓");
   assert.equal(describeAgentChanges(undefined), "لا تغيير لحفظه — القيم كما هي.", "بلا قائمة ⇒ لا ادعاء");
-  assert.equal(describeAgentChanges(["unknownField"]), "لا تغيير لحفظه — القيم كما هي.", "حقل مجهول لا يُعلن");
+  // تصحيح مُشرَّع (P5-POLISH): كان هنا «حقل مجهول ⇒ لا تغيير»، وهي بالضبط الثغرة التي
+  // رصدتها المراجعة المستقلة: حقلٌ تغيّر فعلًا في الخادم بلا تسمية معروفة كان يُخفى
+  // فيُقال «لا تغيير». الصواب أن يُذكر بنصه الخام بدل إسقاطه.
+  assert.equal(describeAgentChanges(["unknownField"]), "تم حفظ حقول أخرى (unknownField) ✓", "حقل مجهول يُعلن ولا يُخفى");
 });
 
 // ── حارس بنيوي على الواجهتين (نمط المستودع في اختبارات البنية) ───────────────
@@ -126,4 +129,33 @@ test("P5-F1R-13: لوحة الفريق لا ترجع صامتةً ولا تدّ�
   assert.match(src, /if \(!nameAr\)/, "لوحة الفريق تمنع الاسم الفارغ");
   assert.match(src, /describeAgentChanges\(/, "لوحة الفريق تستخدم الرسالة الصادقة نفسها");
   assert.doesNotMatch(src, /res\.ok \? "تم الحفظ ✓"/, "زالت الرسالة الثابتة المضلّلة");
+});
+
+// ── P5-POLISH: دَين المراجعتين + نصوص الواجهة ───────────────────────────
+
+test("P5-POLISH-1: describeAgentChanges لا تخفي حقلًا متغيّرًا مجهولًا (ثقب صدق)", () => {
+  // كان مرشّح التسميات يُسقط أي حقل بلا تسمية، فإن كان كل التغيير مجهولًا
+  // قالت الرسالة «لا تغيير لحفظه» — وهذا كذب صريح.
+  assert.equal(describeAgentChanges([]), "لا تغيير لحفظه — القيم كما هي.", "لا تغيير فعلي ⇒ الرسالة الأصلية");
+  assert.notEqual(describeAgentChanges(["mysteryField"]), "لا تغيير لحفظه — القيم كما هي.", "حقل مجهول ليس «لا تغيير»");
+  assert.match(describeAgentChanges(["mysteryField"]), /mysteryField/, "يُذكر الحقل المجهول بنصه");
+  const mixed = describeAgentChanges(["nameAr", "mysteryField"]);
+  assert.match(mixed, /الاسم العربي/, "الحقل المعروف يظهر بمسمّاه");
+  assert.match(mixed, /mysteryField/, "والحقل المجهول لا يختفي");
+  assert.doesNotMatch(mixed, /لا تغيير/, "لا يُقال «لا تغيير» مع وجود تغيير");
+});
+
+test("P5-POLISH-2: لا تصدير ميت في وحدة تغييرات الملف (agentProfileFields)", async () => {
+  const mod = await import("../scripts/lib/agent-profile-change.mjs");
+  assert.ok(!("agentProfileFields" in mod), "التصدير الميت أُزيل");
+  assert.ok(typeof mod.computeAgentProfileChanges === "function");
+  assert.ok(typeof mod.describeAgentChanges === "function");
+});
+
+test("P5-POLISH-3: نصوص الواجهة تشير إلى نموذج الطاقم الفعلي لا نموذجًا متقادمًا", async () => {
+  for (const file of ["../app/agent-management.tsx", "../app/agent-team.tsx"]) {
+    const src = await readFile(new URL(file, import.meta.url), "utf8");
+    assert.doesNotMatch(src, /nemotron/, `${file}: لا ذكر لنموذج متقادم`);
+    assert.match(src, /qwen2\.5:14b/, `${file}: يشير إلى نموذج الطاقم المربوط`);
+  }
 });

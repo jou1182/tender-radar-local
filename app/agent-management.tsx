@@ -258,7 +258,7 @@ export function AgentManagementScreen() {
                     </select>
                     {providerDraft !== "stub" && <>
                       <input placeholder={providerDraft === "ollama" ? "http://127.0.0.1:11434" : "https://api.example.com/v1"} value={baseUrlDraft} onChange={(e) => setBaseUrlDraft(e.target.value)} />
-                      <input placeholder={providerDraft === "ollama" ? "nemotron-3.5-lightning:latest" : "اسم النموذج"} value={modelDraft} onChange={(e) => setModelDraft(e.target.value)} />
+                      <input placeholder={providerDraft === "ollama" ? "qwen2.5:14b" : "اسم النموذج"} value={modelDraft} onChange={(e) => setModelDraft(e.target.value)} />
                       <input type="password" placeholder="مفتاح API (يُشفَّر ولا يُعرض مجددًا)" value={apiKeyDraft} onChange={(e) => setApiKeyDraft(e.target.value)} />
                       {baseUrlDraft && !/^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])/.test(baseUrlDraft) && (
                         <label className="confirm-external">
