@@ -135,3 +135,42 @@ npm run lint    # ESLint — يجب أن يخرج نظيفًا
 
 - لا بيانات دخول ولا قيم سرية في أي أمر أو مثال.
 - لا مسارات شخصية مطلقة — استخدم `<PROJECT_ROOT>` ومسارات نسبية فقط.
+
+## P5-SAFE-OPS — إجراءات آمنة (مضافة 2026-09-24 بعد حادثتين مُقاسَتين)
+
+### أ) الكتابة في قاعدة التشغيل (إلزامي)
+1. `npm run db:backup` — يكتب `.radar-data/backups/radar-backup-<UTC>.sqlite`، لا يستبدل نسخة موجودة.
+2. **معاينة أولًا** (بلا كتابة) ثم تنفيذ بعلم صريح:
+   ```bash
+   node scripts/apply-agent-crew.mjs --db-root "D:/joUTricks/_Youtube/Radar/_E3tmaad/radar"            # معاينة
+   node scripts/apply-agent-crew.mjs --db-root "..." --apply                                        # تنفيذ
+   ```
+3. **لا تعتمد على المسار الضمني (`.`)**: سكربت قديم استخدم `path.resolve(".")` فكتب في قاعدة أخرى
+   بصمت (حادثة P5-AGENTS: الوثائق قالت «UAT حي مؤكد» وقاعدة التشغيل أثبتت عدم التطبيق بـ`updated_at`).
+   أي أداة كتابة جديدة يجب أن: تطلب `--db-root` صراحةً · ترفض هدفًا بلا `.radar-data` · تطبع المسار
+   والعدّادات قبل الكتابة · ترفض قاعدة بلا بيانات تشغيل بلا علم صريح.
+
+### ب) حذف مجلد/worktree — خطر الروابط (إلزامي)
+⚠️ في الشجرة **22 رابط `node_modules`** (junction). الحذف الشامل (`rm -rf`/`rmtree`/`worktree remove`)
+قد **يتبع الرابط** فيمسح `node_modules` الحقيقي (367 مدخلًا). الإجراء:
+```bash
+cmd /c rmdir "<مسار-الرابط>"     # يزيل الرابط فقط (بلا /S) — لا يلمس الهدف
+git worktree remove <المسار>      # ثم إزالة الـworktree
+ls radar/node_modules | wc -l      # التحقق: 367 مدخلًا (قبل/بعد كل دفعة)
+```
+**لا تُمَس**: فروع `kimi/*` غير المدمجة · `radar-backups/` · `radar-recovery-bundles/` · `.wrangler/` ·
+قاعدة التشغيل ونسخها الاحتياطية. وقبل حذف أي worktree: تأكد أنها **مدمجة**
+(`git merge-base --is-ancestor <head> HEAD`) وأن `git status --short` داخلها فارغ.
+
+### ج) إنشاء worktree للعمل
+```bash
+git worktree add -b alt/<name> ../radar-alt-<name> <commit-أساس-كامل>
+powershell -Command "New-Item -ItemType Junction -Path '<worktree>\node_modules' -Target '<repo>\node_modules'"
+```
+**فخ CWD**: المستودع الحقيقي هو `D:/joUTricks/_Youtube/Radar/_E3tmaad/radar` (لاحظ `_E3tmaad`) —
+مسار ناقص يعطي نتائج فارغة زائفة. تحقق بـ`pwd` قبل كل بوابة، وقد تكون الجلسة ارتدّت للمستودع الرئيسي.
+
+### د) قواعد المراجعة المستقلة
+- المراجع لا يفتح قاعدة التشغيل إطلاقًا: `RADAR_DB_ROOT=<مؤقت خارج المستودع>` + `RADAR_SYNC_PORT=0`.
+- لا merge/push/rebase/reset، ولا تعديل ملفات، ولا تشغيل حي (اعتماد/Chrome/Ollama/n8n/تنزيل).
+- **المنفّذ لا يدمج عمله**: مراجعة مستقلة ثم قرار المالك، ثم `git merge --ff-only` بمهمة منفصلة.
