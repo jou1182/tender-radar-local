@@ -87,6 +87,10 @@ for (const meta of metas) {
 }
 
 // دمج التقارير — المنطق في وحدة نقية مختبَرة معزولًا: analysis-multidoc-merge.mjs.
+// ملاحظة صادقة (مُتحقَّق منها بمقارنة فعلية): المحتوى الناتج مطابق تمامًا للنسخة
+// القديمة، لكن موضع مفتاحَي durationSecs/model في ملف JSON صار في نهاية الكائن
+// بدل ما قبل coverageAssessment — فرق ترتيب مفاتيح تجميلي بلا أي أثر وظيفي
+// (الملف تقرير يُعاد توليده كاملًا ولا يقارنه أي مستهلك).
 const merged = mergeMultidocReports(results, { dominantThreshold: 0.8 });
 merged.durationSecs = Math.round((Date.now() - t0) / 1000);
 merged.model = "nemotron-3.5-lightning:latest";

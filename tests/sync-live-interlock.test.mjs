@@ -34,11 +34,14 @@ test("P5-SYNCLIVE-3: /status يكشف علمَي الانشغال (downloading �
 test("P5-SYNCLIVE-4: علم التنزيل يُرفع متزامنًا قبل أول await (لا نافذة TOCTOU)", () => {
   // المراجعة المستقلة رصدت: كان liveDownloading = true يتأخر إلى ما بعد await readJsonBody
   // (وقبلها يدخل طلب /sync من حارسه بلا تصادم). الإصلاح: رفع العلم قبل أول await
-  // وداخل try بضمان finally. هذا فحص بنيوي على نص المسار (بنفس طبيعة زملائه هنا).
+  // داخل try مفتوح قبله، مع إعادة ضبطه في finally يغطي كل المسارات.
+  // فحص بنيوي على نص المسار (بنفس طبيعة زملائه هنا).
   const guard = source.slice(source.indexOf('pathname === "/approval-jobs/live"'), source.indexOf('request.url === "/sync"'));
   const posSet = guard.indexOf("liveDownloading = true;");
+  const posTry = guard.indexOf("try {");
   const posRead = guard.indexOf("await readJsonBody");
-  assert.ok(posSet !== -1 && posRead !== -1, "موقعا رفع العلم وقراءة الجسد موجودان في المسار");
-  assert.ok(posSet < posRead, `رفع العلم (${posSet}) بجب أن يسبق أول await (${posRead}) — حاليا يقع بعده`);
-  assert.match(guard.slice(0, posRead), /try \{/, "العلم يُرفع داخل كتلة try لإعادة ضبطه مضمونًا في finally");
+  assert.ok(posSet !== -1 && posTry !== -1 && posRead !== -1, "مواقع رفع العلم وفتح try وقراءة الجسد موجودة في المسار");
+  assert.ok(posSet < posRead, `رفع العلم (${posSet}) يجب أن يسبق أول await (${posRead}) — حاليًا يقع بعده`);
+  assert.ok(posTry < posRead, "كتلة try مفتوحة قبل أول await لضمان تغطية finally لأخطاء ما قبل التنفيذ");
+  assert.match(guard, /finally \{\s*liveDownloading = false;\s*\}/, "finally يُعيد ضبط العلم (الضمانة العكسية)");
 });
