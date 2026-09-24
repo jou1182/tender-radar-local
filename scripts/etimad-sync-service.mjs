@@ -34,7 +34,7 @@ import {
   createSessionManager,
 } from "./lib/agent-team.mjs";
 import { runAgentSandboxTest } from "./lib/agent-sandbox.mjs";
-import { computeAgentNameChanges } from "./lib/agent-name-change.mjs";
+import { computeAgentProfileChanges } from "./lib/agent-profile-change.mjs";
 import { createDashboardApi } from "./lib/dashboard-api.mjs";
 import { createAnalysisEngine } from "./lib/analysis-engine.mjs";
 import { createAnalysisApiHandler } from "./lib/analysis-api.mjs";
@@ -643,9 +643,9 @@ async function handleAgentsApi(request, response, pathname) {
     if (!roleCode) return send(response, 400, { error: "ROLE_REQUIRED", message: "معرف الدور مطلوب." });
     const before = repository.getAgentByRole(roleCode);
     if (!before) return send(response, 404, { error: "AGENT_NOT_FOUND", message: `وكيل غير معروف: ${roleCode}` });
-    // P5-F1R: يُحسب ما تغيّر فعلًا قبل التحديث (حقول الاسم)، ليُعلن بصدق في الاستجابة
-    // وفي سجل النشاط — فلا تُقال «تم حفظ الاسم عربي + إنجليزي» بينما تغيّر حقل واحد.
-    const changed = computeAgentNameChanges(before, body);
+    // P5-F1R: يُحسب ما تغيّر فعلًا قبل التحديث (الاسمان + حالة التشغيل + الترتيب)،
+    // ليُعلن بصدق في الاستجابة وفي سجل النشاط — فلا تُقال «تم حفظ الاسم» بلا تغيير.
+    const changed = computeAgentProfileChanges(before, body);
     try {
       repository.updateAgentProfile(roleCode, {
         nameAr: body.nameAr,

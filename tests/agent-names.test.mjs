@@ -8,7 +8,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createRadarRepository } from "../scripts/lib/radar-repository.mjs";
-import { computeAgentNameChanges } from "../scripts/lib/agent-name-change.mjs";
+import { computeAgentProfileChanges, describeAgentChanges } from "../scripts/lib/agent-profile-change.mjs";
 
 const isNameRequired = (e) => e?.code === "AGENT_NAME_REQUIRED";
 
@@ -76,27 +76,54 @@ test("P5-F1R-4: وكيل غير معروف يُرفض بكود صريح AGENT_NO
 
 // ── الوحدة النقية: تحديد ما تغيّر فعلًا ──────────────────────────────────────
 
-test("P5-F1R-9: computeAgentNameChanges يعلن الحقول المتغيّرة فقط", () => {
-  const current = { name_ar: "فهد", name_en: "Fahad" };
-  assert.deepEqual(computeAgentNameChanges(current, { nameAr: "بدر" }), ["nameAr"], "العربي وحده");
-  assert.deepEqual(computeAgentNameChanges(current, { nameEn: "Badr" }), ["nameEn"], "الإنجليزي وحده");
-  assert.deepEqual(computeAgentNameChanges(current, { nameAr: "بدر", nameEn: "Badr" }), ["nameAr", "nameEn"], "الاثنان");
-  assert.deepEqual(computeAgentNameChanges(current, {}), [], "لا حقول مرسلة ⇒ لا تغيير");
-  assert.deepEqual(computeAgentNameChanges(current, { nameAr: "فهد", nameEn: "Fahad" }), [], "قيم مطابقة ⇒ لا تغيير");
-  assert.deepEqual(computeAgentNameChanges(current, { nameAr: "  فهد  " }), [], "المسافات تُقلّم قبل المقارنة");
-  assert.deepEqual(computeAgentNameChanges(current, { nameAr: "فهد", nameEn: "Badr" }), ["nameEn"], "المطابق لا يُعلن");
+test("P5-F1R-10: computeAgentProfileChanges يعلن الحقول المتغيّرة فقط", () => {
+  const current = { name_ar: "فهد", name_en: "Fahad", enabled: 1, display_order: 5 };
+  assert.deepEqual(computeAgentProfileChanges(current, { nameAr: "بدر" }), ["nameAr"], "العربي وحده");
+  assert.deepEqual(computeAgentProfileChanges(current, { nameEn: "Badr" }), ["nameEn"], "الإنجليزي وحده");
+  assert.deepEqual(computeAgentProfileChanges(current, { nameAr: "بدر", nameEn: "Badr" }), ["nameAr", "nameEn"], "الاثنان");
+  assert.deepEqual(computeAgentProfileChanges(current, {}), [], "لا حقول مرسلة ⇒ لا تغيير");
+  assert.deepEqual(computeAgentProfileChanges(current, { nameAr: "فهد", nameEn: "Fahad" }), [], "قيم مطابقة ⇒ لا تغيير");
+  assert.deepEqual(computeAgentProfileChanges(current, { nameAr: "  فهد  " }), [], "المسافات تُقلّم قبل المقارنة");
+  assert.deepEqual(computeAgentProfileChanges(current, { nameAr: "فهد", nameEn: "Badr" }), ["nameEn"], "المطابق لا يُعلن");
+  // P5-F1R (M1): الواجهة الثانية تحفظ حالة التشغيل أيضًا ⇒ يجب إعلانها بصدق.
+  assert.deepEqual(computeAgentProfileChanges(current, { enabled: false }), ["enabled"], "إطفاء يُعلن");
+  assert.deepEqual(computeAgentProfileChanges(current, { enabled: true }), [], "نفس الحالة لا تُعلن");
+  assert.deepEqual(computeAgentProfileChanges(current, { displayOrder: 2 }), ["displayOrder"], "تغيير الترتيب");
+  // P5-F1R (M2): قيمة غير نصية للاسم مدخل غير صالح ⇒ لا ندّعي تغييرًا (المستودع يرفضه).
+  assert.deepEqual(computeAgentProfileChanges(current, { nameAr: null }), [], "null ليس تغييرًا");
+  assert.deepEqual(computeAgentProfileChanges(current, { nameAr: 0 }), [], "0 ليس تغييرًا");
+  assert.deepEqual(computeAgentProfileChanges(current, { nameEn: false }), [], "false ليس تغييرًا");
 });
 
-// ── حارس بنيوي على الواجهة (نمط المستودع في اختبارات البنية) ────────────────
+test("P5-F1R-11: describeAgentChanges لا يقول «تم الحفظ» بلا تغيير", () => {
+  assert.equal(describeAgentChanges([]), "لا تغيير لحفظه — القيم كما هي.");
+  assert.equal(describeAgentChanges(["nameAr"]), "تم حفظ الاسم العربي ✓");
+  assert.equal(describeAgentChanges(["nameAr", "nameEn"]), "تم حفظ الاسم العربي + الاسم الإنجليزي ✓");
+  assert.equal(describeAgentChanges(["enabled"]), "تم حفظ حالة التشغيل ✓");
+  assert.equal(describeAgentChanges(undefined), "لا تغيير لحفظه — القيم كما هي.", "بلا قائمة ⇒ لا ادعاء");
+  assert.equal(describeAgentChanges(["unknownField"]), "لا تغيير لحفظه — القيم كما هي.", "حقل مجهول لا يُعلن");
+});
 
-test("P5-F1R-10: واجهة الاسم لا ترجع صامتةً ولا ترسل اسمًا فارغًا وتعتمد changed", async () => {
+// ── حارس بنيوي على الواجهتين (نمط المستودع في اختبارات البنية) ───────────────
+
+test("P5-F1R-12: واجهة الإدارة لا ترجع صامتةً ولا ترسل اسمًا فارغًا وتُظهر الرسالة", async () => {
   const src = await readFile(new URL("../app/agent-management.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(src, /nameEnDraft \|\| agent\.nameEn/, "زال الرجوع الصامت للاسم الإنجليزي القديم");
   assert.match(src, /if \(!nameAr\)/, "الواجهة تمنع الاسم العربي الفارغ");
   assert.match(src, /if \(!nameEn\)/, "الواجهة تمنع الاسم الإنجليزي الفارغ");
-  assert.match(src, /data\.changed/, "رسالة الحفظ مبنية على ما أعلنه الخادم فعلًا");
+  assert.match(src, /describeAgentChanges\(/, "الرسالة من المصدر الواحد الصادق");
   assert.doesNotMatch(src, /تم حفظ الاسم \(عربي \+ إنجليزي\)/, "زالت الرسالة الموحّدة المضلّلة");
   // العطل الذي كشفه الفحص البصري: flash كان يُكتب ولا يُعرض في تبويب الاسم إطلاقًا.
   const nameTab = src.slice(src.indexOf('activeTab === "name" && ('), src.indexOf('activeTab === "training" && ('));
   assert.match(nameTab, /<em className="panel-msg">\{flash\}<\/em>/, "تبويب الاسم يعرض رسالة الحفظ فعليًا");
+});
+
+test("P5-F1R-13: لوحة الفريق لا ترجع صامتةً ولا تدّعي «تم الحفظ ✓» دائما", async () => {
+  // M1 في المراجعة المستقلة: سطح ثانٍ لإعادة التسمية كان يرجع للاسم القديم بصمت
+  // ويُظهر «تم الحفظ ✓» دائمًا — بلا اختبار يغطيه.
+  const src = await readFile(new URL("../app/agent-team.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(src, /nameAr: editName \|\| agent\.nameAr/, "زال الرجوع الصامت في لوحة الفريق");
+  assert.match(src, /if \(!nameAr\)/, "لوحة الفريق تمنع الاسم الفارغ");
+  assert.match(src, /describeAgentChanges\(/, "لوحة الفريق تستخدم الرسالة الصادقة نفسها");
+  assert.doesNotMatch(src, /res\.ok \? "تم الحفظ ✓"/, "زالت الرسالة الثابتة المضلّلة");
 });

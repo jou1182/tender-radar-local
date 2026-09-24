@@ -115,3 +115,15 @@ test("P5-F1R-9: preflight يسمح برأس x-team-token (وإلا فشل كل �
   assert.ok(allowed.includes("x-team-token"), `الرؤوس المسموحة فعليًا: ${allowed}`);
   assert.equal(res.headers.get("access-control-allow-origin"), "http://localhost:3000");
 });
+
+test("P5-F1R-14: تغيير حالة التشغيل يُعلن في changed (لوحة الفريق تعتمد عليه)", async () => {
+  // P5-F1R (M1): لوحة «فريق الوكلاء» تحفظ الاسم والحالة معًا — فلا بد أن يُعلن
+  // الخادم تغيير الحالة أيضًا، وإلا قالت الرسالة «لا تغيير» بينما الحالة تغيّرت.
+  const before = await agentOf("reporter");
+  const flip = await update({ roleCode: "reporter", enabled: !before.enabled });
+  assert.equal(flip.status, 200);
+  assert.deepEqual(flip.body.changed, ["enabled"], "إعلان حالة التشغيل وحدها");
+  const again = await update({ roleCode: "reporter", enabled: !before.enabled });
+  assert.deepEqual(again.body.changed, [], "إعادة الإرسال لنفس القيمة ⇒ لا تغيير");
+  await update({ roleCode: "reporter", enabled: before.enabled });
+});

@@ -12,6 +12,7 @@ type ManagedAgent = {
 type SandboxResult = { provider: string; model: string | null; response: string; isolated: boolean; at: string };
 
 import { TeamSecretManager } from "./team-secret-manager";
+import { describeAgentChanges } from "../scripts/lib/agent-profile-change.mjs";
 const SYNC_BASE = "http://127.0.0.1:4318";
 const providerNames: Record<string, string> = { stub: "محاكاة آمنة", ollama: "محلي (Ollama)", "openai-compatible": "خارجي (API)" };
 
@@ -105,11 +106,8 @@ export function AgentManagementScreen() {
     if (!nameEn) { setFlash("⚠ الاسم الإنجليزي مطلوب — لا يُحفظ فارغًا."); return; }
     const { ok, data } = await post("/agents/update", { roleCode: agent.roleCode, nameAr, nameEn });
     if (!ok) { setFlash(data.message ?? "تعذر الحفظ."); return; }
-    const changed = Array.isArray(data.changed) ? (data.changed as string[]) : [];
-    const labelByField: Record<string, string> = { nameAr: "العربي", nameEn: "الإنجليزي" };
-    setFlash(changed.length === 0
-      ? "لا تغيير لحفظه — الاسمان كما هما."
-      : `تم حفظ الاسم ${changed.map((field) => labelByField[field] ?? field).join(" + ")} ✓`);
+    const changed = Array.isArray(data.changed) ? data.changed : [];
+    setFlash(changed.length ? describeAgentChanges(changed) : describeAgentChanges([]));
     void loadAgents();
   }
 

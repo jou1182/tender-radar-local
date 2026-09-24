@@ -1882,13 +1882,13 @@ export async function createRadarRepository({ projectRoot }) {
     }
     const nextNameAr = nameAr !== undefined ? String(nameAr).trim() : current.name_ar;
     const nextNameEn = nameEn !== undefined ? String(nameEn).trim() : current.name_en;
-    if (!nextNameAr) {
-      const error = new Error("الاسم العربي مطلوب ولا يُقبل فارغًا.");
+    if (nameAr !== undefined && (typeof nameAr !== "string" || !nextNameAr)) {
+      const error = new Error("الاسم العربي مطلوب نصًا غير فارغ.");
       error.code = "AGENT_NAME_REQUIRED";
       throw error;
     }
-    if (!nextNameEn) {
-      const error = new Error("الاسم الإنجليزي مطلوب ولا يُقبل فارغًا.");
+    if (nameEn !== undefined && (typeof nameEn !== "string" || !nextNameEn)) {
+      const error = new Error("الاسم الإنجليزي مطلوب نصًا غير فارغ.");
       error.code = "AGENT_NAME_REQUIRED";
       throw error;
     }

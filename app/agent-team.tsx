@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { TeamSecretManager } from "./team-secret-manager";
 import { RadarMark } from "./radar-mark";
+import { describeAgentChanges } from "../scripts/lib/agent-profile-change.mjs";
 
 // ── P5-F0: فريق وكلاء الرادار ─────────────────────────────────────────────────
 type AgentRow = {
@@ -117,13 +118,16 @@ export function AgentTeamPanel({ syncState, lastSyncAt }: { syncState: string; l
   }
 
   async function saveProfile(agent: AgentRow, enabled: boolean) {
+    // P5-F1R (M1 في المراجعة): لا رجوع صامت للاسم القديم، ولا «تم الحفظ ✓» بلا تغيير.
+    const nameAr = editName.trim();
+    if (!nameAr) { setPanelMessage("⚠ الاسم العربي مطلوب — لا يُحفظ فارغًا."); return; }
     const res = await fetch("http://127.0.0.1:4318/agents/update", {
       method: "POST",
       headers: { "content-type": "application/json", "x-team-token": token ?? "" },
-      body: JSON.stringify({ roleCode: agent.roleCode, nameAr: editName || agent.nameAr, enabled }),
+      body: JSON.stringify({ roleCode: agent.roleCode, nameAr, enabled }),
     });
     const data = await res.json().catch(() => ({}));
-    setPanelMessage(res.ok ? "تم الحفظ ✓" : data.message ?? "تعذر الحفظ.");
+    setPanelMessage(res.ok ? describeAgentChanges(data.changed) : data.message ?? "تعذر الحفظ.");
     if (res.ok) void loadAgents();
   }
 
