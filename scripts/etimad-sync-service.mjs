@@ -913,43 +913,48 @@ const server = http.createServer(async (request, response) => {
       if (!localUiOrigins.has(String(request.headers.origin || ""))) {
         return send(response, 403, { error: "HUMAN_CONFIRMATION_ORIGIN_REQUIRED", message: "بدء التجربة متاح من واجهة الرادار المحلية فقط." });
       }
-      const body = await readJsonBody(request);
-      const approval = repository.getDownloadApproval(String(body.approvalId || ""));
-      if (!approval) {
-        const error = new Error("الموافقة غير موجودة.");
-        error.code = "APPROVAL_NOT_FOUND";
-        throw error;
-      }
-      const job = repository.recordDownloadJob({
-        approvalId: approval.id,
-        tenderReference: approval.tenderReference,
-        manifest: approval.scope,
-        status: "running",
-      });
+      // P5-SYNCLIVE (TOCTOU): رفعُ العلم متزامنٌ قبل أول await — لا تنفتح نافذة
+      // للتزامن (أو تنزيلٍ ثانٍ) بين فحص الحارس وبدء التنفيذ. إعادة الضبط في
+      // finally أدناه تغطي كل المسارات بما فيها APPROVAL_NOT_FOUND وقراءة الجسد.
+      liveDownloading = true;
       try {
-        liveDownloading = true;
-        const result = await liveAcquisitionAdapter.execute({ id: job.id, approvalId: approval.id, manifest: approval.scope });
-        const finished = repository.updateDownloadJob(job.id, { status: "complete", finished: true });
-        return send(response, 200, { job: finished, result, adapter: liveAcquisitionAdapter.kind });
-      } catch (adapterError) {
-        const guarded = adapterError?.code === "LIVE_ADAPTER_DISABLED"
-          || adapterError?.code === "LIVE_DRIVER_NOT_CONFIGURED"
-          || adapterError?.code === "LIVE_ALLOWLIST_MISMATCH"
-          || adapterError?.code === "LIVE_PRECHECK_FAILED"
-          || adapterError?.code === "LIVE_UNTRUSTED_URL"
-          || adapterError?.code === "LIVE_TARGET_MISMATCH"
-          || String(adapterError?.code || "").startsWith("APPROVAL_");
-        const updated = repository.updateDownloadJob(job.id, {
-          status: guarded ? "blocked" : "failed",
-          errorMessage: adapterError?.code || "LIVE_DOWNLOAD_FAILED",
-          finished: true,
+        const body = await readJsonBody(request);
+        const approval = repository.getDownloadApproval(String(body.approvalId || ""));
+        if (!approval) {
+          const error = new Error("الموافقة غير موجودة.");
+          error.code = "APPROVAL_NOT_FOUND";
+          throw error;
+        }
+        const job = repository.recordDownloadJob({
+          approvalId: approval.id,
+          tenderReference: approval.tenderReference,
+          manifest: approval.scope,
+          status: "running",
         });
-        return send(response, guarded ? 409 : 500, {
-          job: updated,
-          adapter: liveAcquisitionAdapter.kind,
-          error: adapterError?.code || "LIVE_DOWNLOAD_FAILED",
-          message: adapterError?.message || "تعذر تنفيذ التنزيل الحي المحكوم؛ لا إعادة محاولة تلقائية.",
-        });
+        try {
+          const result = await liveAcquisitionAdapter.execute({ id: job.id, approvalId: approval.id, manifest: approval.scope });
+          const finished = repository.updateDownloadJob(job.id, { status: "complete", finished: true });
+          return send(response, 200, { job: finished, result, adapter: liveAcquisitionAdapter.kind });
+        } catch (adapterError) {
+          const guarded = adapterError?.code === "LIVE_ADAPTER_DISABLED"
+            || adapterError?.code === "LIVE_DRIVER_NOT_CONFIGURED"
+            || adapterError?.code === "LIVE_ALLOWLIST_MISMATCH"
+            || adapterError?.code === "LIVE_PRECHECK_FAILED"
+            || adapterError?.code === "LIVE_UNTRUSTED_URL"
+            || adapterError?.code === "LIVE_TARGET_MISMATCH"
+            || String(adapterError?.code || "").startsWith("APPROVAL_");
+          const updated = repository.updateDownloadJob(job.id, {
+            status: guarded ? "blocked" : "failed",
+            errorMessage: adapterError?.code || "LIVE_DOWNLOAD_FAILED",
+            finished: true,
+          });
+          return send(response, guarded ? 409 : 500, {
+            job: updated,
+            adapter: liveAcquisitionAdapter.kind,
+            error: adapterError?.code || "LIVE_DOWNLOAD_FAILED",
+            message: adapterError?.message || "تعذر تنفيذ التنزيل الحي المحكوم؛ لا إعادة محاولة تلقائية.",
+          });
+        }
       } finally {
         liveDownloading = false;
       }

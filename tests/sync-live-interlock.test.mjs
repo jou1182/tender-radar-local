@@ -30,3 +30,15 @@ test("P5-SYNCLIVE-3: /status يكشف علمَي الانشغال (downloading �
   assert.match(source, /downloading: liveDownloading/, "/status يكشف downloading");
   assert.match(source, /syncing: syncPromise/, "/status يكشف syncing (مزامنة جارية)");
 });
+
+test("P5-SYNCLIVE-4: علم التنزيل يُرفع متزامنًا قبل أول await (لا نافذة TOCTOU)", () => {
+  // المراجعة المستقلة رصدت: كان liveDownloading = true يتأخر إلى ما بعد await readJsonBody
+  // (وقبلها يدخل طلب /sync من حارسه بلا تصادم). الإصلاح: رفع العلم قبل أول await
+  // وداخل try بضمان finally. هذا فحص بنيوي على نص المسار (بنفس طبيعة زملائه هنا).
+  const guard = source.slice(source.indexOf('pathname === "/approval-jobs/live"'), source.indexOf('request.url === "/sync"'));
+  const posSet = guard.indexOf("liveDownloading = true;");
+  const posRead = guard.indexOf("await readJsonBody");
+  assert.ok(posSet !== -1 && posRead !== -1, "موقعا رفع العلم وقراءة الجسد موجودان في المسار");
+  assert.ok(posSet < posRead, `رفع العلم (${posSet}) بجب أن يسبق أول await (${posRead}) — حاليا يقع بعده`);
+  assert.match(guard.slice(0, posRead), /try \{/, "العلم يُرفع داخل كتلة try لإعادة ضبطه مضمونًا في finally");
+});
