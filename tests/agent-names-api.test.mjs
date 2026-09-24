@@ -127,3 +127,19 @@ test("P5-F1R-14: تغيير حالة التشغيل يُعلن في changed (ل�
   assert.deepEqual(again.body.changed, [], "إعادة الإرسال لنفس القيمة ⇒ لا تغيير");
   await update({ roleCode: "reporter", enabled: before.enabled });
 });
+
+test("P5-F1R-15: الأصل المحلي الثاني (127.0.0.1:3000) يُصدَّر كما جاء، والغريب لا يُصدَّر", async () => {
+  // كان Headers مثبّتًا على localhost:3000 ⇒ فتح التطبيق عبر 127.0.0.1:3000 يعطّل
+  // كل الكتابات بنفس عطل CORS. الآن يُصدَّر الأصل المحلي المعروف؛ وغير المعروف يُستبعد.
+  const local = await fetch(`${base}/agents/update`, {
+    method: "OPTIONS",
+    headers: { origin: "http://127.0.0.1:3000", "access-control-request-method": "POST", "access-control-request-headers": "x-team-token" },
+  });
+  assert.equal(local.headers.get("access-control-allow-origin"), "http://127.0.0.1:3000", "الأصل المحلي الثاني مسموح");
+
+  const foreign = await fetch(`${base}/agents/update`, {
+    method: "OPTIONS",
+    headers: { origin: "http://example.invalid", "access-control-request-method": "POST", "access-control-request-headers": "x-team-token" },
+  });
+  assert.equal(foreign.headers.get("access-control-allow-origin"), "http://localhost:3000", "أصل غريب لا يُصدَّر");
+});

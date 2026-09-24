@@ -566,7 +566,7 @@ async function performSync() {
 function send(response, status, payload) {
   response.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
-    "Access-Control-Allow-Origin": "http://localhost:3000",
+    "Access-Control-Allow-Origin": response.radarCorsOrigin || "http://localhost:3000",
     "Access-Control-Allow-Methods": "GET,POST,PUT,OPTIONS",
     // P5-F1R: x-team-token إلزامي لواجهات الكتابة الموثّقة — بدون إدراجه هنا
     // يرفض المتصفح الـpreflight ويفشل كل حفظ من الواجهة (Failed to fetch).
@@ -730,6 +730,11 @@ async function handleAgentsApi(request, response, pathname) {
 }
 
 const server = http.createServer(async (request, response) => {
+  // P5-F1R: يُصدَّر أصل الواجهة كما جاء إن كان محليًا معروفًا (localhost أو 127.0.0.1)؛
+  // وإلا يبقى الافتراضي. كان مثبّتًا على http://localhost:3000 فتتعطّل كل الكتابات
+  // عند فتح التطبيق عبر 127.0.0.1:3000 بنفس عطل CORS الذي أُصلح اليوم.
+  const requestOrigin = String(request.headers.origin || "");
+  response.radarCorsOrigin = localUiOrigins.has(requestOrigin) ? requestOrigin : "http://localhost:3000";
   if (request.method === "OPTIONS") return send(response, 204, {});
   const pathname = new URL(request.url || "/", "http://127.0.0.1").pathname;
   try {
