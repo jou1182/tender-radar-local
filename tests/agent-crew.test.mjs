@@ -2,7 +2,8 @@
 // (أ) تحقق تعريف الطاقم الصافي، (ب) سلوك أداة التطبيق عبر CLI حقيقي.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, mkdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
@@ -123,4 +124,27 @@ test("CREW-8: --only يقيّد الأدوار، والوكيل المجهول �
 
   const bad = await cli(["--db-root", root, "--only", "ghost"], { expectFail: true });
   assert.match(bad.stderr, /غير معروفة/);
+});
+
+test("CREW-9: معامل غير معروف يُرفض برسالة نظيفة (بلا stack trace)", async () => {
+  const res = await cli(["--bogus"], { expectFail: true });
+  assert.equal(res.code, 2);
+  assert.match(res.stderr, /معامل غير معروف/);
+  assert.doesNotMatch(res.stderr, /at Object|node:internal/, "لا stack trace");
+});
+
+test("CREW-10: هوية الهدف مؤكَّدة — مجلد .radar-data بلا قاعدة يُرفض إلا بعلم صريح", async () => {
+  // ملاحظة المراجعة S1: وجود .radar-data وحده لا يكفي (مجلدات شقيقة كثيرة في الشجرة).
+  const root = await mkdtemp(path.join(os.tmpdir(), "radar-crew-nodb-"));
+  await mkdir(path.join(root, ".radar-data"), { recursive: true });
+  const refused = await cli(["--db-root", root, "--apply"], { expectFail: true });
+  assert.equal(refused.code, 2);
+  assert.match(refused.stderr, /غير مؤكَّد الهوية|لا توجد قاعدة/);
+  assert.ok(!existsSync(path.join(root, ".radar-data", "radar.sqlite")), "لم تُنشأ قاعدة عند الرفض");
+
+  const allowed = await cli(["--db-root", root, "--apply", "--allow-empty-db"]);
+  assert.match(allowed.stdout, /هدف جديد بعلم صريح/);
+  const repository = await createRadarRepository({ projectRoot: root });
+  assert.equal(repository.getAgentByRole("scout").binding.provider, "ollama", "طُبِّق بعلم صريح");
+  repository.close();
 });

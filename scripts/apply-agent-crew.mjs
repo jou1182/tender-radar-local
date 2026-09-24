@@ -20,9 +20,10 @@ import { validateBinding } from "./lib/agent-team.mjs";
 import { agentCrew, validateCrew, crewInstructionLimit } from "./lib/agent-crew-p5ready.mjs";
 
 const OLLAMA_URL = "http://127.0.0.1:11434";
+const DB_RELATIVE = path.join(".radar-data", "radar.sqlite");
 
 function parseArgs(argv) {
-  const args = { dbRoot: undefined, apply: false, only: undefined };
+  const args = { dbRoot: undefined, apply: false, only: undefined, allowEmptyDb: false };
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (token === "--db-root") { i += 1; args.dbRoot = argv[i]; continue; }
@@ -30,7 +31,10 @@ function parseArgs(argv) {
     if (token === "--apply") { args.apply = true; continue; }
     if (token === "--only") { i += 1; args.only = argv[i]; continue; }
     if (token.startsWith("--only=")) { args.only = token.slice("--only=".length); continue; }
-    throw Object.assign(new Error(`معامل غير معروف: ${token}`), { code: "UNKNOWN_ARGUMENT" });
+    if (token === "--allow-empty-db") { args.allowEmptyDb = true; continue; }
+    const error = new Error(`معامل غير معروف: ${token}`);
+    error.code = "UNKNOWN_ARGUMENT";
+    throw error;
   }
   return args;
 }
@@ -48,7 +52,14 @@ function summarize(binding) {
 }
 
 async function main() {
-  const args = parseArgs(process.argv.slice(2));
+  let args;
+  try {
+    args = parseArgs(process.argv.slice(2));
+  } catch (error) {
+    console.error(String(error?.message || error));
+    process.exitCode = 2;
+    return;
+  }
   if (!args.dbRoot) {
     console.error("مطلوب --db-root صراحةً (المسار الحاوي لـ.radar-data). لا كتابة بأثر مجلد التشغيل الحالي.");
     process.exitCode = 2;
@@ -62,6 +73,23 @@ async function main() {
     process.exitCode = 2;
     return;
   }
+
+  // P5-AGENTS-READY (ملاحظة المراجعة S1): بوابة هوية الهدف. وجود .radar-data وحده
+  // لا يكفي — هناك مجلدات شقيقة كثيرة في الشجرة، وخطأ مسار واحد كان سيطبّق الطاقم
+  // على قاعدة خاطئة بصمت. فتُشترط قاعدة موجودة فعلًا، ولا يُقبل هدف فارغ إلا بعلم صريح.
+  const dbPath = path.join(projectRoot, DB_RELATIVE);
+  let dbStat;
+  try {
+    dbStat = await stat(dbPath);
+  } catch {
+    if (!args.allowEmptyDb) {
+      console.error(`لا توجد قاعدة في: ${dbPath}\nالهدف غير مؤكَّد الهوية — أُوقف بلا كتابة. إن كان هدفًا جديدًا فعلًا فمرّر --allow-empty-db صراحةً.`);
+      process.exitCode = 2;
+      return;
+    }
+  }
+  console.log(`الهدف: ${projectRoot}`);
+  console.log(`القاعدة: ${dbPath}${dbStat ? ` (${dbStat.size} بايت، آخر تعديل ${dbStat.mtime.toISOString()})` : " (غير موجودة — هدف جديد بعلم صريح)"}`);
 
   const problems = validateCrew(agentCrew);
   if (problems.length) {
@@ -80,7 +108,6 @@ async function main() {
     return;
   }
 
-  console.log(`قاعدة الهدف: ${projectRoot}`);
   console.log(`الوضع: ${args.apply ? "تنفيذ فعلي (--apply)" : "معاينة فقط (بلا كتابة)"}\n`);
 
   let changed = 0;

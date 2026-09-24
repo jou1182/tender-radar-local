@@ -93,7 +93,7 @@ export function validateCrew(crew = agentCrew) {
       problems.push(`${role}: التعليمات ${instructions.length} حرفًا تتجاوز الحد ${crewInstructionLimit} (يُقصّ بصمت)`);
     }
     if (!model.trim()) problems.push(`${role}: نموذج فارغ`);
-    if (/\s/.test(model)) problems.push(`${role}: اسم النموذج يحتوي مسافة`);
+    else if (/\s/.test(model)) problems.push(`${role}: اسم النموذج يحتوي مسافة`);
     if (/^(gpt|claude|gemini|openai|anthropic)/i.test(model)) {
       problems.push(`${role}: نموذج خارجي «${model}» — ممنوع؛ الطاقم محلي فقط (لا تُصدَّر بيانات)`);
     }
