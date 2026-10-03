@@ -174,3 +174,12 @@ powershell -Command "New-Item -ItemType Junction -Path '<worktree>\node_modules'
 - المراجع لا يفتح قاعدة التشغيل إطلاقًا: `RADAR_DB_ROOT=<مؤقت خارج المستودع>` + `RADAR_SYNC_PORT=0`.
 - لا merge/push/rebase/reset، ولا تعديل ملفات، ولا تشغيل حي (اعتماد/Chrome/Ollama/n8n/تنزيل).
 - **المنفّذ لا يدمج عمله**: مراجعة مستقلة ثم قرار المالك، ثم `git merge --ff-only` بمهمة منفصلة.
+
+### D. الرفع إلى GitHub (إن أُذن صريحًا)
+1. `gh auth status` (المتوقع: حساب المالك، صلاحية `repo`).
+2. **فحص ما قبل النشر (إلزامي)**: لا ملف `.sqlite`/`.radar-data`/مرفق/`.env`/مفتاح — في الشجرة **وفي التاريخ كاملًا**
+   (`git rev-list --objects --all` + مسح أنماط الأسرار). وإن وُجد مرفق اعتماد أو قاعدة: **توقف** وأبلغ المالك.
+3. أنشئ/استخدم مستودعًا **خاصًّا** وادفع **`main` فقط**: `git push -u origin main` (لا `--all` ولا `--mirror`).
+4. **تحقق من النتيجة بالقراءة من GitHub**: `git ls-remote --heads origin` (فرع واحد) +
+   `gh api repos/<owner>/<repo>/git/trees/main?recursive=1` (لا ملفات بيانات).
+5. لا تدفع أي فرع مؤقت (`alt/*`, `kimi/*`) بلا أمر صريح — فروع العمل تبقى محلية.
