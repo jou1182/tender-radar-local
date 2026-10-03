@@ -52,7 +52,7 @@
     "p5gapfix": { "phase": "P5-GAPFIX", "commit": "56ff415", "passed": 371, "failed": 0 },
     "p5agentsready": { "phase": "P5-AGENTS-READY", "commit": "26e8b0f", "passed": 399, "failed": 0 },
     "p5f1r": { "phase": "P5-F1R", "commit": "9b0ac62", "passed": 386, "failed": 0 },
-    "p5polish": { "phase": "P5-POLISH-DEBT", "commit": "20f6e8a", "passed": 402, "failed": 0, "status": "in-branch (بانتظار مراجعة مستقلة ثم دمج ff-only)" }
+    "p5polish": { "phase": "P5-POLISH-DEBT", "commit": "20f6e8a", "passed": 402, "failed": 0, "status": "merged (ff-only, review approved)" }
   },
   "agentTeam": {
     "phase": "P5-F0",
